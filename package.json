@@ -1,0 +1,21 @@
+{
+  "name": "parrot_claw",
+  "version": "1.0.0",
+  "description": "<p align=\"center\"> <img src=\"./assets/images/icon.jpg\"  width=\"150\" height=\"150\"> </p> <h1 align=\"center\" style=\"margin: 30px 0 30px; font-weight: bold;\">ParrotClaw 语鹦助手</h1> <h4 align=\"center\">为一人公司和内容设计师打造的AI数字员工</h4> <p align=\"center\">  <a href=\"https://gitee.com/alexcai/parrot_claw\"><img src=\"https://img.shields.io/badge/ParrotClaw-v1.0.0-brightgreen.svg\"></a>  <a href=\"https://gitee.com/alexcai/parrot_claw/LICENSE\"><img src=\"https://img.shields.io/github/license/mashape/apistatus.svg\"></a> </p>",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/alexcai/parrot_claw.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "vitepress": "^1.6.4"
+  }
+}
