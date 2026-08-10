@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import "dart:io";
 import 'dart:typed_data';
@@ -17,7 +18,9 @@ class TTSUtil {
 
   sherpa_onnx.OfflineTts? _tts;
   bool _isInitialized = false;
-  late final AudioPlayer _player = AudioPlayer();
+  late final AudioPlayer _player = AudioPlayer() ..onPlayerComplete.listen((_) {
+    _onComplete?.call();
+  });
   double _speed = 0.8;
   bool _isSpeekOn = false;
 
@@ -25,9 +28,6 @@ class TTSUtil {
 
   void setCallbacks({Function()? onComplete}) {
     _onComplete = onComplete;
-    _player.onPlayerComplete.listen((_) {
-      _onComplete?.call();
-    });
   }
 
   Future _init() async {
@@ -178,7 +178,6 @@ class TTSUtil {
     await _player.play(UrlSource(audioUrl));
   }
 }
-
 
 Future<sherpa_onnx.OfflineTts> createOfflineTts() async {
   // sherpa_onnx requires that model files are in the local disk, so we

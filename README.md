@@ -4,7 +4,7 @@
 <h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">ParrotClaw 语鹦助手</h1>
 <h4 align="center">为一人公司和内容设计师打造的AI数字员工</h4>
 <p align="center">
- <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.0-brightgreen.svg"></a>
+ <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.1-brightgreen.svg"></a>
  <a href="https://gitee.com/alexcai/parrot_claw/LICENSE"><img src="https://img.shields.io/github/license/mashape/apistatus.svg"></a>
 </p>
 
@@ -66,6 +66,8 @@ Agent 会回应你。从最简单的对话开始，然后你可以让它做更�
 
 > "帮我生成一张产品宣传图"
 
+📖 更多完整场景教程（文章写作、会议记录、掘金发布、音视频处理）见 [使用案例](docs/docs/use-cases.md)
+
 ---
 
 ## 架构
@@ -91,9 +93,9 @@ ParrotClaw App（Flutter 交互层）
 - [x] 语音合成（TTS）
 - [x] 数字人集成（Live2D）
 - [x] 文生图 / 图生图
+- [x] 音乐生成（AceStep 文生曲）
+- [x] 会议记录助手（录音 → 纪要）
 - [ ] 文生视频 / 图生视频
-- [ ] 音乐生成
-- [ ] 会议记录助手
 
 ---
 
@@ -139,6 +141,7 @@ Email: 121237385@qq.com
 
 ## 附录
 
+- [`docs/docs/use-cases.md`](docs/docs/use-cases.md) — 使用案例（文字创作、会议记录、掘金发布、音视频处理）
 - [`docs/docs/about.md`](docs/docs/about.md) — 关于项目与开发历程
 - [`docs/docs/openclaw-setup.md`](docs/docs/openclaw-setup.md) — OpenClaw 安装、Gateway 连接等
 - [`docs/docs/flutter-tips.md`](docs/docs/flutter-tips.md) — Flutter 项目架构、插件使用

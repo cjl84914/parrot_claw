@@ -126,12 +126,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
     FlutterTTSUtil().setCallbacks(
       onComplete: () async {
         await _configureInitialAudio();
-        await ASRUtil().start(); //恢复ASR
+        await ASRUtil().resume(); //恢复ASR
       },
     );
     //不是打断模式，暂停ASR
     if (!widget.viewModel.settingRepository.isTTSAbort) {
-      await ASRUtil().stop();
+      await ASRUtil().pause();
     }
     setState(() {
       _isPendding = false;
@@ -143,12 +143,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
     TTSUtil().setCallbacks(
       onComplete: () async {
         await _configureInitialAudio();
-        await ASRUtil().start(); //恢复ASR
+        await ASRUtil().resume(); //恢复ASR
       },
     );
     //不是打断模式，暂停ASR
     if (!widget.viewModel.settingRepository.isTTSAbort) {
-      await ASRUtil().stop();
+      await ASRUtil().pause();
     }
     setState(() {
       _isPendding = false;
@@ -163,12 +163,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
     TTSUtil().setCallbacks(
       onComplete: () async {
         await _configureInitialAudio();
-        await ASRUtil().start(); //恢复ASR
+        await ASRUtil().resume(); //恢复ASR
       },
     );
     //不是打断模式，暂停ASR
     if (!widget.viewModel.settingRepository.isTTSAbort) {
-      await ASRUtil().stop();
+      await ASRUtil().pause();
     }
     setState(() {
       _isPendding = false;

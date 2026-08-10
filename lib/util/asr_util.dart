@@ -62,7 +62,7 @@ class ASRUtil {
 
   RecordState? _recordState;
 
-  void _init() async {
+  Future init() async {
     try {
       if (isInitialized || _isIniting) return;
       _isIniting = true;
@@ -127,7 +127,6 @@ class ASRUtil {
     _isStarting = true;
 
     try {
-      _init();
       await initialized;
       await stop();
       if (await _audioRecorder.hasPermission()) {
@@ -255,12 +254,12 @@ class ASRUtil {
       _log.info('iOS 重新启动录音');
 
       try {
-        if (defaultTargetPlatform == TargetPlatform.iOS) {
-          await stop();
-          await Future<void>.delayed(const Duration(milliseconds: 250));
-          await start();
-          return;
-        }
+        // if (defaultTargetPlatform == TargetPlatform.iOS) {
+        //   await stop();
+        //   await Future<void>.delayed(const Duration(milliseconds: 250));
+        //   await start();
+        //   return;
+        // }
 
         await _audioRecorder.resume();
       } catch (e, stackTrace) {

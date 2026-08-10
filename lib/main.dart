@@ -23,6 +23,7 @@ import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
+import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
@@ -42,6 +43,7 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   await FlutterTTSUtil().initSetting();
+  await ASRUtil().init();
 
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     // Must add this line.

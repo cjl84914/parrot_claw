@@ -265,15 +265,7 @@ openclaw skills install juejin-skills
 
 **3. 使用**
 
-登录完成后，直接对 AI 说：
-
-> "把 workspace 里的 xxx.md 发布到掘金"
->
-> "查一下掘金的热门文章"
->
-> "下载这篇掘金文章：https://juejin.cn/post/xxx"
-
-AI 会自动完成操作。默认发布为草稿，确认无误后才公开发布。
+登录完成后即可对话发布文章，示例见 [使用案例 - 案例三：文章发布到掘金](use-cases.md#案例三文章发布到掘金)。
 
 ---
 
@@ -535,19 +527,13 @@ ffmpeg -version
 
 ### 测试验证（通用）
 
-安装完成后测试基础转码：
-
-```bash
-# 生成一个测试视频（红色背景 + 文字）
-ffmpeg -f lavfi -i color=c=red:s=1920x1080:d=5 \
-  -vf "drawtext=text='Hello ParrotClaw':fontsize=60:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2" \
-  -c:v libx264 -pix_fmt yuv420p /tmp/test.mp4
-
-# 转成 GIF
-ffmpeg -i /tmp/test.mp4 -vf "fps=10,scale=320:-1" /tmp/test.gif
-```
+安装完成后测试基础转码（生成测试视频并转 GIF），验证命令示例见 [使用案例 - 案例四：音视频处理](use-cases.md#案例四音视频处理ffmpeg)。
 
 没有报错说明 ffmpeg 安装正常。
+
+### 日常使用
+
+安装完成后即可在对话中直接让 Agent 处理音视频（转格式、转 GIF、提取音频等），使用示例见 [使用案例 - 案例四：音视频处理](use-cases.md#案例四音视频处理ffmpeg)。
 
 ### 图片 / 视频 / 音频生成
 
