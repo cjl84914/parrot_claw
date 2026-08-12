@@ -66,7 +66,7 @@ Agent 会回应你。从最简单的对话开始，然后你可以让它做更�
 
 > "帮我生成一张产品宣传图"
 
-📖 更多完整场景教程（文章写作、会议记录、掘金发布、音视频处理）见 [使用案例](docs/docs/use-cases.md)
+📖 更多完整场景教程（文章写作、会议记录、掘金发布、音视频处理、代码解读）见 [使用案例](docs/docs/use-cases.md)
 
 ---
 
@@ -112,7 +112,7 @@ ParrotClaw App（Flutter 交互层）
 
 ## 许可证
 
-[GPL v3](LICENSE)
+[MIT](LICENSE)
 
 ## 感恩集成
 
@@ -141,7 +141,7 @@ Email: 121237385@qq.com
 
 ## 附录
 
-- [`docs/docs/use-cases.md`](docs/docs/use-cases.md) — 使用案例（文字创作、会议记录、掘金发布、音视频处理）
+- [`docs/docs/use-cases.md`](docs/docs/use-cases.md) — 使用案例（文字创作、会议记录、掘金发布、音视频处理、代码解读）
 - [`docs/docs/about.md`](docs/docs/about.md) — 关于项目与开发历程
 - [`docs/docs/openclaw-setup.md`](docs/docs/openclaw-setup.md) — OpenClaw 安装、Gateway 连接等
 - [`docs/docs/flutter-tips.md`](docs/docs/flutter-tips.md) — Flutter 项目架构、插件使用
