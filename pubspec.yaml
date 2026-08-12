@@ -64,7 +64,7 @@ dependencies:
   audioplayers: ^5.0.0
 
   #text_to_speech: 相关
-  sherpa_onnx: 1.12.39 #1.12.15
+  sherpa_onnx: ^1.13.4 #1.12.15
 
   #openclaw相关
   web_socket_channel: ^2.4.0
@@ -146,6 +146,7 @@ flutter:
      - assets/
      - assets/images/
      - assets/senseVoice/
+#     - assets/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/
      - assets/live2d/
      - assets/live2d/assets/
      - assets/live2d/Core/

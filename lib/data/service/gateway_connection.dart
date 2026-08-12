@@ -575,6 +575,9 @@ class GatewayConnection {
         _configuredURL == url &&
         _configuredToken == token &&
         _configuredPassword == password) {
+      if (!_client!.connected && !_client!.isConnecting) {
+        await _client!.connect();
+      }
       return;
     }
     if (_client != null) {
