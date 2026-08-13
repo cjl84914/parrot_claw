@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart';
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
-import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flyer_chat_file_message/flyer_chat_file_message.dart';
 import 'package:flyer_chat_image_message/flyer_chat_image_message.dart';
 import 'package:flyer_chat_system_message/flyer_chat_system_message.dart';
@@ -60,9 +59,17 @@ class _ChatScreenState extends State<ChatScreen>
 
   InputMode _inputMode = InputMode.Text;
 
+  final GlobalKey _composerKey = GlobalKey();
+  double _composerHeight = 60;
+
+  final _textEditingController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
+    _textEditingController.addListener((){
+      _updateComposerHeight();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _init();
       _initTalk();
@@ -107,6 +114,22 @@ class _ChatScreenState extends State<ChatScreen>
     _chatController.dispose();
     ASRUtil().stop();
     super.dispose();
+  }
+
+  void _updateComposerHeight() async{
+    final context = _composerKey.currentContext;
+    if (context == null) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    await Future.delayed(Duration(seconds: 1));
+    final height = renderBox.size.height;
+    if (height != _composerHeight) {
+      setState(() {
+        _composerHeight = height - 48;
+      });
+    }
   }
 
   Message _toUiMessage(model.ChatMessage m) {
@@ -293,6 +316,8 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                   composerBuilder:
                       (context) => Composer(
+                        key: _composerKey,
+                        textEditingController: _textEditingController,
                         padding: EdgeInsets.only(top: 8, bottom: 4, right: 48),
                         backgroundColor: ChatColors.dark().surface,
                         topWidget: ComposerActionBar(
@@ -496,8 +521,8 @@ class _ChatScreenState extends State<ChatScreen>
                 left: 0,
                 child: Container(
                   width: MediaQuery.of(context).size.width,
-                  height: 60,
-                  padding: EdgeInsets.only(left: 48, bottom: 4),
+                  height: _composerHeight,
+                  padding: EdgeInsets.only(left: 48),
                   child: Row(
                     children: [
                       Expanded(

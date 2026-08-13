@@ -80,7 +80,6 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
         }
       },
       child: Container(
-        height: double.infinity,
         decoration: BoxDecoration(
           color: ChatTheme.dark().colors.surface,
         ),
@@ -89,7 +88,6 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
           children: [
             // 波纹动画效果
             if (_isRecording && !_isCancelling) _buildWaveAnimationIndicator(),
-
             // 文字提示
             Center(
               child: Text(

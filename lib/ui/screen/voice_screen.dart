@@ -33,7 +33,9 @@ class _VoiceScreenState extends State<VoiceScreen> {
   bool _isAsrInited = false;
   bool _isRecording = false;
   bool _isPendding = false;
+  bool _isShowSubtitle = true;
   final _live2dController = Live2dController();
+  String _lastTextContent = '';
 
   @override
   void initState() {
@@ -86,6 +88,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
       lastTextContent,
     ) {
       if (lastTextContent.isNotEmpty) {
+        _lastTextContent = lastTextContent;
         if (widget.viewModel.isOpenclawTTS()) {
           widget.viewModel.sendTalkSpeak(
             StringUtil.cleanTextForTts(lastTextContent),
@@ -125,6 +128,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
   Future<void> _flutterTTsSpeak(String text) async {
     FlutterTTSUtil().setCallbacks(
       onComplete: () async {
+        print('flutter tts complete');
         await _configureInitialAudio();
         await ASRUtil().resume(); //恢复ASR
       },
@@ -150,12 +154,14 @@ class _VoiceScreenState extends State<VoiceScreen> {
     if (!widget.viewModel.settingRepository.isTTSAbort) {
       await ASRUtil().pause();
     }
-    setState(() {
-      _isPendding = false;
-    });
-    await TTSUtil().playBase64(audioBase64);
-    if (widget.viewModel.settingRepository.isShowFace) {
-      _live2dController.speak('data:audio/wav;base64,$audioBase64');
+    if(mounted) {
+      setState(() {
+        _isPendding = false;
+      });
+      await TTSUtil().playBase64(audioBase64);
+      if (widget.viewModel.settingRepository.isShowFace) {
+        _live2dController.speak('data:audio/wav;base64,$audioBase64');
+      }
     }
   }
 
@@ -179,7 +185,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
     }
   }
 
-  void _initTalk() {
+  void _initTalk() async{
     ASRUtil().setCallbacks(
       onStateChanged: (RecordState recordState) {
         // if (mounted) {
@@ -196,7 +202,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
         // }
       },
       onTextResult: (String text) => _sendMessage(text),
-      initCallback: () {
+      initCallback: () async{
         setState(() {
           _isAsrInited = true;
         });
@@ -223,50 +229,43 @@ class _VoiceScreenState extends State<VoiceScreen> {
         return Scaffold(
           body:
               widget.viewModel.settingRepository.isShowFace
-                  ? Live2dScreen(controller: _live2dController)
+                  ? _faceTalk()
                   : _simpleTalk(),
           floatingActionButton: Padding(
             padding: EdgeInsets.only(bottom: 0.h),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isPendding &&
-                    widget.viewModel.settingRepository.isShowFace)
-                  Center(
-                    child: SpinKitThreeBounce(size: 24, color: Colors.white),
-                  ),
-                SizedBox(height: 24),
                 // 按钮组
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    // 扬声器开关
                     _buildIconButton(
                       icon:
-                          widget.viewModel.settingRepository.isSpeakerOn
-                              ? Icons.volume_up
-                              : Icons.volume_off,
-                      label: 'Speaker',
-                      color:
-                          widget.viewModel.settingRepository.isSpeakerOn
-                              ? Colors.tealAccent.shade100
-                              : Colors.white,
+                      widget.viewModel.settingRepository.isSpeakerOn
+                          ? Icons.volume_up
+                          : Icons.volume_off,
+                      color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () async {
                         widget.viewModel.settingRepository.switchSpeaker();
                         await _configureInitialAudio();
+
                         if (mounted) {
                           setState(() {});
                         }
                       },
                     ),
+
+                    // 麦克风开关
                     _buildIconButton(
-                      icon: _isRecording ? Icons.mic_off : Icons.mic,
-                      label: '',
-                      color: _isRecording ? Colors.red : AppColors.primary,
-                      iconColor: Colors.white,
-                      isLarge: true,
+                      icon: _isRecording ? Icons.mic : Icons.mic_off,
+                      color: _isRecording ? Colors.red: Colors.white,
+                      iconColor: _isRecording ? Colors.white :AppColors.textSecondary,
                       onTap: () async {
+                        // _sendMessage('测试');
                         if (_isRecording) {
                           await ASRUtil().stop();
                           _isRecording = false;
@@ -275,26 +274,32 @@ class _VoiceScreenState extends State<VoiceScreen> {
                           await ASRUtil().start();
                           _isRecording = true;
                         }
-                        setState(() {});
+
+                        if (mounted) {
+                          setState(() {});
+                        }
                       },
                     ),
-                    // _buildIconButton(
-                    //   icon: Icons.record_voice_over_outlined,
-                    //   label: 'Talk',
-                    //   color: AppColors.surfaceVariant,
-                    //   iconColor: AppColors.textSecondary,
-                    //   onTap: () {},
-                    // ),
+
+                    // 字幕开关
+                    _buildIconButton(
+                      icon: _isShowSubtitle ? Icons.subtitles : Icons.subtitles_off,
+                      color: Colors.white,
+                      iconColor: AppColors.textSecondary,
+                      onTap: () {
+                        setState(() {
+                          _isShowSubtitle = !_isShowSubtitle;
+                        });
+                      },
+                    ),
+
+                    // 数字人开关
                     _buildIconButton(
                       icon:
-                          widget.viewModel.settingRepository.isShowFace
-                              ? Icons.face
-                              : Icons.face_retouching_off,
-                      label: 'Talk',
-                      color:
-                          widget.viewModel.settingRepository.isShowFace
-                              ? Colors.tealAccent.shade100
-                              : Colors.white,
+                      widget.viewModel.settingRepository.isShowFace
+                          ? Icons.face
+                          : Icons.face_retouching_off,
+                      color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () {
                         widget.viewModel.settingRepository.switchShowFace();
@@ -302,7 +307,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
                     ),
                   ],
                 ),
-                SizedBox(height: 30.h),
+                SizedBox(height: 12.h),
               ],
             ),
           ),
@@ -312,6 +317,58 @@ class _VoiceScreenState extends State<VoiceScreen> {
       },
     );
   }
+
+  Widget _faceTalk() {
+  final screenHeight = MediaQuery.of(context).size.height;
+
+  return Stack(
+    children: [
+      Live2dScreen(controller: _live2dController),
+      // 字幕区域：位于屏幕中部和底部按钮上方
+      if (_isShowSubtitle)
+        Positioned(
+          left: 20.w,
+          right: 20.w,
+          top: screenHeight * 0.4,
+          bottom: 110.h,
+          child: _buildSubtitle(),
+        ),
+      if (_isPendding)
+        SpinKitThreeBounce(size: 24, color: Colors.white),
+    ],
+  );
+}
+
+Widget _buildSubtitle() {
+  return Container(
+    padding: EdgeInsets.symmetric(
+      horizontal: 16.w,
+      vertical: 12.h,
+    ),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          Colors.black.withOpacity(0.48),
+          Colors.black.withOpacity(0.0),
+        ],
+      ),
+      borderRadius: BorderRadius.circular(24.r),
+    ),
+    child: SingleChildScrollView(
+      reverse: true,
+      child: Text(
+        _lastTextContent,
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: Colors.white,
+          fontSize: 16.sp,
+          height: 1.6,
+        ),
+      ),
+    ),
+  );
+}
 
   void _sendMessage(String? text) async {
     if (text == null || text.trim().isEmpty) return;
@@ -364,49 +421,35 @@ class _VoiceScreenState extends State<VoiceScreen> {
     );
   }
 
-  /// 构建圆形功能按钮
   Widget _buildIconButton({
     required IconData icon,
-    required String label,
     required Color color,
     required Color iconColor,
-    bool isLarge = false,
     required Function() onTap,
   }) {
-    double size = isLarge ? 76.r : 60.r;
+    const buttonSize = 60.0;
+
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow:
-                  isLarge
-                      ? [
-                        BoxShadow(
-                          color: color.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ]
-                      : null,
+      child: Container(
+        width: buttonSize.r,
+        height: buttonSize.r,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
-            child: Icon(icon, size: isLarge ? 36.r : 28.r, color: iconColor),
-          ),
-          if (label.isNotEmpty) ...[
-            SizedBox(height: 8.h),
-            // Text(
-            //   label,
-            //   style: AppTextStyles.caption.copyWith(
-            //     color: AppColors.textSecondary,
-            //   ),
-            // ),
           ],
-        ],
+        ),
+        child: Icon(
+          icon,
+          size: 28.r,
+          color: iconColor,
+        ),
       ),
     );
   }
