@@ -89,7 +89,7 @@ class ConnViewModel extends ChangeNotifier {
 
   bool get talkMode => _talkMode;
 
-  ServerRepository _serverRepository;
+  final ServerRepository _serverRepository;
   StreamSubscription? _gatewaySub;
 
   String? disconnectReason;
@@ -110,28 +110,25 @@ class ConnViewModel extends ChangeNotifier {
   // Actions
   Future<void> connect() async {
     final config = _serverRepository.selectedServer;
+    if (config == null) {
+      _isConnecting = false;
+      _connected = false;
+      notifyListeners();
+      return;
+    }
     if (_connected && _config == config) {
       return;
     }
     _gatewaySub?.cancel();
     _config = config;
-    _log.info('Switching to server: ${config?.name}');
+    _isConnecting = true;
+    _connected = false;
+    disconnectReason = null;
+    _log.info('Switching to server: ${config.name}');
 
     _gatewaySub = GatewayConnection.shared.subscribe().listen((d) {
       if (d is GatewayPushSnapshot) {
-        final data = d;
-        _log.info(data.snapshot.snapshot.health);
-        if (data.snapshot.snapshot.health['ok']) {
-          _isConnecting = false;
-          _connected = true;
-          _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
-          _sessions = data.snapshot.snapshot.health['sessions']['recent'];
-          _isHistoryLoading = false;
-          notifyListeners();
-          beginHistoryLoad();
-          listModels();
-          // subscribeSessionMessage();
-        }
+        _markConnected(d.snapshot.snapshot.health);
       } else if (d is GatewayPushEvent) {
         // _log.info('${d.event}\n ${d.payload}');
         _handleGatewayEvent(d.event, d.payload);
@@ -150,12 +147,48 @@ class ConnViewModel extends ChangeNotifier {
     try {
       notifyListeners();
       await GatewayConnection.shared.configure(
-        url: _config!.wsUrl,
-        token: _config!.token,
-        password: _config!.password,
+        url: config.wsUrl,
+        token: config.token,
+        password: config.password,
       );
+      // configure() returns only after the authenticated WebSocket handshake.
+      // Use it as a fallback when a snapshot was emitted before this listener
+      // was attached or when the snapshot health payload has another shape.
+      if (!_connected && identical(_config, config)) {
+        _markConnected(null);
+      }
     } catch (e) {
+      _isConnecting = false;
+      _connected = false;
+      disconnectReason = e.toString();
+      notifyListeners();
       _log.warning('Connect failed in ViewModel: $e');
+    }
+  }
+
+  void _markConnected(dynamic health) {
+    if (_connected && !_isConnecting) return;
+    _isConnecting = false;
+    _connected = true;
+    _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
+    if (health is Map) {
+      final sessions = health['sessions'];
+      if (sessions is Map && sessions['recent'] is List) {
+        _sessions = sessions['recent'] as List<dynamic>;
+      }
+    }
+    _isHistoryLoading = false;
+    notifyListeners();
+    unawaited(_initializeSessionData());
+    unawaited(listModels());
+  }
+
+  Future<void> _initializeSessionData() async {
+    try {
+      _sessionKey ??= await GatewayConnection.shared.mainSessionKey();
+      await beginHistoryLoad();
+    } catch (error) {
+      _log.warning('Failed to initialize main session: $error');
     }
   }
 
@@ -210,6 +243,11 @@ class ConnViewModel extends ChangeNotifier {
         break;
       case 'aborted':
       case 'error':
+        if (_runId == runId) {
+          _log.warning('Chat run $runId ended with state=$state: $payload');
+          _runId = '';
+          notifyListeners();
+        }
         break;
     }
   }
@@ -337,22 +375,34 @@ class ConnViewModel extends ChangeNotifier {
       }
     }
 
-    GatewayConnection.shared.chatSend(
-      sessionKey: sessionKey!,
-      message: message,
-      idempotencyKey: _runId,
-      attachments:
-          attachments
-              .map(
-                (a) => {
-                  'type': a.type,
-                  'content': a.base64,
-                  'mimeType': a.mimeType,
-                  'fileName': a.fileName,
-                },
-              )
-              .toList(),
-    );
+    final resolvedSessionKey =
+        sessionKey ?? await GatewayConnection.shared.mainSessionKey();
+    _sessionKey = resolvedSessionKey;
+    try {
+      await GatewayConnection.shared.chatSend(
+        sessionKey: resolvedSessionKey,
+        message: message,
+        idempotencyKey: _runId,
+        attachments:
+            attachments
+                .map(
+                  (a) => {
+                    'type': a.type,
+                    'content': a.base64,
+                    'mimeType': a.mimeType,
+                    'fileName': a.fileName,
+                  },
+                )
+                .toList(),
+      );
+    } catch (error) {
+      if (_runId.isNotEmpty) {
+        _runId = '';
+        notifyListeners();
+      }
+      _log.warning('chat.send failed: $error');
+      rethrow;
+    }
   }
 
   void switchTalkMode(bool talModel) {
@@ -525,20 +575,19 @@ class ConnViewModel extends ChangeNotifier {
           // 可在此发送事件通知 UI 移除工具执行状态
         }
         break;
-        // case 'item':
-        //   final message = ChatMessage(
-        //     id: runId!,
-        //     role: 'assistant',
-        //     content: [
-        //       ChatMessageContent(
-        //         type: 'toolCall',
-        //         text: data?['data'] as String?,
-        //       ),
-        //     ],
-        //     timestamp: DateTime.now().millisecondsSinceEpoch,
-        //   );
-        //   messageController.add(message);
-        break;
+      // case 'item':
+      //   final message = ChatMessage(
+      //     id: runId!,
+      //     role: 'assistant',
+      //     content: [
+      //       ChatMessageContent(
+      //         type: 'toolCall',
+      //         text: data?['data'] as String?,
+      //       ),
+      //     ],
+      //     timestamp: DateTime.now().millisecondsSinceEpoch,
+      //   );
+      //   messageController.add(message);
       case 'error':
         break;
     }

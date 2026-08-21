@@ -1,5 +1,7 @@
 # 快速开始
 
+> Flutter SDK：`3.47.1`
+
 <p align="center">
   <img src="/images/icon.jpg" width="150" height="150">
 </p>
@@ -10,8 +12,7 @@
 
 ## 前置要求
 
-- Flutter 3.x+
-- Dart 3.x+
+- Flutter 3.47.1
 - OpenClaw（后端服务）
 
 ## 安装

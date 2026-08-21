@@ -67,7 +67,7 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void initState() {
     super.initState();
-    _textEditingController.addListener((){
+    _textEditingController.addListener(() {
       _updateComposerHeight();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -116,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen>
     super.dispose();
   }
 
-  void _updateComposerHeight() async{
+  void _updateComposerHeight() async {
     final context = _composerKey.currentContext;
     if (context == null) return;
 
@@ -632,6 +632,7 @@ class _ChatScreenState extends State<ChatScreen>
       await widget.viewModel.sendChatMessage(text);
       _addTyping();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));

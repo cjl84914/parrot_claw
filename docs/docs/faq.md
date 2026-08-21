@@ -70,15 +70,15 @@ openclaw logs --follow
 
 ### Q：项目用的 Flutter 版本？
 
-Flutter 3.41.9+，SDK `^3.7.0`。建议使用 fvm 管理多版本：
+Flutter 3.47.1，建议使用 fvm 管理多版本：
 
 ```bash
 # 安装 fvm
 brew install fvm
 
 # 安装并锁定项目 Flutter 版本
-fvm install 3.41.9
-fvm use 3.41.9 --force
+fvm install 3.47.1
+fvm use 3.47.1 --force
 ```
 
 ### Q：代码生成（freezed）怎么运行？
@@ -298,7 +298,7 @@ flutter build ios --release
 
 ### Q：Windows 能构建吗？
 
-项目依赖 `window_manager` 和 `flutter_inappwebview`，Windows 理论上支持，但未充分测试。
+项目依赖 `window_manager` 和 `flutter_inappwebview`，Windows 理论上支持，但当前 Windows 版本打包仍在项目任务中，尚未发布经过完整验证的安装包。
 
 ### Q：环境变量怎么配？
 

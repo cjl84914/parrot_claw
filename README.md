@@ -5,7 +5,7 @@
 <h4 align="center">为一人公司和内容设计师打造的AI数字员工</h4>
 <p align="center">
  <a href="https://parrot.geetion.com"><img src="https://img.shields.io/badge/官网-parrot.geetion.com-orange.svg"></a>
- <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.2-brightgreen.svg"></a>
+ <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.3-brightgreen.svg"></a>
  <a href="https://gitee.com/alexcai/parrot_claw/LICENSE"><img src="https://img.shields.io/github/license/mashape/apistatus.svg"></a>
 </p>
 
@@ -43,7 +43,7 @@
 
 ## 快速开始
 
-需要先安装 [Flutter](https://docs.flutter.dev/get-started/install)（`3.41.9+`）。
+需要先安装 [Flutter](https://docs.flutter.dev/get-started/install)（`3.47.1`）。
 ```bash
 git clone https://gitee.com/alexcai/parrot_claw.git
 cd parrot_claw
@@ -84,6 +84,22 @@ ParrotClaw App（Flutter 交互层）
 - **ParrotClaw App** — 交互层，集成离线语音识别（ASR）、数字人实时对话等
 - **OpenClaw** — Agent 编排中枢，连接各工具链
 - **工具链** — 图片生成、视频生成、音乐生成、语音合成、知识库等
+
+---
+
+## 当前版本
+
+- App 版本：`1.0.3`
+- Flutter SDK：`3.41.1`
+
+## 项目任务
+
+- [ ] 开源到 GitHub
+- [ ] 配置 GitHub Actions
+- [ ] 打包 Windows 版本
+- [ ] 编写英文 README
+- [ ] 补充数字人案例
+- [ ] 补充 FaceFusion 案例
 
 ---
 

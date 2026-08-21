@@ -89,8 +89,9 @@ class _SettingScreenState extends State<SettingScreen> {
                   ),
                 Card(
                   margin: const EdgeInsets.all(10),
-                  child: _buildMore(),
+                  child: _buildModelConfig(),
                 ),
+                Card(margin: const EdgeInsets.all(10), child: _buildMore()),
               ],
             );
           },
@@ -150,7 +151,7 @@ class _SettingScreenState extends State<SettingScreen> {
       future: _getLanguages(),
       builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
         if (snapshot.hasData) {
-          return  DropdownButton(
+          return DropdownButton(
             value: widget.viewmodel.settingRepository.language,
             items: getLanguageDropDownMenuItems(snapshot.data),
             onChanged: changedLanguageDropDownItem,
@@ -221,6 +222,19 @@ class _SettingScreenState extends State<SettingScreen> {
           setState(() {});
         },
       ),
+    );
+  }
+
+  Widget _buildModelConfig() {
+    return ListTile(
+      // leading: const Icon(Icons.psychology_outlined, size: 20),
+      title: const Text('模型配置', style: TextStyle(fontSize: 12)),
+      subtitle: const Text(
+        '查看和添加 OpenClaw 模型',
+        style: TextStyle(color: Colors.grey, fontSize: 10),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: () => context.push(Routes.modelList),
     );
   }
 

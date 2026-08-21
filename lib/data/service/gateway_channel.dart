@@ -391,13 +391,13 @@ class GatewayChannelActor {
     _task?.sink.close();
     _task = null;
 
-    _failPending(_gatewayError('gateway channel shutdown'));
+    _clearPendingOnShutdown();
 
     final waiters = List.of(_connectWaiters);
     _connectWaiters.clear();
     for (final w in waiters) {
       if (!w.isCompleted) {
-        w.completeError(_gatewayError('gateway channel shutdown'));
+        w.complete();
       }
     }
   }
@@ -852,6 +852,14 @@ class GatewayChannelActor {
     if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
       _challengeCompleter!.completeError(error);
     }
+  }
+
+  void _clearPendingOnShutdown() {
+    _pending.clear();
+    if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
+      _challengeCompleter!.complete('');
+    }
+    _challengeCompleter = null;
   }
 
   // ── timeoutRequest  (≈ Swift private func timeoutRequest) ───────────

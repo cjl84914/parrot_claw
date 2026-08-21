@@ -571,10 +571,12 @@ class GatewayConnection {
     String? password,
     GatewayConnectOptions? connectOptions,
   }) async {
+    final normalizedToken = _nonEmptyCredential(token);
+    final normalizedPassword = _nonEmptyCredential(password);
     if (_client != null &&
         _configuredURL == url &&
-        _configuredToken == token &&
-        _configuredPassword == password) {
+        _configuredToken == normalizedToken &&
+        _configuredPassword == normalizedPassword) {
       if (!_client!.connected && !_client!.isConnecting) {
         await _client!.connect();
       }
@@ -586,15 +588,15 @@ class GatewayConnection {
     _lastSnapshot = null;
     _client = GatewayChannelActor(
       url: url,
-      token: token,
-      password: password,
+      token: normalizedToken,
+      password: normalizedPassword,
       pushHandler: (push) => _handle(push),
       disconnectHandler: (reason) => _handleDisconnected(reason),
       connectOptions: connectOptions,
     );
     _configuredURL = url;
-    _configuredToken = token;
-    _configuredPassword = password;
+    _configuredToken = normalizedToken;
+    _configuredPassword = normalizedPassword;
     await _client!.connect();
   }
 
@@ -659,6 +661,11 @@ class GatewayConnection {
   }) {
     final raw = defaults?[key] as String?;
     return (raw ?? '').trim();
+  }
+
+  String? _nonEmptyCredential(String? value) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   Future<void> _refreshConfig() async {

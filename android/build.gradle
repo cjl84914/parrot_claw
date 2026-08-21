@@ -8,6 +8,9 @@ allprojects {
 rootProject.buildDir = "../build"
 subprojects {
     afterEvaluate {
+        android {
+            compileSdkVersion 36
+        }
         //所有插件加上namespace
         if (project.hasProperty('android')) {
             project.android {
@@ -28,3 +31,4 @@ subprojects {
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
+

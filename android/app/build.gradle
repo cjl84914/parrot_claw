@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.geetion.parrot"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -61,7 +61,7 @@ android {
         }
     }
 
-    ndkVersion "27.0.12077973"
+    ndkVersion "28.2.13676358"
 }
 
 flutter {
@@ -71,3 +71,4 @@ flutter {
 dependencies {
 
 }
+

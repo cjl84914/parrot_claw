@@ -9,19 +9,28 @@ import 'package:go_router/go_router.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/repository/local_gateway_repository.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
+import 'package:parrot_app/data/service/local_gateway_service.dart';
+import 'package:parrot_app/data/service/openclaw_installer_service.dart';
+import 'package:parrot_app/data/service/openclaw_model_service.dart';
 import 'package:parrot_app/data/service/shared_preferences_service.dart';
 import 'package:parrot_app/data/service/storage_service.dart';
 import 'package:parrot_app/ui/screen/chat_screen.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
+import 'package:parrot_app/ui/screen/setup_screen.dart';
+import 'package:parrot_app/ui/screen/setup_model_screen.dart';
 import 'package:parrot_app/ui/screen/more_screen.dart';
+import 'package:parrot_app/ui/screen/model_list_screen.dart';
 import 'package:parrot_app/ui/screen/webview_screen.dart';
 import 'package:parrot_app/ui/screen/server_edit_screen.dart';
 import 'package:parrot_app/ui/screen/server_list_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/setup_model_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
@@ -89,6 +98,18 @@ List<SingleChildWidget> providersLocal(
     ChangeNotifierProvider(
       create: (context) => ServerRepository(context.read<StorageService>()),
     ),
+    // 本地网关：Service + Repository（依赖 ServerRepository）
+    Provider(create: (context) => LocalGatewayService()),
+    Provider(create: (context) => OpenClawInstallerService()),
+    Provider(create: (context) => OpenClawModelService()),
+    ChangeNotifierProvider(
+      create:
+          (context) => LocalGatewayRepository(
+            service: context.read(),
+            installerService: context.read(),
+            serverRepository: context.read(),
+          ),
+    ),
     ChangeNotifierProvider(
       create: (context) => SettingViewmodel(settingRepository: context.read()),
     ),
@@ -101,6 +122,14 @@ List<SingleChildWidget> providersLocal(
             settingRepository: context.read(),
             serverRepository: context.read(),
           ),
+    ),
+    // 本地引导 ViewModel
+    ChangeNotifierProvider(
+      create: (context) => SetupViewModel(repository: context.read()),
+    ),
+    ChangeNotifierProvider(
+      create:
+          (context) => SetupModelViewModel(serverRepository: context.read()),
     ),
   ];
 }
@@ -160,6 +189,12 @@ final GoRouter router = GoRouter(
       redirect: (context, state) {
         final serverRepository = context.read<ServerRepository>();
         if (serverRepository.servers.isEmpty) {
+          // 无服务器时：桌面系统先进本地引导界面，移动端维持原逻辑
+          if (Platform.isMacOS
+              // || Platform.isWindows || Platform.isLinux
+          ) {
+            return Routes.setup;
+          }
           return Routes.serverEdit;
         } else {
           return Routes.index;
@@ -169,8 +204,12 @@ final GoRouter router = GoRouter(
     ShellRoute(
       builder: (context, state, child) {
         final serverRepository = context.watch<ServerRepository>();
+        final selectedServer = serverRepository.selectedServer;
+        if (selectedServer == null) {
+          return SetupScreen(viewModel: context.read());
+        }
         return IndexScreen(
-          key: ValueKey(serverRepository.selectedServer!.id),
+          key: ValueKey(selectedServer.id),
           viewModel: context.read(),
           child: child,
         );
@@ -180,9 +219,10 @@ final GoRouter router = GoRouter(
           path: Routes.index,
           pageBuilder: (context, state) {
             final serverRepository = context.watch<ServerRepository>();
+            final selectedServer = serverRepository.selectedServer;
             return NoTransitionPage(
               child: ChatScreen(
-                key: ValueKey(serverRepository.selectedServer!.id),
+                key: ValueKey(selectedServer?.id ?? 'no-selected-server'),
                 viewModel: context.read(),
               ),
             );
@@ -203,6 +243,24 @@ final GoRouter router = GoRouter(
               ),
         ),
       ],
+    ),
+    GoRoute(
+      path: Routes.setup,
+      builder: (context, state) {
+        return SetupScreen(viewModel: context.read());
+      },
+    ),
+    GoRoute(
+      path: Routes.modelList,
+      builder: (context, state) {
+        return ModelListScreen(service: context.read());
+      },
+    ),
+    GoRoute(
+      path: Routes.setupModel,
+      builder: (context, state) {
+        return SetupModelScreen(viewModel: context.read());
+      },
     ),
     GoRoute(
       path: Routes.serverEdit,
@@ -259,7 +317,9 @@ abstract final class Routes {
   static const live2d = '/live2d';
   static const more = '/more';
   static const webview = '/webview';
-  static const local = '/local';
+  static const setup = '/setup';
+  static const setupModel = '/setup_model';
+  static const modelList = '/model_list';
   static const voice = '/voice';
   static const setting = '/setting';
 }

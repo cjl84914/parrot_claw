@@ -1,6 +1,6 @@
 # 贡献指南
 
-> 欢迎参与 ParrotClaw 项目！项目托管在 [Gitee](https://gitee.com/alexcai/parrot_claw)。
+> 欢迎参与 ParrotClaw 项目！当前项目托管在 [Gitee](https://gitee.com/alexcai/parrot_claw)，GitHub 镜像与自动化构建仍在规划中。
 
 ---
 

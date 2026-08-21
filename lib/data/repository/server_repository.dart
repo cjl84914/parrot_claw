@@ -5,10 +5,10 @@ import 'package:parrot_app/data/service/storage_service.dart';
 /// 服务器列表仓库
 class ServerRepository extends ChangeNotifier {
   final StorageService _storage;
-  
+
   List<ServerConfig> _servers = [];
   List<ServerConfig> get servers => _servers;
-  
+
   ServerConfig? _selectedServer;
   ServerConfig? get selectedServer => _selectedServer;
 
@@ -33,7 +33,7 @@ class ServerRepository extends ChangeNotifier {
   }
 
   /// 选择当前服务器
-  void selectServer(ServerConfig? server) async{
+  void selectServer(ServerConfig? server) async {
     _selectedServer = server;
     setDefault(server!.id);
     notifyListeners();
@@ -44,9 +44,14 @@ class ServerRepository extends ChangeNotifier {
     // 如果这是第一个服务器，设为默认
     final isFirst = _servers.isEmpty;
     final server = isFirst ? config.copyWith(isDefault: true) : config;
-    
+
     await _storage.saveServer(server);
     _servers = [..._servers, server];
+    _selectedServer = server;
+    if (!server.isDefault) {
+      await setDefault(server.id);
+      return;
+    }
     notifyListeners();
   }
 
@@ -61,7 +66,7 @@ class ServerRepository extends ChangeNotifier {
   Future<void> deleteServer(String id) async {
     await _storage.deleteServer(id);
     _servers = _servers.where((s) => s.id != id).toList();
-    
+
     // 如果删的是默认服务器，重新设置默认
     final remaining = _servers.where((s) => s.isDefault).toList();
     if (remaining.isEmpty && _servers.isNotEmpty) {
