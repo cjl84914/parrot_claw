@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:io';
-
-import 'package:logging/logging.dart';
-import 'package:parrot_app/util/result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SharedPreferencesService {
@@ -19,13 +15,11 @@ class SharedPreferencesService {
   final _isShowFaceKey = 'isShowFace';
   final _flutterTTSKey = '_flutterTTS';
 
-  final _log = Logger('SharedPreferencesService');
-
   bool getIsTTSAbort() => _prefs.getBool(_isTTSAbortKey) ?? false;
 
   Future<bool> saveIsTTSAbort(bool v) => _prefs.setBool(_isTTSAbortKey, v);
 
-  bool getIsOpenclawTTS() => _prefs.getBool(_isOpenclawTTSKey) ?? false ;
+  bool getIsOpenclawTTS() => _prefs.getBool(_isOpenclawTTSKey) ?? false;
 
   Future<bool> saveIsOpenclawTTSKey(bool v) =>
       _prefs.setBool(_isOpenclawTTSKey, v);
