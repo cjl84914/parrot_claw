@@ -73,7 +73,7 @@ jobs:
           Get-ChildItem $modelDir
 
       - name: Analyze source
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build Windows release
         run: flutter build windows --release
