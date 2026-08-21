@@ -67,13 +67,18 @@ ParrotClaw 针对这些痛点做了改进：
 
 ## 三、当前版本
 
-项目使用 **Flutter 3.47.1** 构建。
+当前版本为 **ParrotClaw 1.0.3**，项目使用 **Flutter 3.47.1** 构建。
 
-## 四、后续任务
+## 四、路线图
+
+### 开源与发布
 
 - [ ] 开源到 GitHub
 - [ ] 配置 GitHub Actions
 - [ ] 打包 Windows 版本
+
+### 文档与案例
+
 - [ ] 编写英文 README
 - [ ] 补充数字人案例
 - [ ] 补充 FaceFusion 案例

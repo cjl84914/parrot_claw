@@ -90,18 +90,7 @@ ParrotClaw App（Flutter 交互层）
 ## 当前版本
 
 - App 版本：`1.0.3`
-- Flutter SDK：`3.41.1`
-
-## 项目任务
-
-- [ ] 开源到 GitHub
-- [ ] 配置 GitHub Actions
-- [ ] 打包 Windows 版本
-- [ ] 编写英文 README
-- [ ] 补充数字人案例
-- [ ] 补充 FaceFusion 案例
-
----
+- Flutter SDK：`3.47.1`
 
 ## 路线图
 
@@ -112,7 +101,13 @@ ParrotClaw App（Flutter 交互层）
 - [x] 文生图 / 图生图
 - [x] 音乐生成（AceStep 文生曲）
 - [x] 会议记录助手（录音 → 纪要）
+- [x] 开源到 GitHub
+- [ ] 配置 GitHub Actions
+- [ ] Windows 版本
+- [ ] 编写英文 README
 - [ ] 文生视频 / 图生视频
+- [ ] 数字人案例
+- [ ] FaceFusion 案例
 
 ---
 

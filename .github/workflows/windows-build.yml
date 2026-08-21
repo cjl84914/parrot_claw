@@ -1,0 +1,95 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.1"
+  MODEL_REVISION: "355f4d4884d8afd08aef04b9007a8556d7b463b2"
+  MODEL_BASE_URL: "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Download SenseVoice model
+        shell: pwsh
+        run: |
+          $modelDir = "assets\senseVoice"
+          New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+
+          $modelUrl = "${{ env.MODEL_BASE_URL }}/${{ env.MODEL_REVISION }}/model.int8.onnx"
+          $tokensUrl = "${{ env.MODEL_BASE_URL }}/${{ env.MODEL_REVISION }}/tokens.txt"
+
+          curl.exe `
+            --fail `
+            --location `
+            --retry 5 `
+            --retry-delay 5 `
+            --output "$modelDir\model.int8.onnx" `
+            $modelUrl
+
+          curl.exe `
+            --fail `
+            --location `
+            --retry 5 `
+            --retry-delay 5 `
+            --output "$modelDir\tokens.txt" `
+            $tokensUrl
+
+          if (-not (Test-Path "$modelDir\model.int8.onnx")) {
+            throw "model.int8.onnx download failed"
+          }
+
+          if (-not (Test-Path "$modelDir\tokens.txt")) {
+            throw "tokens.txt download failed"
+          }
+
+          Get-ChildItem $modelDir
+
+      - name: Analyze source
+        run: flutter analyze
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "build\windows\x64\runner\Release\*" `
+            -DestinationPath "parrot-windows-${{ github.run_number }}.zip" `
+            -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: parrot-windows-${{ github.run_number }}
+          path: parrot-windows-${{ github.run_number }}.zip
+          if-no-files-found: error
+          retention-days: 14

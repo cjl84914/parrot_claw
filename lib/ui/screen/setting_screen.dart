@@ -56,8 +56,17 @@ class _SettingScreenState extends State<SettingScreen> {
     dynamic languages,
   ) {
     final items = <DropdownMenuItem<String>>[];
-    for (dynamic type in languages) {
-      items.add(DropdownMenuItem(value: type, child: Text(type)));
+    final seenLanguages = <String>{};
+    for (final language in languages) {
+      final value = language.toString();
+      if (seenLanguages.add(value)) {
+        items.add(
+          DropdownMenuItem<String>(
+            value: value,
+            child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        );
+      }
     }
     return items;
   }
@@ -147,20 +156,28 @@ class _SettingScreenState extends State<SettingScreen> {
 
   Widget _language() => ListTile(
     leading: const Text("语言"),
-    trailing: FutureBuilder<dynamic>(
-      future: _getLanguages(),
-      builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
-        if (snapshot.hasData) {
-          return DropdownButton(
-            value: widget.viewmodel.settingRepository.language,
-            items: getLanguageDropDownMenuItems(snapshot.data),
-            onChanged: changedLanguageDropDownItem,
-          );
-        } else if (snapshot.hasError) {
-          return Container(width: 48);
-        }
-        return Container(width: 48);
-      },
+    trailing: SizedBox(
+      width: 150,
+      child: FutureBuilder<dynamic>(
+        future: _getLanguages(),
+        builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
+          if (snapshot.hasData) {
+            final items = getLanguageDropDownMenuItems(snapshot.data);
+            final language = widget.viewmodel.settingRepository.language;
+            final selectedLanguage =
+                items.any((item) => item.value == language) ? language : null;
+            return DropdownButton<String>(
+              isExpanded: true,
+              value: selectedLanguage,
+              items: items,
+              onChanged: changedLanguageDropDownItem,
+            );
+          } else if (snapshot.hasError) {
+            return const SizedBox.shrink();
+          }
+          return const SizedBox.shrink();
+        },
+      ),
     ),
   );
 

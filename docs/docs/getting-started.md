@@ -1,6 +1,6 @@
 # 快速开始
 
-> Flutter SDK：`3.47.1`
+> 当前版本：`1.0.3` · Flutter SDK：`3.47.1`
 
 <p align="center">
   <img src="/images/icon.jpg" width="150" height="150">

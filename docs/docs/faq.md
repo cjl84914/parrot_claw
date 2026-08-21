@@ -298,7 +298,7 @@ flutter build ios --release
 
 ### Q：Windows 能构建吗？
 
-项目依赖 `window_manager` 和 `flutter_inappwebview`，Windows 理论上支持，但当前 Windows 版本打包仍在项目任务中，尚未发布经过完整验证的安装包。
+项目依赖 `window_manager` 和 `flutter_inappwebview`，Windows 理论上支持，但当前 Windows 版本打包仍在路线图中，尚未发布经过完整验证的安装包。
 
 ### Q：环境变量怎么配？
 
