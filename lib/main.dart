@@ -12,6 +12,7 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/local_gateway_repository.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
+import 'package:parrot_app/data/service/impl/openclaw_service_factory.dart';
 import 'package:parrot_app/data/service/local_gateway_service.dart';
 import 'package:parrot_app/data/service/openclaw_installer_service.dart';
 import 'package:parrot_app/data/service/openclaw_model_service.dart';
@@ -88,6 +89,8 @@ List<SingleChildWidget> providersLocal(
   SharedPreferences prefs,
   StorageService storageService,
 ) {
+  final openClawServices = OpenClawServiceFactory.create();
+
   return [
     Provider.value(value: storageService),
     Provider(create: (context) => SharedPreferencesService(prefs)),
@@ -99,9 +102,9 @@ List<SingleChildWidget> providersLocal(
       create: (context) => ServerRepository(context.read<StorageService>()),
     ),
     // 本地网关：Service + Repository（依赖 ServerRepository）
-    Provider(create: (context) => LocalGatewayService()),
-    Provider(create: (context) => OpenClawInstallerService()),
-    Provider(create: (context) => OpenClawModelService()),
+    Provider<LocalGatewayService>.value(value: openClawServices.gateway),
+    Provider<OpenClawInstallerService>.value(value: openClawServices.installer),
+    Provider<OpenClawModelService>.value(value: openClawServices.model),
     ChangeNotifierProvider(
       create:
           (context) => LocalGatewayRepository(
@@ -191,7 +194,8 @@ final GoRouter router = GoRouter(
         if (serverRepository.servers.isEmpty) {
           // 无服务器时：桌面系统先进本地引导界面，移动端维持原逻辑
           if (Platform.isMacOS
-              // || Platform.isWindows || Platform.isLinux
+          || Platform.isWindows
+          // || Platform.isLinux
           ) {
             return Routes.setup;
           }

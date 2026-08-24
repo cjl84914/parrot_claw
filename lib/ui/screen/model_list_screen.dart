@@ -28,7 +28,8 @@ class _ModelListScreenState extends State<ModelListScreen> {
   Future<void> _showAddModelDialog({OpenClawModel? model}) async {
     final request = await showDialog<_AddModelRequest>(
       context: context,
-      builder: (context) => _AddModelDialog(model: model),
+      builder:
+          (context) => _AddModelDialog(model: model, service: widget.service),
     );
     if (request == null || !mounted) return;
 
@@ -245,8 +246,9 @@ class _AddModelRequest {
 
 class _AddModelDialog extends StatefulWidget {
   final OpenClawModel? model;
+  final OpenClawModelService service;
 
-  const _AddModelDialog({this.model});
+  const _AddModelDialog({this.model, required this.service});
 
   @override
   State<_AddModelDialog> createState() => _AddModelDialogState();
@@ -276,8 +278,7 @@ class _AddModelDialogState extends State<_AddModelDialog> {
 
   Future<void> _loadProviders() async {
     try {
-      final service = OpenClawModelService();
-      final providers = await service.fetchAvailableProviders();
+      final providers = await widget.service.fetchAvailableProviders();
       if (mounted) {
         setState(() {
           _availableProviders = providers;
