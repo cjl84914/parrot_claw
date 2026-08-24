@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:record/record.dart';
@@ -41,6 +42,7 @@ class ASRUtil {
 
   // 1. 定义回调
   Function(String text)? _onTextResult;
+  Function(String error)? _onError;
   bool _isIniting = false;
 
   // 2. 提供设置回调的方法
@@ -48,13 +50,22 @@ class ASRUtil {
     Function(RecordState recordState)? onStateChanged,
     Function(String text)? onTextResult,
     Function()? initCallback,
+    Function(String error)? onError,
   }) {
     _listenerCallback = onStateChanged;
     _onTextResult = onTextResult;
     _initCallback = initCallback;
+    _onError = onError;
+  }
+
+  /// 统一上报错误：写日志 + 回调给 UI 提示。
+  void _reportError(String message, [Object? error]) {
+    _log.severe('$message${error == null ? '' : ' => $error'}');
+    _onError?.call(message);
   }
 
   final Completer<void> _initCompleter = Completer<void>();
+  Object? _initError;
 
   Future<void> get initialized => _initCompleter.future;
 
@@ -98,14 +109,20 @@ class ASRUtil {
 
       _recognizer = await createOfflineRecognizer();
 
-      final devs = await _audioRecorder.listInputDevices();
-      _log.info(devs.toString());
-
+      // 不在应用启动阶段枚举输入设备：macOS 此时可能尚未完成权限请求，
+      // 设备枚举失败会把整个 ASR 初始化锁死。真正录音前再检查设备。
       _initCompleter.complete(); // 通知初始化完成
       _initCallback?.call();
       _isIniting = false;
     } catch (e) {
-      _initCompleter.completeError(e);
+      _isIniting = false;
+      _initError = e;
+      _reportError('语音引擎初始化失败', e);
+      // 让 initialized 正常结束，start() 再基于 _initError 返回 false，
+      // 避免 Completer.completeError 在无人监听时产生未处理异步错误。
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete();
+      }
     }
   }
 
@@ -119,9 +136,11 @@ class ASRUtil {
 
   bool _isStarting = false;
 
-  Future<void> start() async {
+  /// 启动录音。返回是否成功启动。
+  /// 失败时会通过 [setCallbacks] 的 onError 回调上报原因（不再静默吞掉）。
+  Future<bool> start() async {
     if (_isStarting || _recordState == RecordState.record) {
-      return;
+      return true;
     }
 
     _isStarting = true;
@@ -129,75 +148,119 @@ class ASRUtil {
     try {
       await initialized;
       await stop();
-      if (await _audioRecorder.hasPermission()) {
-        const encoder = AudioEncoder.pcm16bits;
-        if (!await _isEncoderSupported(encoder)) {
-          return;
+
+      if (_initError != null) {
+        _reportError('语音引擎未初始化成功：$_initError');
+        return false;
+      }
+
+      // init 未真正完成（例如初始化阶段抛错），直接失败并提示
+      if (_vad == null || _buffer == null || _recognizer == null) {
+        _reportError('语音引擎未初始化完成，无法录音');
+        return false;
+      }
+
+      if (!await _audioRecorder.hasPermission()) {
+        _reportError('未获得麦克风权限，请在系统设置中允许访问麦克风');
+        return false;
+      }
+
+      try {
+        final devices = await _audioRecorder.listInputDevices();
+        _log.info('录音输入设备: $devices');
+        if (devices.isEmpty) {
+          _reportError('未检测到可用的麦克风输入设备，请检查系统默认输入设备');
+          return false;
         }
-        final config = RecordConfig(
-          encoder: encoder,
-          sampleRate: _sampleRate,
-          numChannels: 1,
-          echoCancel: true,
-          noiseSuppress: true,
-          autoGain: true,
-          // streamBufferSize: 4096,
-          // bitRate: 16,
-          androidConfig: const AndroidRecordConfig(
-            speakerphone: true,
-            audioSource: AndroidAudioSource.voiceCommunication,
-            audioManagerMode: AudioManagerMode.modeInCommunication,
-            service: AndroidService(title: '正在倾听...'), //Background recording
-          ),
-        );
-        final stream = await _audioRecorder.startStream(config);
-        stream.listen(
-          (data) {
-            final samplesFloat32 = convertBytesToFloat32(
-              Uint8List.fromList(data),
+      } catch (e) {
+        // 设备枚举不是所有平台都可靠；继续尝试 startStream，让原生层返回更准确错误。
+        _log.warning('枚举录音输入设备失败，继续启动录音', e);
+      }
+
+      const encoder = AudioEncoder.pcm16bits;
+      if (!await _isEncoderSupported(encoder)) {
+        _reportError('当前平台不支持 pcm16bits 编码');
+        return false;
+      }
+
+      // 桌面端优先保证基础录音稳定。record_macos 的 Voice Processing
+      // 在部分 Mac 输入设备上会启动失败，先关闭增强处理，避免 startStream 直接失败。
+      final isDesktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+      final config = RecordConfig(
+        encoder: encoder,
+        sampleRate: _sampleRate,
+        numChannels: 1,
+        echoCancel: !isDesktop,
+        noiseSuppress: !isDesktop,
+        autoGain: !isDesktop,
+        // streamBufferSize: 4096,
+        // bitRate: 16,
+        androidConfig: const AndroidRecordConfig(
+          speakerphone: true,
+          audioSource: AndroidAudioSource.voiceCommunication,
+          audioManagerMode: AudioManagerMode.modeInCommunication,
+          service: AndroidService(title: '正在倾听...'), //Background recording
+        ),
+      );
+      final stream = await _audioRecorder.startStream(config);
+      stream.listen(
+        (data) {
+          final samplesFloat32 = convertBytesToFloat32(
+            Uint8List.fromList(data),
+          );
+
+          // use _buffer and _vad for offline stream data making
+          _buffer!.push(samplesFloat32);
+
+          final windowSize = _vadConfig.sileroVad.windowSize;
+          while (_buffer!.size > windowSize) {
+            final samples = _buffer!.get(
+              startIndex: _buffer!.head,
+              n: windowSize,
             );
+            _buffer!.pop(windowSize);
+            _vad!.acceptWaveform(samples);
 
-            // use _buffer and _vad for offline stream data making
-            _buffer!.push(samplesFloat32);
+            while (!_vad!.isEmpty()) {
+              final segment = _vad!.front();
+              final samples = segment.samples;
 
-            final windowSize = _vadConfig.sileroVad.windowSize;
-            while (_buffer!.size > windowSize) {
-              final samples = _buffer!.get(
-                startIndex: _buffer!.head,
-                n: windowSize,
+              // offline _recognizer stream handle logic
+              final stream = _recognizer!.createStream();
+              stream.acceptWaveform(
+                samples: samples,
+                sampleRate: _sampleRate,
               );
-              _buffer!.pop(windowSize);
-              _vad!.acceptWaveform(samples);
+              _recognizer!.decode(stream);
+              final text = _recognizer!.getResult(stream).text;
 
-              while (!_vad!.isEmpty()) {
-                final segment = _vad!.front();
-                final samples = segment.samples;
+              stream.free();
+              _vad!.pop();
 
-                // offline _recognizer stream handle logic
-                final stream = _recognizer!.createStream();
-                stream.acceptWaveform(
-                  samples: samples,
-                  sampleRate: _sampleRate,
-                );
-                _recognizer!.decode(stream);
-                final text = _recognizer!.getResult(stream).text;
-
-                stream.free();
-                _vad!.pop();
-
-                if (text != '嗯') {
-                  _onTextResult?.call(text);
-                }
+              if (text != '嗯') {
+                _onTextResult?.call(text);
               }
             }
-          },
-          onDone: () {
-            _log.info('stream stopped.');
-          },
-        );
-      }
+          }
+        },
+        onDone: () {
+          _log.info('stream stopped.');
+        },
+      );
+      return true;
     } catch (e, stackTrace) {
       _log.severe('启动录音失败', e, stackTrace);
+      if (Platform.isWindows) {
+        // record_windows 的 hasPermission 恒为 true，真正被拒时错误发生在
+        // startStream（MFCreateDeviceSource），常见于系统“允许桌面应用访问麦克风”被关闭。
+        _reportError(
+          '启动录音失败：$e\n若提示与麦克风设备相关，请检查 '
+          '系统设置-隐私-麦克风-“允许桌面应用访问你的麦克风”是否开启',
+        );
+      } else {
+        _reportError('启动录音失败：$e');
+      }
+      return false;
     } finally {
       _isStarting = false;
     }
@@ -205,19 +268,24 @@ class ASRUtil {
 
   Future<void> stop() async {
     await _audioRecorder.stop();
-   // handle rest of vad data
-    _vad!.flush();
-    while (!_vad!.isEmpty()) {
-      final segment = _vad!.front();
+
+    final vad = _vad;
+    final recognizer = _recognizer;
+    if (vad == null || recognizer == null) return;
+
+    // handle rest of vad data
+    vad.flush();
+    while (!vad.isEmpty()) {
+      final segment = vad.front();
       final samples = segment.samples;
 
-      final stream = _recognizer!.createStream();
+      final stream = recognizer.createStream();
       stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
-      _recognizer!.decode(stream);
-      final text = _recognizer!.getResult(stream).text;
+      recognizer.decode(stream);
+      final text = recognizer.getResult(stream).text;
       _onTextResult?.call(text);
       stream.free();
-      _vad!.pop();
+      vad.pop();
     }
   }
 

@@ -52,28 +52,39 @@ class _VoiceScreenState extends State<VoiceScreen> {
   }
 
   Future<void> _configureInitialAudio() async {
+    // audio_session 仅支持 Android/iOS/macOS/Web，
+    // Windows/Linux 无插件实现，调用会抛 MissingPluginException，直接跳过。
+    if (Platform.isWindows || Platform.isLinux) {
+      return;
+    }
+
     final speakerOn = widget.viewModel.settingRepository.isSpeakerOn;
-    final session = await AudioSession.instance;
-    await session.configure(
-      AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            speakerOn
-                ? AVAudioSessionCategoryOptions.allowBluetooth |
-                    AVAudioSessionCategoryOptions.defaultToSpeaker |
-                    AVAudioSessionCategoryOptions.mixWithOthers
-                : AVAudioSessionCategoryOptions.allowBluetooth |
-                    AVAudioSessionCategoryOptions.mixWithOthers,
-        avAudioSessionMode: AVAudioSessionMode.voiceChat,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          usage: AndroidAudioUsage.voiceCommunication,
-          contentType: AndroidAudioContentType.speech,
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(
+        AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions:
+              speakerOn
+                  ? AVAudioSessionCategoryOptions.allowBluetooth |
+                      AVAudioSessionCategoryOptions.defaultToSpeaker |
+                      AVAudioSessionCategoryOptions.mixWithOthers
+                  : AVAudioSessionCategoryOptions.allowBluetooth |
+                      AVAudioSessionCategoryOptions.mixWithOthers,
+          avAudioSessionMode: AVAudioSessionMode.voiceChat,
+          androidAudioAttributes: const AndroidAudioAttributes(
+            usage: AndroidAudioUsage.voiceCommunication,
+            contentType: AndroidAudioContentType.speech,
+          ),
+          androidAudioFocusGainType:
+              AndroidAudioFocusGainType.gainTransient, // 初始时允许获取焦点
         ),
-        androidAudioFocusGainType:
-            AndroidAudioFocusGainType.gainTransient, // 初始时允许获取焦点
-      ),
-    );
-    await session.setActive(true);
+      );
+      await session.setActive(true);
+    } catch (e) {
+      // 个别平台/设备配置音频会话失败不应阻断语音功能，仅记录日志
+      debugPrint('configure audio session failed: $e');
+    }
 
     if (Platform.isAndroid) {
       await TTSUtil().setSpeakerOn(speakerOn);
@@ -202,6 +213,15 @@ class _VoiceScreenState extends State<VoiceScreen> {
         // }
       },
       onTextResult: (String text) => _sendMessage(text),
+      onError: (String error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error, maxLines: 3, overflow: TextOverflow.ellipsis),
+            ),
+          );
+        }
+      },
       initCallback: () async{
         setState(() {
           _isAsrInited = true;
@@ -271,8 +291,15 @@ class _VoiceScreenState extends State<VoiceScreen> {
                           _isRecording = false;
                         } else {
                           widget.viewModel.subscribeSessionMessage();
-                          await ASRUtil().start();
-                          _isRecording = true;
+                          // 按实际启动结果更新状态，失败时给出原因提示
+                          _isRecording = await ASRUtil().start();
+                          if (!_isRecording && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('录音启动失败，请检查麦克风权限/设备'),
+                              ),
+                            );
+                          }
                         }
 
                         if (mounted) {

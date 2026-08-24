@@ -108,7 +108,25 @@ class ConnViewModel extends ChangeNotifier {
   }
 
   // Actions
+  Future<void>? _pendingConnect;
+
+  /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
+  bool _manualDisconnect = false;
+
+  /// 连接服务器（串行化）
+  ///
+  /// ServerRepository 的每次变更都会触发本方法（添加/选择/更新/删除），
+  /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
+  /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
   Future<void> connect() async {
+    // 等待上一次连接请求完成，避免并发竞态
+    while (_pendingConnect != null) {
+      try {
+        await _pendingConnect;
+      } catch (_) {
+        // 上一次失败不影响本次重新连接
+      }
+    }
     final config = _serverRepository.selectedServer;
     if (config == null) {
       _isConnecting = false;
@@ -119,6 +137,18 @@ class ConnViewModel extends ChangeNotifier {
     if (_connected && _config == config) {
       return;
     }
+    final completer = Completer<void>();
+    _pendingConnect = completer.future;
+    try {
+      await _doConnect(config);
+    } finally {
+      _pendingConnect = null;
+      completer.complete();
+    }
+  }
+
+  Future<void> _doConnect(ServerConfig config) async {
+    _manualDisconnect = false;
     _gatewaySub?.cancel();
     _config = config;
     _isConnecting = true;
@@ -136,6 +166,12 @@ class ConnViewModel extends ChangeNotifier {
     });
 
     GatewayConnection.shared.onDisconnect = (reason) {
+      if (_manualDisconnect) {
+        // 主动断开（切换服务器/退出页面）不当作故障上报，避免
+        // 与新连接的竞态把 UI 错误拉回"已断开连接"。
+        _manualDisconnect = false;
+        return;
+      }
       _sessionKey = null; //断连时清空残留 sessionKey
       _sessions = [];
       _isConnecting = false;
@@ -170,6 +206,7 @@ class ConnViewModel extends ChangeNotifier {
     if (_connected && !_isConnecting) return;
     _isConnecting = false;
     _connected = true;
+    disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
     _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
     if (health is Map) {
       final sessions = health['sessions'];
@@ -318,6 +355,7 @@ class ConnViewModel extends ChangeNotifier {
   }
 
   void disconnect() {
+    _manualDisconnect = true;
     _sessionKey = null; // 🌟 修复点 2：主动断开时清空残留 sessionKey
     _sessions = [];
     _connected = false;

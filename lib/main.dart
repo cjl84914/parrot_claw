@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
 // import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -27,6 +28,8 @@ import 'package:parrot_app/ui/screen/model_list_screen.dart';
 import 'package:parrot_app/ui/screen/webview_screen.dart';
 import 'package:parrot_app/ui/screen/server_edit_screen.dart';
 import 'package:parrot_app/ui/screen/server_list_screen.dart';
+import 'package:parrot_app/ui/screen/qr_code_screen.dart';
+import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
@@ -58,12 +61,14 @@ void main() async {
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     // Must add this line.
     await windowManager.ensureInitialized();
+    // Windows 使用系统标题栏（原生支持拖动/最小化/关闭）；
+    // macOS 保持隐藏标题栏的无边框体验（其标题栏区域本身可拖动）。
     const WindowOptions windowOptions = WindowOptions(
       size: Size(390, 844),
       center: false,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.hidden,
+      titleBarStyle: TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
@@ -193,8 +198,7 @@ final GoRouter router = GoRouter(
         final serverRepository = context.read<ServerRepository>();
         if (serverRepository.servers.isEmpty) {
           // 无服务器时：桌面系统先进本地引导界面，移动端维持原逻辑
-          if (Platform.isMacOS
-          || Platform.isWindows
+          if (Platform.isMacOS || Platform.isWindows
           // || Platform.isLinux
           ) {
             return Routes.setup;
@@ -286,6 +290,18 @@ final GoRouter router = GoRouter(
       },
     ),
     GoRoute(
+      path: Routes.qrScan,
+      builder: (context, state) {
+        return QrScanScreen(viewModel: context.read());
+      },
+    ),
+    GoRoute(
+      path: Routes.qrCode,
+      builder: (context, state) {
+        return QrCodeScreen(config: state.extra as ServerConfig);
+      },
+    ),
+    GoRoute(
       path: Routes.live2d,
       builder: (context, state) {
         return const Live2dScreen();
@@ -317,6 +333,8 @@ abstract final class Routes {
   static const chat = '/chat';
   static const serverList = '/server_list';
   static const serverEdit = '/server_edit';
+  static const qrScan = '/qr_scan';
+  static const qrCode = '/qr_code';
   static const about = '/about';
   static const live2d = '/live2d';
   static const more = '/more';

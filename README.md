@@ -104,8 +104,8 @@ ParrotClaw App（Flutter 交互层）
 - [x] 开源到 GitHub
 - [x] 配置 GitHub Actions
 - [x] Windows 版本
-- [ ] 扫码克隆服务器
-- [ ] 编写英文 README
+- [x] 扫码克隆服务器
+- [ ] 英文 README DOCS
 - [ ] 文生视频 / 图生视频
 - [ ] 数字人案例
 - [ ] FaceFusion 案例

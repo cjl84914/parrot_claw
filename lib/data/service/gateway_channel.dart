@@ -464,6 +464,10 @@ class GatewayChannelActor {
       });
     } catch (e) {
       _connected = false;
+      // 必须先取消订阅再 close sink，否则 close 会触发迟到的 onDone，
+      // 二次调用 disconnectHandler 并意外调度底层自动重连。
+      await _taskSubscription?.cancel();
+      _taskSubscription = null;
       _task?.sink.close();
       _task = null;
       _disconnectHandler?.call('connect failed: $e');

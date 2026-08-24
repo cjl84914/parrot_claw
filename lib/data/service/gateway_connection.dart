@@ -393,15 +393,31 @@ class GatewayConnection {
   HelloOk? _lastSnapshot;
   Function(String)? onDisconnect;
 
+  /// 当前连接代际：每次 shutdown/重建 client 时递增。
+  /// 旧 client 的迟到断开事件（异步 onDone/onError）携带旧代际，一律忽略，
+  /// 避免切换服务器后 UI 被残留事件错误拉回"已断开连接"。
+  int _clientGeneration = 0;
+
   // GatewayChannelActor? get client => _client;
 
   Future<void> shutdown() async {
+    _clientGeneration++; // 使所有在途断开事件失效
     await _client?.shutdown();
     _client = null;
     _configuredURL = null;
     _configuredToken = null;
     _configuredPassword = null;
     _lastSnapshot = null;
+  }
+
+  void _handleDisconnected(String reason, int generation) {
+    if (generation != _clientGeneration) {
+      // 来自已被替换/销毁的旧连接的断开事件，忽略
+      return;
+    }
+    if (onDisconnect != null) {
+      onDisconnect!(reason);
+    }
   }
 
   Future<String?> canvasPluginSurfaceUrl() async {
@@ -577,7 +593,9 @@ class GatewayConnection {
         _configuredURL == url &&
         _configuredToken == normalizedToken &&
         _configuredPassword == normalizedPassword) {
-      if (!_client!.connected && !_client!.isConnecting) {
+      // 同配置复用现有连接；若仍在连接中，connect() 内部会排队等待
+      // 握手完成后再返回，避免调用方误以为连接已就绪。
+      if (!_client!.connected) {
         await _client!.connect();
       }
       return;
@@ -586,12 +604,13 @@ class GatewayConnection {
       await shutdown();
     }
     _lastSnapshot = null;
+    final generation = _clientGeneration;
     _client = GatewayChannelActor(
       url: url,
       token: normalizedToken,
       password: normalizedPassword,
       pushHandler: (push) => _handle(push),
-      disconnectHandler: (reason) => _handleDisconnected(reason),
+      disconnectHandler: (reason) => _handleDisconnected(reason, generation),
       connectOptions: connectOptions,
     );
     _configuredURL = url;
@@ -605,12 +624,6 @@ class GatewayConnection {
   // ─────────────────────────────────────────────
 
   void _handle(GatewayPush push) => _broadcast(push);
-
-  void _handleDisconnected(String reason) {
-    if (onDisconnect != null) {
-      onDisconnect!(reason);
-    }
-  }
 
   void _broadcast(GatewayPush push) {
     if (push is GatewayPushSnapshot) {

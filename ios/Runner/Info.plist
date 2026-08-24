@@ -43,6 +43,8 @@
 	<array>
 		<string>_dartobservatory._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>为了让你能扫码添加服务器配置，我们需要访问你的相机。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>为了进行调试和开发，我们需要访问本地网络。</string>
 	<key>NSMicrophoneInjectionUsageDescription</key>

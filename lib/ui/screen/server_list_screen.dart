@@ -10,7 +10,6 @@ import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/server_card.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 /// 服务器列表页（首页）
 class ServerListScreen extends StatefulWidget {
@@ -43,23 +42,20 @@ class _ServerListPageState extends State<ServerListScreen> {
             title: const Text('切换服务器', style: AppTextStyles.headlineMedium),
             elevation: 0,
             actions: [
-              IconButton(
-                key: _exportKey,
-                icon: const Icon(Icons.ios_share_outlined, size: 20),
-                tooltip: '导出配置',
-                onPressed: _exportConfig,
-              ),
-              IconButton(
-                icon: const Icon(Icons.download_outlined, size: 20),
-                tooltip: '导入配置',
-                onPressed: () => _importConfig(),
-              ),
+              // 桌面端无摄像头，不显示扫码入口（扫码由移动端完成）
+              if (!Platform.isMacOS && !Platform.isWindows)
+                IconButton(
+                  icon: const Icon(Icons.qr_code_scanner, size: 20),
+                  tooltip: '扫码添加服务器',
+                  onPressed: _scanQr,
+                ),
               const SizedBox(width: 4),
             ],
           ),
-          body: servers.isEmpty
-              ? _buildEmptyState()
-              : _buildServerList(servers, defaultServer),
+          body:
+              servers.isEmpty
+                  ? _buildEmptyState()
+                  : _buildServerList(servers, defaultServer),
           floatingActionButton: FloatingActionButton(
             elevation: 0,
             onPressed: _addServer,
@@ -171,6 +167,7 @@ class _ServerListPageState extends State<ServerListScreen> {
                         onTap: () => _openChat(servers[i]),
                         onEdit: () => _editServer(servers[i]),
                         onDelete: () => _deleteServer(servers[i]),
+                        onShareQr: () => _shareQr(servers[i]),
                       ),
                     ),
                     if (i < servers.length - 1)
@@ -194,32 +191,61 @@ class _ServerListPageState extends State<ServerListScreen> {
     context.push(Routes.serverEdit);
   }
 
+  void _scanQr() {
+    context.push(Routes.qrScan);
+  }
+
+  void _shareQr(ServerConfig server) {
+    context.push(Routes.qrCode, extra: server);
+  }
+
   void _editServer(ServerConfig server) {
     context.push(Routes.serverEdit, extra: server);
   }
 
   void _deleteServer(ServerConfig server) {
+    // 在弹窗打开前捕获上层依赖，避免弹窗关闭后 dialogContext 失效
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('确认删除'),
         content: Text('确认删除 ${server.name} 吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
-              widget.viewModel.deleteServer(server.id);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('服务器已删除')));
+            onPressed: () async {
+              await widget.viewModel.deleteServer(server.id);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+
+              final servers = widget.viewModel.servers;
+              if (servers.isEmpty) {
+                // 服务器删空：跳回引导页（桌面端），移动端回到添加服务器页
+                if (Platform.isMacOS || Platform.isWindows) {
+                  router.go(Routes.setup);
+                } else {
+                  router.go(Routes.serverEdit);
+                }
+              } else {
+                // 还有服务器：自动选中列表中第一个
+                final first = servers.first;
+                if (widget.viewModel.selectedServer?.id != first.id) {
+                  widget.viewModel.selectServer(first);
+                }
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('服务器已删除')),
+                );
+              }
             },
             child: Text(
               '删除',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.error,
+              ),
             ),
           ),
         ],
@@ -230,109 +256,5 @@ class _ServerListPageState extends State<ServerListScreen> {
   void _openChat(ServerConfig server) {
     widget.viewModel.selectServer(server);
     Navigator.pop(context);
-  }
-
-  Future<void> _exportConfig() async {
-    try {
-      final json = widget.viewModel.exportConfig();
-
-      // 保存到临时文件
-      final tempDir = await getApplicationSupportDirectory();
-      final fileName =
-          'clawchat_config_${DateTime.now().millisecondsSinceEpoch}.json';
-      final filePath = path.join(tempDir.path, fileName);
-
-      final file = File(filePath);
-      await file.writeAsString(json);
-
-      // 获取按钮位置（iOS 分享弹窗锚点）
-      Rect? sharePositionOrigin;
-      final renderBox =
-          _exportKey.currentContext?.findRenderObject() as RenderBox?;
-      if (renderBox != null) {
-        final position = renderBox.localToGlobal(Offset.zero);
-        sharePositionOrigin = position & renderBox.size;
-      }
-
-      // 分享文件
-      final result = await Share.shareXFiles(
-        [XFile(filePath)],
-        subject: '配置备份',
-        sharePositionOrigin: sharePositionOrigin,
-      );
-
-      // 分享完成后清理临时文件
-      if (await file.exists()) {
-        await file.delete();
-      }
-
-      if (mounted && result.status == ShareResultStatus.success) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('配置已导出')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('导出失败: ${e.toString()}')));
-      }
-    }
-  }
-
-  Future<void> _importConfig() async {
-    try {
-      // 选择文件
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-        withData: true,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.first;
-      if (file.bytes == null) {
-        throw Exception('无法读取文件');
-      }
-
-      final jsonString = String.fromCharCodes(file.bytes!);
-
-      // 确认导入
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('导入配置'),
-          content: const Text('确定要导入配置吗？将会覆盖现有配置。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('导入'),
-            ),
-          ],
-        ),
-      );
-
-      if (confirm != true) return;
-
-      // 导入
-      await widget.viewModel.importConfig(jsonString);
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('配置已导入')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('导入失败: ${e.toString()}')));
-      }
-    }
   }
 }

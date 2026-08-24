@@ -34,7 +34,8 @@ class _IndexScreenState extends State<IndexScreen> {
 
   @override
   void dispose() {
-    widget.viewModel.disconnect();
+    // ConnViewModel 是全局 Provider。IndexScreen 可能因服务器切换重建，
+    // 页面销毁不代表应用需要断开网关连接。
     super.dispose();
   }
 

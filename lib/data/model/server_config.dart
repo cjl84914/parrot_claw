@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hive/hive.dart';
 
@@ -81,5 +84,105 @@ abstract class ServerConfig with _$ServerConfig {
     final encodedPath = Uri.encodeComponent(sourcePath);
     // 使用当前配置中的 token
     return '$baseUrl/__openclaw__/assistant-media?token=$token&source=$encodedPath';
+  }
+
+  // ========== 二维码编解码 ==========
+
+  /// 二维码 payload 版本号
+  static const int qrPayloadVersion = 1;
+
+  /// 是否为本地回环地址（扫给其他设备时需替换成本机局域网 IP）
+  static bool isLoopbackHost(String host) {
+    final h = host.trim().toLowerCase();
+    return h == 'localhost' || h == '127.0.0.1' || h == '::1' || h == '0.0.0.0';
+  }
+
+  /// 获取本机局域网 IPv4 地址（非回环、非链路本地）
+  static Future<String?> getLocalIpV4() async{
+    try {
+      final List<NetworkInterface> interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+        includeLinkLocal: false,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (addr.isLoopback || addr.isLinkLocal) continue;
+          // 排除虚拟网卡常见保留段（0.0.0.0 / 广播）
+          final a = addr.address;
+          if (a == '0.0.0.0' || a == '255.255.255.255') continue;
+          return a;
+        }
+      }
+    } catch (_) {
+      // 获取失败时返回 null，调用方保留原 host
+    }
+    return null;
+  }
+
+  /// 生成二维码 payload（紧凑 JSON，短字段名，不含 id/isDefault/lastConnected）
+  ///
+  /// 若 host 为 localhost/127.0.0.1，且本机能取到局域网 IP，则替换后编码，
+  /// 使其他设备扫码后可直接连通本机。
+  Future<String> toQrPayload() async{
+    var hostForQr = host;
+    if (isLoopbackHost(hostForQr)) {
+      final localIp = await getLocalIpV4();
+      if (localIp != null) hostForQr = localIp;
+    }
+    final map = <String, dynamic>{
+      'v': qrPayloadVersion,
+      'n': name,
+      'h': hostForQr,
+      'p': port,
+      'tls': useTLS,
+      'am': authMode,
+    };
+    if (isPasswordAuth) {
+      map['pw'] = password;
+    } else {
+      map['t'] = token;
+    }
+    return jsonEncode(map);
+  }
+
+  /// 从二维码 payload 解析 ServerConfig
+  ///
+  /// [scannedHost] 可选：外部传入实际扫描到的 host（如扫码端自己的回环地址处理），
+  /// 默认为 payload 中的 host。id 重新生成。
+  static ServerConfig? fromQrPayload(
+    String payload, {
+    String? scannedHost,
+  }) {
+    try {
+      final json = jsonDecode(payload);
+      if (json is! Map<String, dynamic>) return null;
+      final version = json['v'];
+      if (version is! int || version != qrPayloadVersion) return null;
+
+      final name = (json['n'] as String?)?.trim() ?? '';
+      var host = (json['h'] as String?)?.trim() ?? '';
+      if (host.isEmpty) return null;
+
+      // 扫描端如果识别到回环地址但实际有可用 host，优先用 payload 内的
+      host = scannedHost ?? host;
+
+      final port = (json['p'] as num?)?.toInt() ?? 18789;
+      final authMode = (json['am'] as String?)?.trim() ?? 'token';
+      final useTLS = json['tls'] == true;
+
+      return ServerConfig(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: name,
+        host: host,
+        port: port,
+        useTLS: useTLS,
+        authMode: authMode,
+        token: authMode == 'password' ? '' : ((json['t'] as String?) ?? ''),
+        password: authMode == 'password' ? ((json['pw'] as String?) ?? '') : '',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }

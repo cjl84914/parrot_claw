@@ -93,6 +93,20 @@ class _ChatScreenState extends State<ChatScreen>
         // }
       },
       onTextResult: (String text) => _sendMessage(text),
+      // 录音/初始化失败不再静默：直接在聊天页提示原因（如 Windows 麦克风权限）
+      onError: (String error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                error,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        }
+      },
       initCallback: () {
         // setState(() {
         //   _isAsrInited = true;

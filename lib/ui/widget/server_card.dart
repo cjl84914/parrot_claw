@@ -8,6 +8,7 @@ class ServerCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onShareQr;
   final bool isDefault;
 
   const ServerCard({
@@ -17,6 +18,7 @@ class ServerCard extends StatelessWidget {
     this.onTap,
     this.onEdit,
     this.onDelete,
+    this.onShareQr,
     this.isDefault = false,
   });
 
@@ -130,6 +132,9 @@ class ServerCard extends StatelessWidget {
                     case 'edit':
                       onEdit?.call();
                       break;
+                    case 'qr':
+                      onShareQr?.call();
+                      break;
                     case 'delete':
                       onDelete?.call();
                       break;
@@ -137,16 +142,16 @@ class ServerCard extends StatelessWidget {
                 },
                 itemBuilder: (context) {
                   return [
-                    PopupMenuItem(
-                      value: 'copy',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.copy_outlined, size: 18, color: AppColors.textSecondary),
-                          const SizedBox(width: 10),
-                          const Text('复制地址', style: AppTextStyles.bodyMedium),
-                        ],
-                      ),
-                    ),
+                    // PopupMenuItem(
+                    //   value: 'copy',
+                    //   child: Row(
+                    //     children: [
+                    //       const Icon(Icons.copy_outlined, size: 18, color: AppColors.textSecondary),
+                    //       const SizedBox(width: 10),
+                    //       const Text('复制地址', style: AppTextStyles.bodyMedium),
+                    //     ],
+                    //   ),
+                    // ),
                     PopupMenuItem(
                       value: 'edit',
                       child: Row(
@@ -154,6 +159,16 @@ class ServerCard extends StatelessWidget {
                           const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
                           const SizedBox(width: 10),
                           const Text('编辑', style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'qr',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.qr_code_rounded, size: 18, color: AppColors.textSecondary),
+                          const SizedBox(width: 10),
+                          const Text('二维码', style: AppTextStyles.bodyMedium),
                         ],
                       ),
                     ),
