@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 
 /// 扫码导入服务器配置页
@@ -79,7 +81,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已添加服务器 ${config.name}')),
         );
-        Navigator.pop(context);
+        context.go(Routes.index);
       } else {
         // 用户取消，继续扫描
         await _controller.start();
@@ -116,7 +118,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('扫码添加服务器'),
+        title: const Text('扫一扫添加服务器'),
         elevation: 0,
       ),
       body: Column(

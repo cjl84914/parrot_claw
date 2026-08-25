@@ -96,10 +96,10 @@ class _SettingScreenState extends State<SettingScreen> {
                     margin: const EdgeInsets.all(10),
                     child: _buildSliders(),
                   ),
-                Card(
-                  margin: const EdgeInsets.all(10),
-                  child: _buildModelConfig(),
-                ),
+                // Card(
+                //   margin: const EdgeInsets.all(10),
+                //   child: _buildModelConfig(),
+                // ),
                 Card(margin: const EdgeInsets.all(10), child: _buildMore()),
               ],
             );

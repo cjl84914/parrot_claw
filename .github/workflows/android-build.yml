@@ -1,0 +1,81 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.1"
+  MODEL_REVISION: "355f4d4884d8afd08aef04b9007a8556d7b463b2"
+  MODEL_BASE_URL: "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable Android support
+        run: flutter config --no-analytics
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Download SenseVoice model
+        shell: bash
+        run: |
+          set -euo pipefail
+          model_dir="assets/senseVoice"
+          mkdir -p "$model_dir"
+
+          model_url="${MODEL_BASE_URL}/${MODEL_REVISION}/model.int8.onnx"
+          tokens_url="${MODEL_BASE_URL}/${MODEL_REVISION}/tokens.txt"
+
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output "$model_dir/model.int8.onnx" \
+            "$model_url"
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output "$model_dir/tokens.txt" \
+            "$tokens_url"
+
+          test -s "$model_dir/model.int8.onnx"
+          test -s "$model_dir/tokens.txt"
+          ls -lh "$model_dir"
+
+      - name: Analyze source
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            "dist/parrot-debug-${GITHUB_RUN_NUMBER}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: parrot-android-debug-${{ github.run_number }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14

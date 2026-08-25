@@ -69,9 +69,9 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              context.push(Routes.more);
+              context.push(Routes.qrScan);
             },
-            child: const Text("帮助"),
+            child: const Text('扫一扫'),
           ),
         ],
       ),
@@ -239,6 +239,12 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                   style: TextStyle(color: Colors.white),
                 ),
               ),
+            ),
+            TextButton(
+              onPressed: () {
+                context.push(Routes.more);
+              },
+              child: const Text('帮助'),
             ),
             const SizedBox(height: 32),
           ],
@@ -408,7 +414,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
           _testError = result.error;
         });
       }
-      GatewayConnection.shared.shutdown();//测试完好断开，否则index不会重新连接
+      GatewayConnection.shared.shutdown(); //测试完好断开，否则index不会重新连接
     } catch (e) {
       if (mounted) {
         setState(() {

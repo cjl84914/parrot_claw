@@ -12,6 +12,17 @@ import 'package:parrot_app/util/parse.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:uuid/uuid.dart';
 
+class _StreamingMessageState {
+  final String id;
+  final String text;
+
+  const _StreamingMessageState({required this.id, required this.text});
+
+  _StreamingMessageState copyWith({String? text}) {
+    return _StreamingMessageState(id: id, text: text ?? this.text);
+  }
+}
+
 class ConnViewModel extends ChangeNotifier {
   final Logger _log = Logger('ConnViewModel');
   var uuid = const Uuid();
@@ -84,6 +95,10 @@ class ConnViewModel extends ChangeNotifier {
   String _runId = '';
 
   String get runId => _runId;
+
+  // A run can contain multiple assistant replies. Keep a client-side ID for
+  // the current cumulative streaming reply so later replies are appended.
+  final Map<String, _StreamingMessageState> _streamingMessages = {};
 
   final bool _talkMode = false;
 
@@ -264,6 +279,7 @@ class ConnViewModel extends ChangeNotifier {
       case 'final':
         if (_runId == runId) {
           _log.info(payload);
+          _clearStreamingMessages(runId);
           _runId = '';
           notifyListeners();
           if (payload['message'] != null) {
@@ -282,6 +298,7 @@ class ConnViewModel extends ChangeNotifier {
       case 'error':
         if (_runId == runId) {
           _log.warning('Chat run $runId ended with state=$state: $payload');
+          _clearStreamingMessages(runId);
           _runId = '';
           notifyListeners();
         }
@@ -582,7 +599,7 @@ class ConnViewModel extends ChangeNotifier {
             final fileName = mediaUrl.split('/').last;
             final type = _mediaType(mediaUrl);
             final message = ChatMessage(
-              id: runId!,
+              id: uuid.v4(),
               role: 'assistant',
               content: [
                 ChatMessageContent(
@@ -679,17 +696,38 @@ class ConnViewModel extends ChangeNotifier {
     return type;
   }
 
-  /// 封装流式消息并回传到流控制器，同时更新本地消息列表
+  /// Push a cumulative streaming reply, or start a new reply when the text
+  /// no longer belongs to the current reply in the same run.
   void _pushStreamingMessage(String text, String? runId) {
     if (text.isEmpty) return;
-    final messageId = runId ?? 'streaming_assistant';
+
+    final key = runId ?? 'streaming_assistant';
+    final previous = _streamingMessages[key];
+    final isContinuation =
+        previous != null &&
+        (text == previous.text || text.startsWith(previous.text));
+    final state =
+        isContinuation
+            ? previous
+            : _StreamingMessageState(id: uuid.v4(), text: text);
+
+    _streamingMessages[key] = state!.copyWith(text: text);
     final message = ChatMessage(
-      id: messageId,
+      id: state.id,
       role: 'assistant',
       content: [ChatMessageContent(type: 'text', text: text)],
       timestamp: DateTime.now().millisecondsSinceEpoch,
+      idempotencyKey: runId,
     );
     messageController.add(message);
+  }
+
+  void _clearStreamingMessages(String? runId) {
+    if (runId == null) {
+      _streamingMessages.clear();
+    } else {
+      _streamingMessages.remove(runId);
+    }
   }
 
   List<dynamic>? _rawModels;

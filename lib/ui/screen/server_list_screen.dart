@@ -1,6 +1,4 @@
 import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
@@ -8,8 +6,6 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/server_card.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 /// 服务器列表页（首页）
 class ServerListScreen extends StatefulWidget {
@@ -22,13 +18,6 @@ class ServerListScreen extends StatefulWidget {
 }
 
 class _ServerListPageState extends State<ServerListScreen> {
-  final _exportKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -44,10 +33,11 @@ class _ServerListPageState extends State<ServerListScreen> {
             actions: [
               // 桌面端无摄像头，不显示扫码入口（扫码由移动端完成）
               if (!Platform.isMacOS && !Platform.isWindows)
-                IconButton(
-                  icon: const Icon(Icons.qr_code_scanner, size: 20),
-                  tooltip: '扫码添加服务器',
-                  onPressed: _scanQr,
+                TextButton(
+                  onPressed: () {
+                    context.push(Routes.qrScan);
+                  },
+                  child: const Text('扫一扫'),
                 ),
               const SizedBox(width: 4),
             ],
@@ -191,10 +181,6 @@ class _ServerListPageState extends State<ServerListScreen> {
     context.push(Routes.serverEdit);
   }
 
-  void _scanQr() {
-    context.push(Routes.qrScan);
-  }
-
   void _shareQr(ServerConfig server) {
     context.push(Routes.qrCode, extra: server);
   }
@@ -209,47 +195,48 @@ class _ServerListPageState extends State<ServerListScreen> {
     final router = GoRouter.of(context);
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确认删除 ${server.name} 吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await widget.viewModel.deleteServer(server.id);
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
-
-              final servers = widget.viewModel.servers;
-              if (servers.isEmpty) {
-                // 服务器删空：跳回引导页（桌面端），移动端回到添加服务器页
-                if (Platform.isMacOS || Platform.isWindows) {
-                  router.go(Routes.setup);
-                } else {
-                  router.go(Routes.serverEdit);
-                }
-              } else {
-                // 还有服务器：自动选中列表中第一个
-                final first = servers.first;
-                if (widget.viewModel.selectedServer?.id != first.id) {
-                  widget.viewModel.selectServer(first);
-                }
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('服务器已删除')),
-                );
-              }
-            },
-            child: Text(
-              '删除',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.error,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('确认删除'),
+            content: Text('确认删除 ${server.name} 吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
               ),
-            ),
+              TextButton(
+                onPressed: () async {
+                  await widget.viewModel.deleteServer(server.id);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+
+                  final servers = widget.viewModel.servers;
+                  if (servers.isEmpty) {
+                    // 服务器删空：跳回引导页（桌面端），移动端回到添加服务器页
+                    if (Platform.isMacOS || Platform.isWindows) {
+                      router.go(Routes.setup);
+                    } else {
+                      router.go(Routes.serverEdit);
+                    }
+                  } else {
+                    // 还有服务器：自动选中列表中第一个
+                    final first = servers.first;
+                    if (widget.viewModel.selectedServer?.id != first.id) {
+                      widget.viewModel.selectServer(first);
+                    }
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('服务器已删除')),
+                    );
+                  }
+                },
+                child: Text(
+                  '删除',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.error,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
