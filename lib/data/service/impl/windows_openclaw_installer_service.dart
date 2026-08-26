@@ -451,7 +451,7 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
 
   String _firstPathLine(dynamic value) {
     if (value is! String) return '';
-    for (final line in value.split(RegExp(r'[\\r\\n]+'))) {
+    for (final line in value.split(RegExp(r'[\r\n]+'))) {
       final path = line.trim();
       if (path.isNotEmpty) return path;
     }
