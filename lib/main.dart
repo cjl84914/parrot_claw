@@ -133,7 +133,11 @@ List<SingleChildWidget> providersLocal(
     ),
     // 本地引导 ViewModel
     ChangeNotifierProvider(
-      create: (context) => SetupViewModel(repository: context.read()),
+      create:
+          (context) => SetupViewModel(
+            repository: context.read(),
+            modelService: context.read(),
+          ),
     ),
     ChangeNotifierProvider(
       create:

@@ -67,6 +67,11 @@ class ServerRepository extends ChangeNotifier {
     await _storage.deleteServer(id);
     _servers = _servers.where((s) => s.id != id).toList();
 
+    // 删除当前服务器后，选中项必须始终指向现有配置。
+    if (_selectedServer?.id == id) {
+      _selectedServer = _servers.isEmpty ? null : defaultServer;
+    }
+
     // 如果删的是默认服务器，重新设置默认
     final remaining = _servers.where((s) => s.isDefault).toList();
     if (remaining.isEmpty && _servers.isNotEmpty) {

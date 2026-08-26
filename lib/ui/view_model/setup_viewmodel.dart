@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/local_gateway_repository.dart';
+import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/openclaw_model_service.dart';
 import 'package:parrot_app/util/result.dart';
 
 /// 本地网关引导流程状态
@@ -36,11 +38,16 @@ enum LocalSetupPhase {
 /// 管理"检测本机 → 连接/安装"引导流程的 UI 状态。
 /// 遵循项目现有风格：ChangeNotifier + 状态字段 + async 方法。
 class SetupViewModel extends ChangeNotifier {
-  SetupViewModel({required LocalGatewayRepository repository, Logger? logger})
-    : _repository = repository,
-      _log = logger ?? Logger('LocalSetupViewModel');
+  SetupViewModel({
+    required LocalGatewayRepository repository,
+    required OpenClawModelService modelService,
+    Logger? logger,
+  }) : _repository = repository,
+       _modelService = modelService,
+       _log = logger ?? Logger('LocalSetupViewModel');
 
   final LocalGatewayRepository _repository;
+  final OpenClawModelService _modelService;
   final Logger _log;
 
   LocalSetupPhase _phase = LocalSetupPhase.detecting;
@@ -62,15 +69,32 @@ class SetupViewModel extends ChangeNotifier {
   String? _version;
   String? get version => _version;
 
+  // 页面可能因路由重定向或依赖更新而重建；初始化检测只允许执行一次。
+  Future<void>? _initFuture;
+
   /// 是否正在忙（检测/安装中）
   bool get isBusy =>
       _phase == LocalSetupPhase.detecting ||
       _phase == LocalSetupPhase.installing ||
       _phase == LocalSetupPhase.starting;
 
-  /// 初始化：进入界面时自动触发检测
+  /// 初始化：进入界面时自动触发检测。
+  ///
+  /// 允许多个页面实例同时调用，但同一轮初始化实际检测只执行一次。
   Future<void> init() async {
-    await detect();
+    final running = _initFuture;
+    if (running != null) {
+      await running;
+      return;
+    }
+
+    final future = detect();
+    _initFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_initFuture, future)) _initFuture = null;
+    }
   }
 
   /// 检测本机 OpenClaw 状态
@@ -102,10 +126,10 @@ class SetupViewModel extends ChangeNotifier {
     }
   }
 
-  /// 把本地服务器加入列表并选中
+  /// 把本地服务器加入列表并选中。
   ///
-  /// 返回添加的服务器；失败返回 null。
-  Future<ServerConfig?> connectLocal() async {
+  /// 返回添加的服务器及是否已经配置模型；失败返回 null。
+  Future<({ServerConfig server, bool hasModel})?> connectLocal() async {
     _errorMessage = null;
     final result = await _repository.ensureLocalServerAdded();
     if (result is Error<ServerConfig?>) {
@@ -114,10 +138,29 @@ class SetupViewModel extends ChangeNotifier {
       return null;
     }
     final server = (result as Ok<ServerConfig?>).value;
-    if (server != null) {
+    if (server == null) return null;
+
+    try {
+      await _configureGateway(server);
+      final models = await _modelService.loadModels();
       _addLog('已添加本机服务器: ${server.name} (${server.displayAddress})');
+      _addLog(
+        models.isEmpty ? '未检测到已配置模型，需要完成模型配置' : '检测到已配置模型 ${models.length} 个',
+      );
+      return (server: server, hasModel: models.isNotEmpty);
+    } catch (error) {
+      _errorMessage = error.toString();
+      _setPhase(LocalSetupPhase.error);
+      return null;
     }
-    return server;
+  }
+
+  Future<void> _configureGateway(ServerConfig server) {
+    return GatewayConnection.shared.configure(
+      url: server.wsUrl,
+      token: server.isTokenAuth ? server.token : null,
+      password: server.isPasswordAuth ? server.password : null,
+    );
   }
 
   /// 启动本机 gateway

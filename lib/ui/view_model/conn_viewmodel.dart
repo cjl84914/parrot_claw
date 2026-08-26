@@ -128,6 +128,12 @@ class ConnViewModel extends ChangeNotifier {
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
   bool _manualDisconnect = false;
 
+  /// 每次主动断开时递增，使此前尚未完成的连接流程失效。
+  ///
+  /// 服务器删除可能发生在 WebSocket 握手过程中。没有该标记时，旧连接
+  /// 在 shutdown() 之后仍可能完成握手，并重新建立已删除服务器的连接。
+  int _connectionEpoch = 0;
+
   /// 连接服务器（串行化）
   ///
   /// ServerRepository 的每次变更都会触发本方法（添加/选择/更新/删除），
@@ -152,17 +158,22 @@ class ConnViewModel extends ChangeNotifier {
     if (_connected && _config == config) {
       return;
     }
+    final epoch = _connectionEpoch;
     final completer = Completer<void>();
     _pendingConnect = completer.future;
     try {
-      await _doConnect(config);
+      await _doConnect(config, epoch);
     } finally {
       _pendingConnect = null;
       completer.complete();
     }
   }
 
-  Future<void> _doConnect(ServerConfig config) async {
+  Future<void> _doConnect(ServerConfig config, int epoch) async {
+    if (epoch != _connectionEpoch ||
+        _serverRepository.selectedServer?.id != config.id) {
+      return;
+    }
     _manualDisconnect = false;
     _gatewaySub?.cancel();
     _config = config;
@@ -202,6 +213,11 @@ class ConnViewModel extends ChangeNotifier {
         token: config.token,
         password: config.password,
       );
+      if (epoch != _connectionEpoch ||
+          _serverRepository.selectedServer?.id != config.id) {
+        await GatewayConnection.shared.shutdown();
+        return;
+      }
       // configure() returns only after the authenticated WebSocket handshake.
       // Use it as a fallback when a snapshot was emitted before this listener
       // was attached or when the snapshot health payload has another shape.
@@ -209,6 +225,10 @@ class ConnViewModel extends ChangeNotifier {
         _markConnected(null);
       }
     } catch (e) {
+      if (epoch != _connectionEpoch ||
+          _serverRepository.selectedServer?.id != config.id) {
+        return;
+      }
       _isConnecting = false;
       _connected = false;
       disconnectReason = e.toString();
@@ -371,13 +391,18 @@ class ConnViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void disconnect() {
+  Future<void> disconnect() async {
+    _log.info('shutdown sessionKey: $_sessionKey');
+    _connectionEpoch++;
     _manualDisconnect = true;
-    _sessionKey = null; // 🌟 修复点 2：主动断开时清空残留 sessionKey
+    _sessionKey = null;
     _sessions = [];
     _connected = false;
     _isConnecting = false;
-    GatewayConnection.shared.shutdown();
+    _config = null;
+    disconnectReason = null;
+    notifyListeners();
+    await GatewayConnection.shared.shutdown();
   }
 
   Future<void> reconnect() async {

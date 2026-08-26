@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'package:provider/provider.dart';
 import 'package:parrot_app/ui/widget/server_card.dart';
 
 /// 服务器列表页（首页）
@@ -206,6 +208,11 @@ class _ServerListPageState extends State<ServerListScreen> {
               ),
               TextButton(
                 onPressed: () async {
+                  final isCurrentServer =
+                      widget.viewModel.selectedServer?.id == server.id;
+                  if (isCurrentServer) {
+                    await context.read<ConnViewModel>().disconnect();
+                  }
                   await widget.viewModel.deleteServer(server.id);
                   if (dialogContext.mounted) Navigator.pop(dialogContext);
 
@@ -218,11 +225,6 @@ class _ServerListPageState extends State<ServerListScreen> {
                       router.go(Routes.serverEdit);
                     }
                   } else {
-                    // 还有服务器：自动选中列表中第一个
-                    final first = servers.first;
-                    if (widget.viewModel.selectedServer?.id != first.id) {
-                      widget.viewModel.selectServer(first);
-                    }
                     messenger.showSnackBar(
                       const SnackBar(content: Text('服务器已删除')),
                     );

@@ -417,10 +417,10 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _connect() async {
     setState(() => _connecting = true);
     try {
-      final server = await widget.viewModel.connectLocal();
+      final result = await widget.viewModel.connectLocal();
       if (!mounted) return;
-      if (server != null) {
-        context.go(Routes.setupModel);
+      if (result != null) {
+        context.go(result.hasModel ? Routes.index : Routes.setupModel);
       } else {
         ScaffoldMessenger.of(
           context,
