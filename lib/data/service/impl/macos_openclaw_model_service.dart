@@ -255,12 +255,6 @@ class MacOSOpenClawModelService implements OpenClawModelService {
   Future<List<Directory>> _openClawExtensionDirectories() async {
     final roots = <Directory>[
       Directory('${MacOSOpenClawEnvironment.homePath}/.openclaw/extensions'),
-      Directory(
-        '${MacOSOpenClawEnvironment.homePath}/.openclaw/node_modules/openclaw/extensions',
-      ),
-      Directory('/usr/local/lib/node_modules/openclaw/extensions'),
-      Directory('/opt/homebrew/lib/node_modules/openclaw/extensions'),
-      Directory('/Users/alexcai/workspace/openclaw/extensions'),
     ];
     final directories = <Directory>[];
     final seen = <String>{};

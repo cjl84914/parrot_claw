@@ -48,24 +48,19 @@ class WindowsLocalGatewayService implements LocalGatewayService {
   @override
   Future<bool> isOpenClawInstalled() async {
     try {
-      final pathResult = await Process.run(
-        'where.exe',
-        ['openclaw'],
-        environment: WindowsOpenClawEnvironment.openClawProcessEnvironment,
-        runInShell: true,
-      );
-      final path = _firstPathLine(pathResult.stdout);
-      if (path.isEmpty) return false;
+      final environment = WindowsOpenClawEnvironment.openClawProcessEnvironment;
+      // Always verify the exact executable that will be used by the app.
+      // Do not rely on a separate `where openclaw` result: npm may install the
+      // command beside the bundled Node rather than in %APPDATA%\\npm.
+      final executable = await _resolveOpenClaw(environment);
+      if (executable == null) return false;
       final nodePathResult = await Process.run(
         'where.exe',
         ['node.exe'],
-        environment: WindowsOpenClawEnvironment.openClawProcessEnvironment,
+        environment: environment,
         runInShell: true,
       );
       final nodePath = _firstPathLine(nodePathResult.stdout);
-      final environment = WindowsOpenClawEnvironment.openClawProcessEnvironment;
-      final executable = await _resolveOpenClaw(environment);
-      if (executable == null) return false;
       final result = await Process.run(
         'cmd.exe',
         ['/d', '/s', '/c', executable, '--version'],
@@ -77,7 +72,7 @@ class WindowsLocalGatewayService implements LocalGatewayService {
       final installed = result.exitCode == 0 && stdout.isNotEmpty;
       _log.fine(
         'isOpenClawInstalled: $installed '
-        'openclawPath=$path nodePath=$nodePath '
+        'openclawPath=$executable nodePath=$nodePath '
         'exitCode=${result.exitCode} stdout=$stdout stderr=$stderr',
       );
       return installed;
@@ -280,8 +275,14 @@ class WindowsLocalGatewayService implements LocalGatewayService {
   }
 
   Future<String?> _resolveOpenClaw(Map<String, String> environment) async {
-    final configured = File(WindowsOpenClawEnvironment.openClawExecutable);
-    if (await configured.exists()) return configured.path;
+    final candidates = <String>[
+      WindowsOpenClawEnvironment.openClawExecutable,
+      '${WindowsOpenClawEnvironment.nodeHomePath}\\openclaw.cmd',
+    ];
+    for (final candidate in candidates) {
+      if (await File(candidate).exists()) return candidate;
+    }
+
     final result = await Process.run(
       'where.exe',
       ['openclaw.cmd'],
@@ -311,7 +312,7 @@ class WindowsLocalGatewayService implements LocalGatewayService {
 
   String _firstPathLine(dynamic value) {
     if (value is! String) return '';
-    for (final line in value.split(RegExp(r'[\\r\\n]+'))) {
+    for (final line in value.split(RegExp(r'[\r\n]+'))) {
       final path = line.trim();
       if (path.isNotEmpty) return path;
     }

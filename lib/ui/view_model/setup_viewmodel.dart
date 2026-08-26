@@ -124,7 +124,7 @@ class SetupViewModel extends ChangeNotifier {
   Future<bool> startGateway() async {
     _setPhase(LocalSetupPhase.starting);
     _errorMessage = null;
-    _addLog('正在启动 OpenClaw 网关...');
+    // _addLog('正在启动 OpenClaw 网关...');
 
     final result = await _repository.startGateway(onOutput: _addLog);
     if (result is Error<LocalGatewayStatus>) {
