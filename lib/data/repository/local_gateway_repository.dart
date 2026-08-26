@@ -230,6 +230,9 @@ class LocalGatewayRepository extends ChangeNotifier {
       // 3. 验证
       final version = await _installerService.verifyInstall();
       if (version == null) {
+        onOutput?.call(
+          '安装命令已结束，但 openclaw --version 未能成功执行。请检查上方 npm 输出中的错误或 allow-scripts 提示。',
+        );
         throw Exception('OpenClaw 安装后验证失败');
       }
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
@@ -67,6 +69,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       appBar: AppBar(
         title: Text(_isEditing ? '编辑服务器' : '添加服务器'),
         actions: [
+          if (Platform.isAndroid || Platform.isIOS)
           TextButton(
             onPressed: () {
               context.push(Routes.qrScan);
@@ -414,7 +417,6 @@ class _ServerEditPageState extends State<ServerEditScreen> {
           _testError = result.error;
         });
       }
-      GatewayConnection.shared.shutdown(); //测试完好断开，否则index不会重新连接
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -423,6 +425,11 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         });
       }
     } finally {
+      try {
+        await GatewayConnection.shared.shutdown();
+      } catch (e) {
+        print('[ParrotClaw] Failed to close test connection: $e');
+      }
       if (mounted) {
         setState(() {
           _isTesting = false;

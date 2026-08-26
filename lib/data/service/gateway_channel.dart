@@ -388,6 +388,7 @@ class GatewayChannelActor {
 
     await _taskSubscription?.cancel();
     _taskSubscription = null;
+    _listening = false;
     _task?.sink.close();
     _task = null;
 
@@ -468,6 +469,7 @@ class GatewayChannelActor {
       // 二次调用 disconnectHandler 并意外调度底层自动重连。
       await _taskSubscription?.cancel();
       _taskSubscription = null;
+      _listening = false;
       _task?.sink.close();
       _task = null;
       _disconnectHandler?.call('connect failed: $e');
@@ -647,9 +649,6 @@ class GatewayChannelActor {
   // ── sendConnect  (≈ Swift private func sendConnect()) ───────────────
 
   Future<void> _sendConnect() async {
-    final identity = await DeviceIdentityManager.getOrCreate();
-    final signedAtMs = DateTime.now().millisecondsSinceEpoch;
-
     final options =
         connectOptions ??
         const GatewayConnectOptions(
@@ -678,17 +677,23 @@ class GatewayChannelActor {
     // Step 1: wait for connect.challenge (nonce)
     final connectNonce = await _waitForConnectChallenge();
 
-    // Build device auth payload (mirrors Swift GatewayDeviceAuthPayload.buildV3)
-    final authPayload = identity.buildAuthPayload(
-      clientId: clientId,
-      clientMode: clientMode,
-      role: role,
-      scopes: scopes,
-      signedAtMs: signedAtMs,
-      token: _token,
-      nonce: connectNonce,
-    );
-    final signature = identity.signPayload(authPayload);
+    DeviceIdentity? identity;
+    int? signedAtMs;
+    String? signature;
+    if (options.includeDeviceIdentity) {
+      identity = await DeviceIdentityManager.getOrCreate();
+      signedAtMs = DateTime.now().millisecondsSinceEpoch;
+      final authPayload = identity.buildAuthPayload(
+        clientId: clientId,
+        clientMode: clientMode,
+        role: role,
+        scopes: scopes,
+        signedAtMs: signedAtMs,
+        token: _token,
+        nonce: connectNonce,
+      );
+      signature = identity.signPayload(authPayload);
+    }
 
     final reqId = const Uuid().v4();
 
@@ -736,8 +741,8 @@ class GatewayChannelActor {
     // Device identity block (mirrors Swift params["device"] = ...)
     if (options.includeDeviceIdentity) {
       params['device'] = {
-        'id': identity.deviceId,
-        'publicKey': identity.publicKey,
+        'id': identity!.deviceId,
+        'publicKey': identity!.publicKey,
         'signature': signature,
         'signedAt': signedAtMs,
         'nonce': connectNonce,

@@ -164,6 +164,7 @@ class WindowsLocalGatewayService implements LocalGatewayService {
   Future<int> startGateway({void Function(String line)? onOutput}) async {
     try {
       onOutput?.call('正在启动 OpenClaw 网关...');
+      await WindowsOpenClawEnvironment.ensureGatewayTokenForLan();
       final process = await Process.start(
         'cmd.exe',
         [

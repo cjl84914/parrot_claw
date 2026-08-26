@@ -44,6 +44,19 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _SetupModelColors.background,
+      appBar: AppBar(
+        actions: [
+          TextButton.icon(
+            onPressed: () => context.push(Routes.serverEdit),
+            icon: const Icon(Icons.tune, size: 18),
+            label: const Text('手动配置 Gateway'),
+            style: TextButton.styleFrom(
+              foregroundColor: _SetupModelColors.textSecondary,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.viewModel,
@@ -72,37 +85,6 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                color: Colors.white,
-                size: 30,
-              ),
-            ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () => context.push(Routes.serverEdit),
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('手动配置 Gateway'),
-              style: TextButton.styleFrom(
-                foregroundColor: _SetupModelColors.textSecondary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 16),
         const Text('配置模型能力', style: AppTextStyles.headlineLarge),
         const SizedBox(height: 8),

@@ -18,6 +18,7 @@ import 'package:parrot_app/data/service/openclaw_installer_service.dart';
 /// 本实现使用 Windows Node ZIP 和 npm.cmd，并通过国内镜像安装 OpenClaw：
 /// - Node：npmmirror.com/mirrors/node/ 下载 Windows x64/arm64 ZIP，解压即用
 /// - OpenClaw：npm install -g openclaw --registry=https://registry.npmmirror.com
+///   npm 11.16+ / 12+ 还需显式授权 OpenClaw 的生命周期脚本。
 ///
 /// 架构：无状态 Service，由 Repository 消费，不包含业务逻辑。
 class WindowsOpenClawInstallerService implements OpenClawInstallerService {
@@ -123,6 +124,11 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
       final npmVersion = await _readNpmVersion(resolvedNpm, npmEnvironment);
       if (_requiresScriptApproval(npmVersion)) {
         npmArgs.add('--allow-scripts=openclaw');
+        onOutput?.call(
+          '检测到 npm $npmVersion，已授权 OpenClaw 安装所需的生命周期脚本。',
+        );
+      } else if (npmVersion == null) {
+        onOutput?.call('无法读取 npm 版本，将按当前 npm 默认策略安装。');
       }
 
       final process = await Process.start(
@@ -133,7 +139,7 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
       );
 
       process.stdout
-          .transform(utf8.decoder)
+          .transform(const SystemEncoding().decoder)
           .transform(const LineSplitter())
           .listen((line) {
             _log.fine('[npm] $line');
@@ -141,7 +147,7 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
           });
 
       process.stderr
-          .transform(utf8.decoder)
+          .transform(const SystemEncoding().decoder)
           .transform(const LineSplitter())
           .listen((line) {
             _log.fine('[npm:err] $line');
@@ -423,7 +429,7 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
   bool _requiresScriptApproval(String? version) {
     final match = version == null
         ? null
-        : RegExp(r'^(\\d+)\\.(\\d+)\\.(\\d+)').firstMatch(version);
+        : RegExp(r'^(\d+)\.(\d+)\.(\d+)').firstMatch(version.trim());
     if (match == null) return false;
     final major = int.parse(match.group(1)!);
     final minor = int.parse(match.group(2)!);

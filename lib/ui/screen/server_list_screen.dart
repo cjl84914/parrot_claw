@@ -32,7 +32,7 @@ class _ServerListPageState extends State<ServerListScreen> {
             elevation: 0,
             actions: [
               // 桌面端无摄像头，不显示扫码入口（扫码由移动端完成）
-              if (!Platform.isMacOS && !Platform.isWindows)
+              if (Platform.isAndroid || Platform.isIOS)
                 TextButton(
                   onPressed: () {
                     context.push(Routes.qrScan);

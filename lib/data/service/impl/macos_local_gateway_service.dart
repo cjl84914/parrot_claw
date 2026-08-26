@@ -32,6 +32,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
   // starts its own foreground process.
   bool _isolatedGatewayStarted = false;
   Process? _isolatedGatewayProcess;
+  String? _isolatedGatewayToken;
 
   /// OpenClaw 默认网关端口
   static const int defaultGatewayPort = 18789;
@@ -106,7 +107,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     final effectiveToken =
         MacOSOpenClawEnvironment.useIsolatedOpenClawSetupEnv &&
                 _isolatedGatewayStarted
-            ? MacOSOpenClawEnvironment.isolatedGatewayToken
+            ? _isolatedGatewayToken
             : token;
     try {
       await GatewayConnection.shared
@@ -212,18 +213,21 @@ class MacOSLocalGatewayService implements LocalGatewayService {
       return _waitForIsolatedGateway(onOutput: onOutput);
     }
 
+    final token = await MacOSOpenClawEnvironment.ensureIsolatedGatewayToken();
+    _isolatedGatewayToken = token;
     final process = await Process.start(
       'openclaw',
       [
         'gateway',
         'run',
-        '--dev',
+        '--bind',
+        'lan',
         '--port',
         '$defaultGatewayPort',
         '--auth',
         'token',
         '--token',
-        MacOSOpenClawEnvironment.isolatedGatewayToken,
+        token,
       ],
       environment: MacOSOpenClawEnvironment.openClawProcessEnvironment,
       runInShell: true,
@@ -235,6 +239,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
       if (identical(_isolatedGatewayProcess, process)) {
         _isolatedGatewayProcess = null;
         _isolatedGatewayStarted = false;
+        _isolatedGatewayToken = null;
       }
       _log.info('isolated gateway process exited: $exitCode');
     });
@@ -247,10 +252,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     final deadline = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(deadline)) {
       if (_isolatedGatewayProcess == null) return 1;
-      if (await isGatewayAt(
-        defaultGatewayPort,
-        token: MacOSOpenClawEnvironment.isolatedGatewayToken,
-      )) {
+      if (await isGatewayAt(defaultGatewayPort, token: _isolatedGatewayToken)) {
         onOutput?.call('隔离 OpenClaw 网关已完成鉴权并就绪');
         return 0;
       }
@@ -287,9 +289,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
   Future<LocalGatewayCredentials> readGatewayCredentials() async {
     if (MacOSOpenClawEnvironment.useIsolatedOpenClawSetupEnv &&
         _isolatedGatewayStarted) {
-      return const LocalGatewayCredentials(
-        token: MacOSOpenClawEnvironment.isolatedGatewayToken,
-      );
+      return LocalGatewayCredentials(token: _isolatedGatewayToken);
     }
 
     final file = File(
@@ -298,9 +298,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     if (!await file.exists()) {
       if (MacOSOpenClawEnvironment.useIsolatedOpenClawSetupEnv &&
           _isolatedGatewayStarted) {
-        return const LocalGatewayCredentials(
-          token: MacOSOpenClawEnvironment.isolatedGatewayToken,
-        );
+        return LocalGatewayCredentials(token: _isolatedGatewayToken);
       }
       final token = await _readGatewayTokenFromCli();
       if (token != null) {
