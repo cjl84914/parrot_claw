@@ -123,7 +123,9 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
       ];
       final npmVersion = await _readNpmVersion(resolvedNpm, npmEnvironment);
       if (_requiresScriptApproval(npmVersion)) {
-        npmArgs.add('--allow-scripts=openclaw');
+        npmArgs.add(
+          '--allow-scripts=openclaw,@google/genai,protobufjs,tree-sitter-bash',
+        );
         onOutput?.call(
           '检测到 npm $npmVersion，已授权 OpenClaw 安装所需的生命周期脚本。',
         );
@@ -133,9 +135,9 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
 
       final process = await Process.start(
         'cmd.exe',
-        ['/d', '/s', '/c', resolvedNpm, ...npmArgs],
+        ['/d', '/s', '/c', _cmdLine(resolvedNpm, npmArgs)],
         environment: npmEnvironment,
-        runInShell: true,
+        runInShell: false,
       );
 
       process.stdout
@@ -176,12 +178,18 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
       if (executable == null) return null;
       final result = await Process.run(
         'cmd.exe',
-        ['/d', '/s', '/c', executable, '--version'],
+        ['/d', '/s', '/c', _cmdLine(executable, const ['--version'])],
         environment: environment,
-        runInShell: true,
+        runInShell: false,
+      );
+      final stdout = (result.stdout as String).trim();
+      final stderr = (result.stderr as String).trim();
+      _log.info(
+        'OpenClaw verify: path=$executable exitCode=${result.exitCode} '
+        'stdout=$stdout stderr=$stderr',
       );
       if (result.exitCode != 0) return null;
-      final version = (result.stdout as String).trim();
+      final version = _extractVersion(stdout);
       _log.info('OpenClaw version: $version');
       return version.isEmpty ? null : version;
     } catch (e) {
@@ -419,11 +427,28 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
   ) async {
     final result = await Process.run(
       'cmd.exe',
-      ['/d', '/s', '/c', npmPath, '--version'],
+      ['/d', '/s', '/c', _cmdLine(npmPath, const ['--version'])],
       environment: environment,
-      runInShell: true,
+      runInShell: false,
     );
     return result.exitCode == 0 ? _firstPathLine(result.stdout) : null;
+  }
+
+  String _cmdLine(String executable, List<String> args) {
+    final quotedExecutable = '"${executable.replaceAll('"', '\\"')}"';
+    return [quotedExecutable, ...args.map(_quoteCmdArg)].join(' ');
+  }
+
+  String _quoteCmdArg(String arg) {
+    if (arg.isEmpty || RegExp(r'[\s"]').hasMatch(arg)) {
+      return '"${arg.replaceAll('"', '\\"')}"';
+    }
+    return arg;
+  }
+
+  String _extractVersion(String output) {
+    final match = RegExp(r'v?\d+\.\d+\.\d+(?:[-+][^\s]+)?').firstMatch(output);
+    return match?.group(0) ?? '';
   }
 
   bool _requiresScriptApproval(String? version) {
