@@ -160,28 +160,53 @@ class WindowsLocalGatewayService implements LocalGatewayService {
     try {
       onOutput?.call('正在启动 OpenClaw 网关...');
       await WindowsOpenClawEnvironment.ensureGatewayTokenForLan();
-      final process = await Process.start(
-        'cmd.exe',
-        [
-          '/d',
-          '/s',
-          '/c',
-          await _requireOpenClaw(),
-          'gateway',
-          'restart',
-        ],
-        environment: WindowsOpenClawEnvironment.openClawProcessEnvironment,
-        runInShell: true,
-      );
+      final executable = await _requireOpenClaw();
+      final environment = WindowsOpenClawEnvironment.openClawProcessEnvironment;
 
-      _listenProcessOutput(process, onOutput);
-      final exitCode = await process.exitCode;
-      _log.info('gateway start finished, exitCode=$exitCode');
-      return exitCode;
+      // `gateway restart` only reports the missing service and exits 0 on a
+      // fresh Windows installation. Install the managed task first, then
+      // restart it so the caller can wait for the real WebSocket readiness.
+      final installExitCode = await _runGatewayCommand(
+        executable,
+        const ['gateway', 'install'],
+        environment: environment,
+        onOutput: onOutput,
+      );
+      if (installExitCode != 0) {
+        _log.warning(
+          'gateway install failed, exitCode=$installExitCode',
+        );
+        return installExitCode;
+      }
+
+      final restartExitCode = await _runGatewayCommand(
+        executable,
+        const ['gateway', 'restart'],
+        environment: environment,
+        onOutput: onOutput,
+      );
+      _log.info('gateway start finished, exitCode=$restartExitCode');
+      return restartExitCode;
     } catch (e) {
       _log.warning('startGateway error: $e');
       rethrow;
     }
+  }
+
+  Future<int> _runGatewayCommand(
+    String executable,
+    List<String> args, {
+    required Map<String, String> environment,
+    void Function(String line)? onOutput,
+  }) async {
+    final process = await Process.start(
+      'cmd.exe',
+      ['/d', '/s', '/c', executable, ...args],
+      environment: environment,
+      runInShell: true,
+    );
+    _listenProcessOutput(process, onOutput);
+    return process.exitCode;
   }
 
   void _listenProcessOutput(
