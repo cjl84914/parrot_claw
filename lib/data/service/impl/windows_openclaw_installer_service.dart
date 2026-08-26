@@ -135,9 +135,9 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
 
       final process = await Process.start(
         'cmd.exe',
-        ['/d', '/s', '/c', _cmdLine(resolvedNpm, npmArgs)],
+        ['/d', '/s', '/c', resolvedNpm, ...npmArgs],
         environment: npmEnvironment,
-        runInShell: false,
+        runInShell: true,
       );
 
       process.stdout
@@ -178,9 +178,9 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
       if (executable == null) return null;
       final result = await Process.run(
         'cmd.exe',
-        ['/d', '/s', '/c', _cmdLine(executable, const ['--version'])],
+        ['/d', '/s', '/c', executable, '--version'],
         environment: environment,
-        runInShell: false,
+        runInShell: true,
       );
       final stdout = (result.stdout as String).trim();
       final stderr = (result.stderr as String).trim();
@@ -427,23 +427,11 @@ class WindowsOpenClawInstallerService implements OpenClawInstallerService {
   ) async {
     final result = await Process.run(
       'cmd.exe',
-      ['/d', '/s', '/c', _cmdLine(npmPath, const ['--version'])],
+      ['/d', '/s', '/c', npmPath, '--version'],
       environment: environment,
-      runInShell: false,
+      runInShell: true,
     );
     return result.exitCode == 0 ? _firstPathLine(result.stdout) : null;
-  }
-
-  String _cmdLine(String executable, List<String> args) {
-    final quotedExecutable = '"${executable.replaceAll('"', '\\"')}"';
-    return [quotedExecutable, ...args.map(_quoteCmdArg)].join(' ');
-  }
-
-  String _quoteCmdArg(String arg) {
-    if (arg.isEmpty || RegExp(r'[\s"]').hasMatch(arg)) {
-      return '"${arg.replaceAll('"', '\\"')}"';
-    }
-    return arg;
   }
 
   String _extractVersion(String output) {
