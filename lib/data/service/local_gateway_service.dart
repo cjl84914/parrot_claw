@@ -1,3 +1,21 @@
+/// 本机 Gateway 进程状态。
+enum LocalGatewayProcessState { running, stopped, unknown }
+
+/// 不依赖 WebSocket 鉴权的本机 Gateway 服务状态。
+class LocalGatewayServiceStatus {
+  final LocalGatewayProcessState state;
+  final int? port;
+  final String? address;
+
+  const LocalGatewayServiceStatus({
+    required this.state,
+    this.port,
+    this.address,
+  });
+
+  bool get running => state == LocalGatewayProcessState.running;
+}
+
 /// Local OpenClaw Gateway credentials.
 class LocalGatewayCredentials {
   final String? token;
@@ -26,7 +44,12 @@ abstract interface class LocalGatewayService {
 
   Future<int?> detectGatewayPort();
 
+  /// 查询本机 Gateway 服务状态，不要求 WebSocket 鉴权成功。
+  Future<LocalGatewayServiceStatus> queryGatewayStatus();
+
   Future<int> startGateway({void Function(String line)? onOutput});
+
+  Future<int> stopGateway({void Function(String line)? onOutput});
 
   Future<LocalGatewayCredentials> readGatewayCredentials();
 }

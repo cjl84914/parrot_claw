@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
@@ -85,8 +87,20 @@ class _SettingScreenState extends State<SettingScreen> {
         child: ListenableBuilder(
           listenable: context.read<SettingRepository>(),
           builder: (context, child) {
+            final selectedServer =
+                context.watch<ServerRepository>().selectedServer;
+            final isLocalGateway =
+                Platform.isMacOS || Platform.isWindows
+                    ? selectedServer != null &&
+                        ServerConfig.isLoopbackHost(selectedServer.host)
+                    : false;
             return Column(
               children: [
+                if (isLocalGateway)
+                  Card(
+                    margin: const EdgeInsets.all(10),
+                    child: _buildGatewayControl(),
+                  ),
                 Card(
                   margin: const EdgeInsets.all(10),
                   child: _buildTtsSetting(),
@@ -239,6 +253,18 @@ class _SettingScreenState extends State<SettingScreen> {
           setState(() {});
         },
       ),
+    );
+  }
+
+  Widget _buildGatewayControl() {
+    return ListTile(
+      title: const Text('OpenClaw Gateway', style: TextStyle(fontSize: 12)),
+      subtitle: const Text(
+        '查看状态并启动或关闭本机网关',
+        style: TextStyle(color: Colors.grey, fontSize: 10),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: () => context.push(Routes.gatewayControl),
     );
   }
 

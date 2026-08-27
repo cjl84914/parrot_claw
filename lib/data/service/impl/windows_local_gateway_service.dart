@@ -131,6 +131,92 @@ class WindowsLocalGatewayService implements LocalGatewayService {
     }
   }
 
+  /// 查询 Windows 受管 Gateway 服务状态。
+  ///
+  /// 该方法不做 WebSocket 握手，因此不会因 token 错误把 running 判成 stopped。
+  @override
+  Future<LocalGatewayServiceStatus> queryGatewayStatus() async {
+    final cliStatus = await _queryGatewayStatusFromCli();
+    if (cliStatus?.running == true) return cliStatus!;
+
+    // CLI 可能只反映 Windows 服务未加载；如果端口已有 Gateway 进程监听，
+    // 仍然应该显示 Gateway running。
+    for (final port in commonGatewayPorts) {
+      if (await _isTcpPortOpen(port)) {
+        return LocalGatewayServiceStatus(
+          state: LocalGatewayProcessState.running,
+          port: port,
+          address: '127.0.0.1:$port',
+        );
+      }
+    }
+    return cliStatus ??
+        const LocalGatewayServiceStatus(state: LocalGatewayProcessState.stopped);
+  }
+
+  Future<LocalGatewayServiceStatus?> _queryGatewayStatusFromCli() async {
+    try {
+      final executable = await _requireOpenClaw();
+      final result = await Process.run(
+        'cmd.exe',
+        ['/d', '/s', '/c', executable, 'gateway', 'status', '--json'],
+        environment: WindowsOpenClawEnvironment.openClawProcessEnvironment,
+        runInShell: true,
+      );
+      if (result.exitCode != 0) return null;
+      return _parseGatewayStatusJson(result.stdout as String);
+    } catch (e) {
+      _log.fine('gateway status CLI failed: $e');
+      return null;
+    }
+  }
+
+  LocalGatewayServiceStatus? _parseGatewayStatusJson(String output) {
+    try {
+      final decoded = jsonDecode(output);
+      if (decoded is! Map) return null;
+      final json = Map<String, dynamic>.from(decoded);
+      final nested = json['service'] is Map
+          ? Map<String, dynamic>.from(json['service'] as Map)
+          : <String, dynamic>{};
+      final rawState = (json['status'] ?? json['state'] ?? nested['status'] ?? nested['state'])
+          ?.toString().toLowerCase();
+      final running = json['running'] == true || nested['running'] == true ||
+          rawState == 'running' || rawState == 'active' || rawState == 'online';
+      final stopped = json['running'] == false || nested['running'] == false ||
+          rawState == 'stopped' || rawState == 'inactive' || rawState == 'offline';
+      if (!running && !stopped) return null;
+      final port = _portFromStatus(json, nested);
+      return LocalGatewayServiceStatus(
+        state: running ? LocalGatewayProcessState.running : LocalGatewayProcessState.stopped,
+        port: port,
+        address: port == null ? null : '127.0.0.1:$port',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? _portFromStatus(Map<String, dynamic> json, Map<String, dynamic> nested) {
+    final raw = json['port'] ?? nested['port'] ?? json['address'] ?? nested['address'] ??
+        json['url'] ?? nested['url'];
+    if (raw is num) return raw.toInt();
+    final match = RegExp(r':(\d{1,5})(?:[/\s]|$)').firstMatch(raw?.toString() ?? '');
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  Future<bool> _isTcpPortOpen(int port) async {
+    Socket? socket;
+    try {
+      socket = await Socket.connect('127.0.0.1', port, timeout: const Duration(seconds: 1));
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      await socket?.close();
+    }
+  }
+
   /// 按策略探测本机 gateway 端口
   @override
   Future<int?> detectGatewayPort() async {
@@ -227,6 +313,27 @@ class WindowsLocalGatewayService implements LocalGatewayService {
           _log.fine('[gateway:start:err] $line');
           onOutput?.call(line);
         });
+  }
+
+  /// 停止本机 OpenClaw gateway service。
+  @override
+  Future<int> stopGateway({void Function(String line)? onOutput}) async {
+    try {
+      onOutput?.call('正在关闭 OpenClaw 网关...');
+      final executable = await _requireOpenClaw();
+      final environment = WindowsOpenClawEnvironment.openClawProcessEnvironment;
+      final exitCode = await _runGatewayCommand(
+        executable,
+        const ['gateway', 'stop'],
+        environment: environment,
+        onOutput: onOutput,
+      );
+      _log.info('gateway stop finished, exitCode=$exitCode');
+      return exitCode;
+    } catch (e) {
+      _log.warning('stopGateway error: $e');
+      rethrow;
+    }
   }
 
   /// 读取本机 OpenClaw gateway 凭据。

@@ -148,6 +148,89 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     }
   }
 
+  /// 查询本机 Gateway 服务状态，不要求 WebSocket 鉴权成功。
+  @override
+  Future<LocalGatewayServiceStatus> queryGatewayStatus() async {
+    final cliStatus = await _queryGatewayStatusFromCli();
+    if (cliStatus?.running == true) return cliStatus!;
+
+    // LaunchAgent 未加载不等于 Gateway 没有进程。CLI 可能报告 stopped，
+    // 但已有手动启动的 openclaw-gateway 正在监听端口，此时应以端口为准。
+    for (final port in commonGatewayPorts) {
+      if (await _isTcpPortOpen(port)) {
+        return LocalGatewayServiceStatus(
+          state: LocalGatewayProcessState.running,
+          port: port,
+          address: '127.0.0.1:$port',
+        );
+      }
+    }
+    return cliStatus ??
+        const LocalGatewayServiceStatus(state: LocalGatewayProcessState.stopped);
+  }
+
+  Future<LocalGatewayServiceStatus?> _queryGatewayStatusFromCli() async {
+    try {
+      final result = await Process.run(
+        'openclaw',
+        ['gateway', 'status', '--json'],
+        environment: MacOSOpenClawEnvironment.openClawProcessEnvironment,
+        runInShell: true,
+      );
+      if (result.exitCode != 0) return null;
+      return _parseGatewayStatusJson(result.stdout as String);
+    } catch (e) {
+      _log.fine('gateway status CLI failed: $e');
+      return null;
+    }
+  }
+
+  LocalGatewayServiceStatus? _parseGatewayStatusJson(String output) {
+    try {
+      final decoded = jsonDecode(output);
+      if (decoded is! Map) return null;
+      final json = Map<String, dynamic>.from(decoded);
+      final nested = json['service'] is Map
+          ? Map<String, dynamic>.from(json['service'] as Map)
+          : <String, dynamic>{};
+      final rawState = (json['status'] ?? json['state'] ?? nested['status'] ?? nested['state'])
+          ?.toString().toLowerCase();
+      final running = json['running'] == true || nested['running'] == true ||
+          rawState == 'running' || rawState == 'active' || rawState == 'online';
+      final stopped = json['running'] == false || nested['running'] == false ||
+          rawState == 'stopped' || rawState == 'inactive' || rawState == 'offline';
+      if (!running && !stopped) return null;
+      final port = _portFromStatus(json, nested);
+      return LocalGatewayServiceStatus(
+        state: running ? LocalGatewayProcessState.running : LocalGatewayProcessState.stopped,
+        port: port,
+        address: port == null ? null : '127.0.0.1:$port',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? _portFromStatus(Map<String, dynamic> json, Map<String, dynamic> nested) {
+    final raw = json['port'] ?? nested['port'] ?? json['address'] ?? nested['address'] ??
+        json['url'] ?? nested['url'];
+    if (raw is num) return raw.toInt();
+    final match = RegExp(r':(\d{1,5})(?:[/\s]|$)').firstMatch(raw?.toString() ?? '');
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  Future<bool> _isTcpPortOpen(int port) async {
+    Socket? socket;
+    try {
+      socket = await Socket.connect('127.0.0.1', port, timeout: const Duration(seconds: 1));
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      await socket?.close();
+    }
+  }
+
   /// 按策略探测本机 gateway 端口
   @override
   Future<int?> detectGatewayPort() async {
@@ -190,7 +273,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
 
       final process = await Process.start(
         'openclaw',
-        ['gateway', 'start'],
+        ['gateway', 'restart'],
         environment: MacOSOpenClawEnvironment.openClawProcessEnvironment,
         runInShell: true,
       );
@@ -201,6 +284,37 @@ class MacOSLocalGatewayService implements LocalGatewayService {
       return exitCode;
     } catch (e) {
       _log.warning('startGateway error: $e');
+      rethrow;
+    }
+  }
+
+  /// 停止本机 OpenClaw gateway service。
+  @override
+  Future<int> stopGateway({void Function(String line)? onOutput}) async {
+    try {
+      onOutput?.call('正在关闭 OpenClaw 网关...');
+      if (MacOSOpenClawEnvironment.useIsolatedOpenClawSetupEnv &&
+          _isolatedGatewayProcess != null) {
+        _isolatedGatewayProcess!.kill(ProcessSignal.sigterm);
+        _isolatedGatewayProcess = null;
+        _isolatedGatewayStarted = false;
+        _isolatedGatewayToken = null;
+        onOutput?.call('隔离 OpenClaw 网关已关闭');
+        return 0;
+      }
+
+      final process = await Process.start(
+        'openclaw',
+        ['gateway', 'stop'],
+        environment: MacOSOpenClawEnvironment.openClawProcessEnvironment,
+        runInShell: true,
+      );
+      _listenProcessOutput(process, onOutput);
+      final exitCode = await process.exitCode;
+      _log.info('gateway stop finished, exitCode=$exitCode');
+      return exitCode;
+    } catch (e) {
+      _log.warning('stopGateway error: $e');
       rethrow;
     }
   }

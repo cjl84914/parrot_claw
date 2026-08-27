@@ -31,6 +31,7 @@ import 'package:parrot_app/ui/screen/server_list_screen.dart';
 import 'package:parrot_app/ui/screen/qr_code_screen.dart';
 import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
+import 'package:parrot_app/ui/screen/gateway_control_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
@@ -275,6 +276,10 @@ final GoRouter router = GoRouter(
       },
     ),
     GoRoute(
+      path: Routes.gatewayControl,
+      builder: (context, state) => const GatewayControlScreen(),
+    ),
+    GoRoute(
       path: Routes.serverEdit,
       builder: (context, state) {
         if (state.extra != null) {
@@ -346,6 +351,7 @@ abstract final class Routes {
   static const setup = '/setup';
   static const setupModel = '/setup_model';
   static const modelList = '/model_list';
+  static const gatewayControl = '/gateway_control';
   static const voice = '/voice';
   static const setting = '/setting';
 }

@@ -9,6 +9,9 @@ import 'package:flutter/foundation.dart';
 /// Windows will provide its own implementation-specific environment later.
 abstract final class MacOSOpenClawEnvironment {
   /// Enable only when testing the first-run isolated installation flow.
+  // 隔离环境仅用于自动化回归，不能在正常桌面应用中启用；否则
+  // App 会使用 /tmp 下的 HOME 和配置，与用户在终端执行的 openclaw
+  // 使用的真实 Gateway 不是同一个实例。
   static const bool enableIsolatedOpenClawSetupEnv = false;
 
   static const String isolatedHomePath = '/tmp/parrotclaw-openclaw-test-home';

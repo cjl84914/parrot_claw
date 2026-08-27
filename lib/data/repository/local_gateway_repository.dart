@@ -11,23 +11,34 @@ class LocalGatewayStatus {
   /// 本机是否安装了 openclaw CLI
   final bool installed;
 
-  /// 本机 gateway 是否在线（探测到端口）
-  final bool online;
+  /// Node/OpenClaw 运行环境是否可用。
+  final bool nodeAvailable;
 
-  /// 命中的网关端口（online 时为非空）
+  /// Gateway 服务是否正在运行；不依赖客户端 WebSocket 鉴权。
+  final bool gatewayRunning;
+
+  /// 兼容旧引导流程的别名，表示 Gateway 服务是否运行。
+  bool get online => gatewayRunning;
+
+  /// 命中的网关端口
   final int? port;
+
+  /// Gateway 监听地址
+  final String? address;
 
   const LocalGatewayStatus({
     required this.installed,
-    required this.online,
+    required this.gatewayRunning,
+    this.nodeAvailable = false,
     this.port,
+    this.address,
   });
 
   bool get needsInstall => !installed;
 
-  bool get needsStart => installed && !online;
+  bool get needsStart => installed && !gatewayRunning;
 
-  bool get ready => online;
+  bool get ready => gatewayRunning;
 }
 
 /// 本地 OpenClaw 网关仓库（唯一数据源）
@@ -71,19 +82,29 @@ class LocalGatewayRepository extends ChangeNotifier {
     try {
       final installed = await _service.isOpenClawInstalled();
 
-      int? port;
-      if (installed) {
-        port = await _service.detectGatewayPort();
+      if (!installed) {
+        const status = LocalGatewayStatus(
+          installed: false,
+          nodeAvailable: false,
+          gatewayRunning: false,
+        );
+        _lastStatus = status;
+        notifyListeners();
+        return Result.ok(status);
       }
 
+      final serviceStatus = await _service.queryGatewayStatus();
       final status = LocalGatewayStatus(
-        installed: installed,
-        online: port != null,
-        port: port,
+        installed: true,
+        nodeAvailable: true,
+        gatewayRunning: serviceStatus.running,
+        port: serviceStatus.port,
+        address: serviceStatus.address,
       );
       _lastStatus = status;
       _log.info(
-        'detectLocal: installed=$installed online=${status.online} port=$port',
+        'detectLocal: installed=$installed gatewayRunning=${status.gatewayRunning} '
+        'port=${status.port} address=${status.address}',
       );
       notifyListeners();
       return Result.ok(status);
@@ -176,29 +197,74 @@ class LocalGatewayRepository extends ChangeNotifier {
     try {
       final exitCode = await _service.startGateway(onOutput: onOutput);
       if (exitCode != 0) {
-        throw Exception('OpenClaw 网关启动失败（exit code $exitCode）');
+        // CLI 可能因为 LaunchAgent 未加载、端口已被已有 Gateway 占用等原因
+        // 返回非零，但 Gateway 服务本身已经在运行。此时以独立服务状态为准。
+        final existingStatus = await _service.queryGatewayStatus();
+        if (!existingStatus.running) {
+          throw Exception('OpenClaw 网关启动失败（exit code $exitCode）');
+        }
+        _log.info(
+          'startGateway command returned $exitCode, but Gateway is already running',
+        );
+        return Result.ok(
+          LocalGatewayStatus(
+            installed: true,
+            nodeAvailable: true,
+            gatewayRunning: true,
+            port: existingStatus.port,
+            address: existingStatus.address,
+          ),
+        );
       }
 
       // gateway start 返回时进程可能刚拉起，端口和握手还没 ready。
-      final deadline = DateTime.now().add(const Duration(seconds: 20));
-      LocalGatewayStatus? lastStatus;
-      while (DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(seconds: 1));
-        final result = await detectLocal();
-        if (result is Error<LocalGatewayStatus>) {
-          return result;
-        }
-        lastStatus = (result as Ok<LocalGatewayStatus>).value;
-        if (lastStatus.online) {
-          return Result.ok(lastStatus);
-        }
-      }
+      // final deadline = DateTime.now().add(const Duration(seconds: 20));
+      // LocalGatewayStatus? lastStatus;
+      // while (DateTime.now().isBefore(deadline)) {
+      //   await Future.delayed(const Duration(seconds: 1));
+      //   final result = await detectLocal();
+      //   if (result is Error<LocalGatewayStatus>) {
+      //     return result;
+      //   }
+      //   lastStatus = (result as Ok<LocalGatewayStatus>).value;
+      //   if (lastStatus.online) {
+      //     return Result.ok(lastStatus);
+      //   }
+      // }
 
       return Result.ok(
-        lastStatus ?? const LocalGatewayStatus(installed: true, online: false),
+        lastStatus ?? const LocalGatewayStatus(installed: true, gatewayRunning: false),
       );
     } on Exception catch (e) {
       _log.warning('startGateway failed: $e');
+      return Result.error(e);
+    }
+  }
+
+  /// 关闭本机 gateway 服务。
+  Future<Result<LocalGatewayStatus>> stopGateway({
+    void Function(String line)? onOutput,
+  }) async {
+    try {
+      final exitCode = await _service.stopGateway(onOutput: onOutput);
+      if (exitCode != 0) {
+        throw Exception('OpenClaw 网关关闭失败（exit code $exitCode）');
+      }
+
+      final deadline = DateTime.now().add(const Duration(seconds: 12));
+      LocalGatewayStatus? lastStatus;
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 700));
+        final result = await detectLocal();
+        if (result is Error<LocalGatewayStatus>) return result;
+        lastStatus = (result as Ok<LocalGatewayStatus>).value;
+        if (!lastStatus.gatewayRunning) return Result.ok(lastStatus);
+      }
+      return Result.ok(
+        lastStatus ?? const LocalGatewayStatus(installed: true, gatewayRunning: false),
+      );
+    } on Exception catch (e) {
+      _log.warning('stopGateway failed: $e');
       return Result.error(e);
     }
   }
