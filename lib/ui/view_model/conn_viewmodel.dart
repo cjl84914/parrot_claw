@@ -108,6 +108,58 @@ class ConnViewModel extends ChangeNotifier {
   StreamSubscription? _gatewaySub;
 
   String? disconnectReason;
+  String? _pairingDeviceId;
+  bool _pairingRequired = false;
+
+  /// 需要在 Gateway 上执行授权命令的设备 ID。
+  String? get pairingDeviceId => _pairingDeviceId;
+
+  bool get pairingRequired => _pairingRequired;
+
+  void clearPairingRequired() {
+    _pairingDeviceId = null;
+    _pairingRequired = false;
+    notifyListeners();
+  }
+
+  bool _isPairingRequiredError(Object error) {
+    if (error is GatewayResponseError) {
+      return error.code == 'PAIRING_REQUIRED' ||
+          error.code == 'NOT_PAIRED' ||
+          error.message.toUpperCase().contains('PAIRING REQUIRED') ||
+          error.message.toUpperCase().contains('NOT_PAIRED');
+    }
+    final text = error.toString().toUpperCase();
+    return text.contains('PAIRING_REQUIRED') ||
+        text.contains('NOT_PAIRED') ||
+        text.contains('PAIRING REQUIRED');
+  }
+
+  String? _resolvePairingDeviceId(Object error) {
+    if (error is! GatewayResponseError) return null;
+
+    // The approval command must use the request ID returned by Gateway.
+    // Never generate or substitute a local ID here: it would approve a
+    // different request and make the copied command appear to change.
+    // final details = error.details;
+    final returnedRequestId = error.requestId?.trim();
+    if (returnedRequestId != null && returnedRequestId.isNotEmpty) {
+      return returnedRequestId;
+    }
+    // for (final key in const [
+    //   'deviceId',
+    //   'deviceID',
+    //   'device_id',
+    //   'id',
+    // ]) {
+    //   final value = details[key]?.toString().trim();
+    //   if (value != null && value.isNotEmpty) return value;
+    // }
+    final match = RegExp(
+      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+    ).firstMatch(error.message);
+    return match?.group(0);
+  }
 
   ConnViewModel({
     required SettingRepository settingRepository,
@@ -180,6 +232,8 @@ class ConnViewModel extends ChangeNotifier {
     _isConnecting = true;
     _connected = false;
     disconnectReason = null;
+    _pairingDeviceId = null;
+    _pairingRequired = false;
     _log.info('Switching to server: ${config.name}');
 
     _gatewaySub = GatewayConnection.shared.subscribe().listen((d) {
@@ -231,7 +285,13 @@ class ConnViewModel extends ChangeNotifier {
       }
       _isConnecting = false;
       _connected = false;
-      disconnectReason = e.toString();
+      if (_isPairingRequiredError(e)) {
+        _pairingDeviceId = _resolvePairingDeviceId(e);
+        _pairingRequired = true;
+        // disconnectReason = '需要在网关上批准此设备';
+      } else {
+        disconnectReason = e.toString();
+      }
       notifyListeners();
       _log.warning('Connect failed in ViewModel: $e');
     }

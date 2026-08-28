@@ -243,6 +243,7 @@ class GatewayResponseError implements Exception {
   final String code;
   final String message;
   final Map<String, dynamic> details;
+  final String? requestId;
 
   GatewayResponseError({
     required this.method,
@@ -254,7 +255,10 @@ class GatewayResponseError implements Exception {
            (message?.trim().isEmpty == false)
                ? message!.trim()
                : 'gateway error',
-       details = details ?? {};
+       details = details ?? {},
+       requestId = details?['requestId']?.toString() ??
+           details?['requestID']?.toString() ??
+           details?['request_id']?.toString();
 
   String? get detailsReason {
     final raw = details['reason'] as String?;
@@ -665,6 +669,7 @@ class GatewayChannelActor {
           permissions: {},
           clientId: 'gateway-client',
           clientMode: 'ui',
+          clientDisplayName: 'parrotClaw'
         );
 
     final clientId = options.clientId;
@@ -774,9 +779,17 @@ class GatewayChannelActor {
 
   Future<void> _handleConnectResponse(Map<String, dynamic> res) async {
     if (res['ok'] == false) {
-      final error = res['error'] as Map?;
-      final msg = error?['message'] as String? ?? 'gateway connect failed';
-      throw _gatewayError(msg);
+      final error = (res['error'] as Map?)?.cast<String, dynamic>() ?? {};
+      final msg = error['message'] as String? ?? 'gateway connect failed';
+      final code = error['code'] as String?;
+      final details =
+          (error['details'] as Map?)?.cast<String, dynamic>() ?? {};
+      throw GatewayResponseError(
+        method: 'connect',
+        code: code,
+        message: msg,
+        details: details,
+      );
     }
 
     final rawPayload = res['payload'];

@@ -19,11 +19,35 @@ class IndexScreen extends StatefulWidget {
 }
 
 class _IndexScreenState extends State<IndexScreen> {
+  bool _pairingRoutePushed = false;
+
   @override
   void initState() {
     super.initState();
+    widget.viewModel.addListener(_onViewModelChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _connect();
+      // _openPairingPageIfNeeded();
+    });
+  }
+
+  void _onViewModelChanged() {
+    if (!mounted || !widget.viewModel.pairingRequired) return;
+    _openPairingPageIfNeeded();
+  }
+
+  void _openPairingPageIfNeeded() {
+    if (!mounted || _pairingRoutePushed || !widget.viewModel.pairingRequired) {
+      return;
+    }
+    final location = GoRouterState.of(context).matchedLocation;
+    if (location == Routes.gatewayPairing) return;
+    _pairingRoutePushed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.push(Routes.gatewayPairing).whenComplete(() {
+        _pairingRoutePushed = false;
+      });
     });
   }
 
@@ -34,6 +58,7 @@ class _IndexScreenState extends State<IndexScreen> {
 
   @override
   void dispose() {
+    widget.viewModel.removeListener(_onViewModelChanged);
     // ConnViewModel 是全局 Provider。IndexScreen 可能因服务器切换重建，
     // 页面销毁不代表应用需要断开网关连接。
     super.dispose();

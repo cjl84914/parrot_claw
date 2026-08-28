@@ -32,6 +32,7 @@ import 'package:parrot_app/ui/screen/qr_code_screen.dart';
 import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_control_screen.dart';
+import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
@@ -280,6 +281,13 @@ final GoRouter router = GoRouter(
       builder: (context, state) => const GatewayControlScreen(),
     ),
     GoRoute(
+      path: Routes.gatewayPairing,
+      builder: (context, state) => GatewayPairingScreen(
+        viewModel: context.read(),
+        deviceId: state.uri.queryParameters['deviceId'],
+      ),
+    ),
+    GoRoute(
       path: Routes.serverEdit,
       builder: (context, state) {
         if (state.extra != null) {
@@ -352,6 +360,7 @@ abstract final class Routes {
   static const setupModel = '/setup_model';
   static const modelList = '/model_list';
   static const gatewayControl = '/gateway_control';
+  static const gatewayPairing = '/gateway_pairing';
   static const voice = '/voice';
   static const setting = '/setting';
 }
