@@ -151,7 +151,7 @@ class LocalGatewayRepository extends ChangeNotifier {
       );
       if (existing.isNotEmpty) {
         final server = existing.first.copyWith(
-          name: '本机服务器',
+          name: '本机网关',
           token: token,
           password: password,
           authMode: authMode,
@@ -168,7 +168,7 @@ class LocalGatewayRepository extends ChangeNotifier {
 
       final localServer = ServerConfig(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: '本机服务器',
+        name: '本机网关',
         host: host,
         port: port,
         token: token,

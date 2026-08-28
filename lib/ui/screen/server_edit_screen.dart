@@ -67,15 +67,15 @@ class _ServerEditPageState extends State<ServerEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? '编辑网关配置' : '添加网关配置'),
+        title: const Text('配置网关'),
         actions: [
-          if (Platform.isAndroid || Platform.isIOS)
-            TextButton(
-              onPressed: () {
-                context.push(Routes.qrScan);
-              },
-              child: const Text('扫一扫'),
-            ),
+          // if (Platform.isAndroid || Platform.isIOS)
+          //   TextButton(
+          //     onPressed: () {
+          //       context.push(Routes.qrScan);
+          //     },
+          //     child: const Text('扫一扫'),
+          //   ),
         ],
       ),
       body: Form(
@@ -87,16 +87,12 @@ class _ServerEditPageState extends State<ServerEditScreen> {
             _buildCard([
               _buildTextField(
                 controller: _nameController,
-                label: '名称',
+                label: '网关名称',
                 hint: '给网关起个名字',
                 icon: Icons.label_outline,
                 validator: (v) => (v == null || v.isEmpty) ? '请输入名称' : null,
               ),
             ]),
-
-            const SizedBox(height: 20),
-
-            _buildSectionHeader('连接地址'),
             _buildCard([
               _buildTextField(
                 controller: _hostController,
@@ -105,7 +101,6 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                 icon: Icons.dns_outlined,
                 validator: (v) => (v == null || v.isEmpty) ? '请输入地址' : null,
               ),
-              const Divider(height: 0.5, indent: 44, color: AppColors.divider),
               _buildTextField(
                 controller: _portController,
                 label: '端口',
@@ -119,7 +114,6 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                   return null;
                 },
               ),
-              const Divider(height: 0.5, indent: 44, color: AppColors.divider),
               _buildSwitchTile(
                 icon: Icons.lock_outlined,
                 title: '加密连接 (TLS)',
@@ -176,7 +170,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                 _buildTextField(
                   controller: _tokenController,
                   label: '访问令牌',
-                  hint: '从服务器配置获取',
+                  hint: '从openclaw.json获取',
                   icon: Icons.key_outlined,
                   obscureText: true,
                   validator:
@@ -188,8 +182,6 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                 _buildHelpText('使用长效 Token 连接到网关'),
               ],
             ]),
-
-            const SizedBox(height: 24),
 
             if (_isTesting)
               const Padding(
@@ -219,34 +211,22 @@ class _ServerEditPageState extends State<ServerEditScreen> {
             const SizedBox(height: 12),
 
             SizedBox(
+              width: double.infinity,
               height: 48,
-              child: OutlinedButton.icon(
-                onPressed: _isTesting ? null : _testConnection,
-                label: const Text('测试连接'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
+              child: FilledButton.icon(
+                onPressed: _isTesting ? null : _connectAndSave,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(48),
                   ),
                   textStyle: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _save,
-                style: ElevatedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.round),
-                  ),
-                ),
-                child: Text('保存', style: TextStyle(color: Colors.white)),
+                label: const Text('连接'),
               ),
             ),
             const SizedBox(height: 32),
@@ -301,7 +281,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         focusedErrorBorder: InputBorder.none,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 14,
+          vertical: 12,
         ),
         labelStyle: AppTextStyles.bodyMedium.copyWith(
           color: AppColors.textSecondary,
@@ -342,8 +322,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
   Widget _buildHelpText(String text) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(44, 0, 16, 12),
-      child: Text(text, style: AppTextStyles.caption),
+      padding: const EdgeInsets.fromLTRB(12, 36, 16, 12),
+      child: Text(text, style: AppTextStyles.bodyMedium),
     );
   }
 
@@ -393,7 +373,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
   // -- 业务逻辑 --
 
-  Future<void> _testConnection() async {
+  Future<void> _connectAndSave() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -403,6 +383,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     });
 
     final config = _buildConfig();
+    var shouldEnterIndex = false;
     try {
       await GatewayConnection.shared.configure(
         url: config.wsUrl,
@@ -411,6 +392,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       );
       print('[ParrotClaw] Testing connection to ${config.wsUrl}');
       final result = await GatewayConnection.shared.status();
+      final isPairingRequired = _isPairingRequiredError(result.error);
+      shouldEnterIndex = result.ok || isPairingRequired;
       if (mounted) {
         setState(() {
           _testSuccess = result.ok;
@@ -418,17 +401,24 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         });
       }
     } catch (e) {
+      final error = e.toString().replaceFirst('Exception: ', '');
+      final isPairingRequired =
+          error.toLowerCase().contains('pairingrequired') ||
+          error.toLowerCase().contains('pairing_required');
+      shouldEnterIndex = isPairingRequired;
       if (mounted) {
         setState(() {
           _testSuccess = false;
-          _testError = e.toString().replaceFirst('Exception: ', '');
+          _testError = error;
         });
       }
     } finally {
-      try {
-        await GatewayConnection.shared.shutdown();
-      } catch (e) {
-        print('[ParrotClaw] Failed to close test connection: $e');
+      if (!shouldEnterIndex) {
+        try {
+          await GatewayConnection.shared.shutdown();
+        } catch (e) {
+          print('[ParrotClaw] Failed to close test connection: $e');
+        }
       }
       if (mounted) {
         setState(() {
@@ -436,12 +426,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         });
       }
     }
-  }
 
-  void _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final config = _buildConfig();
+    if (!shouldEnterIndex || !mounted) return;
 
     if (_isEditing) {
       await widget.viewModel.updateServer(widget.server!.id, config);
@@ -450,11 +436,17 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     }
 
     widget.viewModel.selectServer(config);
-
     context.go(Routes.index);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(_isEditing ? '服务器已更新' : '服务器已添加')));
+    ).showSnackBar(SnackBar(content: Text(_isEditing ? '网关已更新' : '网关已添加')));
+  }
+
+  bool _isPairingRequiredError(String? error) {
+    final normalized = error?.toLowerCase() ?? '';
+    return normalized.contains('pairingrequired') ||
+        normalized.contains('pairing_required') ||
+        normalized.contains('pairing required');
   }
 
   ServerConfig _buildConfig() {

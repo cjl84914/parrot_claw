@@ -143,7 +143,7 @@ class SetupViewModel extends ChangeNotifier {
     try {
       await _configureGateway(server);
       final models = await _modelService.loadModels();
-      _addLog('已添加本机服务器: ${server.name} (${server.displayAddress})');
+      _addLog('已添加本机网关: ${server.name} (${server.displayAddress})');
       _addLog(
         models.isEmpty ? '未检测到已配置模型，需要完成模型配置' : '检测到已配置模型 ${models.length} 个',
       );

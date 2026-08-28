@@ -42,19 +42,23 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _LocalSetupColors.background,
+      appBar: AppBar(
+        title: const Text('安装OpenClaw', style: AppTextStyles.headlineLarge),
+      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.viewModel,
           builder: (context, _) {
             final vm = widget.viewModel;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildHero(),
                   const SizedBox(height: 22),
-                  _buildSteps(vm),
+                  _buildHero(),
+                  // const SizedBox(height: 22),
+                  // _buildSteps(vm),
                   const SizedBox(height: 18),
                   Expanded(child: _buildMainCard(vm)),
                   const SizedBox(height: 16),
@@ -72,118 +76,15 @@ class _SetupScreenState extends State<SetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Container(
-            //   width: 52,
-            //   height: 52,
-            //   decoration: BoxDecoration(
-            //     color: AppColors.primary,
-            //     borderRadius: BorderRadius.circular(14),
-            //   ),
-            //   child: const Icon(
-            //     Icons.memory_outlined,
-            //     color: Colors.white,
-            //     size: 30,
-            //   ),
-            // ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () => context.push(Routes.serverEdit),
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('手动配置'),
-              style: TextButton.styleFrom(
-                foregroundColor: _LocalSetupColors.textSecondary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const Text('配置本机 AI 大脑', style: AppTextStyles.headlineLarge),
-        const SizedBox(height: 8),
         Text(
           'ParrotClaw 会自动检测、安装并连接本机 OpenClaw。',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: _LocalSetupColors.textSecondary,
-          ),
-        ),
-        TextButton.icon(
-          onPressed: () => context.push(Routes.serverEdit),
-          icon: const Icon(Icons.tune, size: 18),
-          label: const Text('手动配置'),
-          style: TextButton.styleFrom(
-            foregroundColor: _LocalSetupColors.textSecondary,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 8,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSteps(SetupViewModel vm) {
-    final step = switch (vm.phase) {
-      LocalSetupPhase.detecting => 0,
-      LocalSetupPhase.needsInstall => 1,
-      LocalSetupPhase.installing => 1,
-      LocalSetupPhase.installed => 1,
-      LocalSetupPhase.needsStart => 1,
-      LocalSetupPhase.starting => 1,
-      LocalSetupPhase.ready => 2,
-      LocalSetupPhase.error => 0,
-    };
-
-    return Row(
-      children: [
-        Expanded(child: _buildStep('检测', 0, step)),
-        _buildStepLine(step >= 1),
-        Expanded(child: _buildStep('准备', 1, step)),
-        _buildStepLine(step >= 2),
-        Expanded(child: _buildStep('连接', 2, step)),
-      ],
-    );
-  }
-
-  Widget _buildStep(String text, int index, int currentStep) {
-    final done = index < currentStep;
-    final active = index == currentStep;
-    return Column(
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color:
-                done || active
-                    ? AppColors.primary
-                    : AppColors.primary.withValues(alpha: 0.22),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            done ? Icons.check : Icons.circle,
+          style: const TextStyle(
             color: Colors.white,
-            size: done ? 16 : 8,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(text, style: AppTextStyles.caption.copyWith(color: Colors.white)),
       ],
-    );
-  }
-
-  Widget _buildStepLine(bool active) {
-    return Container(
-      width: 34,
-      height: 2,
-      margin: const EdgeInsets.only(bottom: 22),
-      color: AppColors.primary,
     );
   }
 
@@ -258,7 +159,7 @@ class _SetupScreenState extends State<SetupScreen> {
             ? vm.outputLogs.sublist(vm.outputLogs.length - 5)
             : vm.outputLogs;
     return Container(
-      height: 116,
+      height: 300,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),
@@ -274,9 +175,7 @@ class _SetupScreenState extends State<SetupScreen> {
             logs[index],
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.captionSmall.copyWith(
-              color: _LocalSetupColors.textSecondary,
-            ),
+            style: AppTextStyles.captionSmall
           );
         },
       ),
@@ -344,7 +243,10 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                 )
                 : Icon(icon, size: 20),
-        label: Text(label, style: AppTextStyles.titleMedium),
+        label: Text(label, style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        )),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
@@ -420,7 +322,7 @@ class _SetupScreenState extends State<SetupScreen> {
       final result = await widget.viewModel.connectLocal();
       if (!mounted) return;
       if (result != null) {
-        context.go(result.hasModel ? Routes.index : Routes.setupModel);
+        context.push(result.hasModel ? Routes.index : Routes.setupModel);
       } else {
         ScaffoldMessenger.of(
           context,

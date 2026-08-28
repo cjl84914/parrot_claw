@@ -6,7 +6,7 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 
-/// 扫码导入服务器配置页
+/// 扫码导入网关配置页
 class QrScanScreen extends StatefulWidget {
   final ServerViewModel viewModel;
 
@@ -50,7 +50,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('添加服务器'),
+          title: const Text('添加网关'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,7 +79,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
         await widget.viewModel.addServer(config);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已添加服务器 ${config.name}')),
+          SnackBar(content: Text('已添加网关 ${config.name}')),
         );
         context.go(Routes.index);
       } else {
@@ -109,7 +109,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
   void _showInvalidQr() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('无效的二维码，未识别到服务器配置')),
+      const SnackBar(content: Text('无效的二维码，未识别到网关配置')),
     );
     _handling = false;
   }
@@ -118,7 +118,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('扫二维码连接网关'),
+        title: const Text('扫码添加网关'),
         elevation: 0,
       ),
       body: Column(
@@ -157,7 +157,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '将其他设备的服务器配置二维码对准扫描框',
+                  '将其他设备的网关配置二维码对准扫描框',
                   style: AppTextStyles.caption,
                 ),
               ],

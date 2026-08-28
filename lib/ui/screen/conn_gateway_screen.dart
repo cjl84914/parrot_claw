@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/main.dart';
@@ -129,14 +131,21 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
           title: '手机可以连接到网关',
           description: '使用同一个网络，或使用安全的远程网关 URL。',
         ),
-        const SizedBox(height: 48),
+      ],
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         Center(
           child: TextButton.icon(
             onPressed: () {
               context.push(Routes.more);
             },
-            icon: const Icon(Icons.link_rounded, size: 18),
-            label: const Text('设置指南'),
+            icon: const Icon(Icons.live_help, size: 18),
+            label: const Text('使用指南'),
             style: TextButton.styleFrom(
               foregroundColor: Colors.white,
               textStyle: const TextStyle(
@@ -146,14 +155,28 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildActions(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+        const SizedBox(height: 24),
+        if(Platform.isMacOS || Platform.isWindows)
+        SizedBox(
+          height: 48,
+          child: FilledButton.icon(
+            onPressed: () => context.push(Routes.setup),
+            icon: const Icon(Icons.install_desktop),
+            label: const Text('安装OpenClaw'), //或设置代码
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.lightBlueAccent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(48),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        if(Platform.isAndroid || Platform.isIOS)
         SizedBox(
           height: 48,
           child: FilledButton.icon(
@@ -179,7 +202,7 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
           child: OutlinedButton.icon(
             onPressed: () => context.push(Routes.serverEdit),
             icon: const Icon(Icons.link_rounded),
-            label: const Text('手动设置'),
+            label: const Text('手动配置网关'),
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.white,
               side: const BorderSide(color: ConnGatewayScreen._border),

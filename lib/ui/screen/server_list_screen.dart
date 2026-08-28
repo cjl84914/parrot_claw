@@ -9,7 +9,7 @@ import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:parrot_app/ui/widget/server_card.dart';
 
-/// 服务器列表页（首页）
+/// 网关列表页（首页）
 class ServerListScreen extends StatefulWidget {
   final ServerViewModel viewModel;
 
@@ -30,7 +30,7 @@ class _ServerListPageState extends State<ServerListScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('切换服务器', style: AppTextStyles.headlineMedium),
+            title: const Text('网关管理', style: AppTextStyles.headlineMedium),
             elevation: 0,
             actions: [
               // 桌面端无摄像头，不显示扫码入口（扫码由移动端完成）
@@ -39,7 +39,7 @@ class _ServerListPageState extends State<ServerListScreen> {
                   onPressed: () {
                     context.push(Routes.qrScan);
                   },
-                  child: const Text('扫一扫'),
+                  child: const Text('扫码添加'),
                 ),
               const SizedBox(width: 4),
             ],
@@ -79,10 +79,10 @@ class _ServerListPageState extends State<ServerListScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('暂无服务器', style: AppTextStyles.titleLarge),
+            const Text('暂无网关', style: AppTextStyles.titleLarge),
             const SizedBox(height: 8),
             Text(
-              '点击下方按钮添加服务器',
+              '点击下方按钮添加网关',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -91,7 +91,7 @@ class _ServerListPageState extends State<ServerListScreen> {
             ElevatedButton.icon(
               onPressed: _addServer,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('添加服务器'),
+              label: const Text('添加网关'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 28,
@@ -120,7 +120,7 @@ class _ServerListPageState extends State<ServerListScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: Text(
-              '共 ${servers.length} 个服务器',
+              '共 ${servers.length} 个网关',
               style: AppTextStyles.caption,
             ),
           ),
@@ -218,15 +218,10 @@ class _ServerListPageState extends State<ServerListScreen> {
 
                   final servers = widget.viewModel.servers;
                   if (servers.isEmpty) {
-                    // 服务器删空：跳回引导页（桌面端），移动端回到添加服务器页
-                    if (Platform.isMacOS || Platform.isWindows) {
-                      router.go(Routes.setup);
-                    } else {
-                      router.go(Routes.serverEdit);
-                    }
+                    router.go(Routes.home);
                   } else {
                     messenger.showSnackBar(
-                      const SnackBar(content: Text('服务器已删除')),
+                      const SnackBar(content: Text('网关已删除')),
                     );
                   }
                 },

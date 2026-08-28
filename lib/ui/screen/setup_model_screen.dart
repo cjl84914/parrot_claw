@@ -45,17 +45,7 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
     return Scaffold(
       backgroundColor: _SetupModelColors.background,
       appBar: AppBar(
-        actions: [
-          TextButton.icon(
-            onPressed: () => context.push(Routes.serverEdit),
-            icon: const Icon(Icons.tune, size: 18),
-            label: const Text('手动配置 Gateway'),
-            style: TextButton.styleFrom(
-              foregroundColor: _SetupModelColors.textSecondary,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
-          ),
-        ],
+          title: const Text('配置模型能力', style: AppTextStyles.headlineLarge),
       ),
       body: SafeArea(
         child: ListenableBuilder(
@@ -86,8 +76,6 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 16),
-        const Text('配置模型能力', style: AppTextStyles.headlineLarge),
-        const SizedBox(height: 8),
         Text(
           '填写模型信息后，ParrotClaw 会直接添加模型并验证一次对话。',
           style: AppTextStyles.bodyMedium.copyWith(
@@ -112,7 +100,8 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
       SetupModelPhase.validating => '正在发送一次最小测试消息，请稍候。',
       SetupModelPhase.success => '模型已添加，可以开始聊天。',
       SetupModelPhase.error => vm.errorMessage ?? '请检查填写内容后重试。',
-      SetupModelPhase.idle => '选择供应商并填写可编辑的 Base URL、模型和 API Key。',
+      SetupModelPhase
+          .idle => '选择供应商并填写可编辑的 Base URL、模型和 API Key。',
     };
     final icon = switch (vm.phase) {
       SetupModelPhase.saving || SetupModelPhase.validating => Icons.sync,
@@ -195,14 +184,15 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
       isExpanded: true,
       decoration: _inputDecoration('供应商', Icons.cloud_outlined),
       items:
-          SetupModelViewModel.providerOptions
-              .map(
-                (provider) => DropdownMenuItem(
-                  value: provider,
-                  child: Text(provider.name),
-                ),
-              )
-              .toList(),
+      SetupModelViewModel.providerOptions
+          .map(
+            (provider) =>
+            DropdownMenuItem(
+              value: provider,
+              child: Text(provider.name),
+            ),
+      )
+          .toList(),
       onChanged: (provider) {
         if (provider == null) return;
         vm.selectProvider(provider);
@@ -211,12 +201,10 @@ class _SetupModelScreenState extends State<SetupModelScreen> {
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    String hint,
-    IconData icon,
-  ) {
+  Widget _buildTextField(TextEditingController controller,
+      String label,
+      String hint,
+      IconData icon,) {
     return TextField(
       controller: controller,
       obscureText: false,

@@ -197,7 +197,7 @@ class _MyAppState extends State<MyApp> {
 }
 
 final GoRouter router = GoRouter(
-  initialLocation: Routes.launch,
+  initialLocation: Routes.home,
   debugLogDiagnostics: true,
   routes: <RouteBase>[
     GoRoute(
@@ -205,13 +205,7 @@ final GoRouter router = GoRouter(
       redirect: (context, state) {
         final serverRepository = context.read<ServerRepository>();
         if (serverRepository.servers.isEmpty) {
-          // 无服务器时：桌面系统先进本地引导界面，移动端维持原逻辑
-          if (Platform.isMacOS || Platform.isWindows
-          // || Platform.isLinux
-          ) {
-            return Routes.setup;
-          }
-          return Routes.serverEdit;
+          return Routes.launch;
         } else {
           return Routes.index;
         }
