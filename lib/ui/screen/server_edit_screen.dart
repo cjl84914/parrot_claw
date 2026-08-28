@@ -67,15 +67,15 @@ class _ServerEditPageState extends State<ServerEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? '编辑服务器' : '添加服务器'),
+        title: Text(_isEditing ? '编辑网关配置' : '添加网关配置'),
         actions: [
           if (Platform.isAndroid || Platform.isIOS)
-          TextButton(
-            onPressed: () {
-              context.push(Routes.qrScan);
-            },
-            child: const Text('扫一扫'),
-          ),
+            TextButton(
+              onPressed: () {
+                context.push(Routes.qrScan);
+              },
+              child: const Text('扫一扫'),
+            ),
         ],
       ),
       body: Form(
@@ -88,7 +88,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
               _buildTextField(
                 controller: _nameController,
                 label: '名称',
-                hint: '给服务器起个名字',
+                hint: '给网关起个名字',
                 icon: Icons.label_outline,
                 validator: (v) => (v == null || v.isEmpty) ? '请输入名称' : null,
               ),
@@ -100,7 +100,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
             _buildCard([
               _buildTextField(
                 controller: _hostController,
-                label: '服务器地址',
+                label: '网关地址',
                 hint: '例如: 192.168.1.100 或 api.example.com',
                 icon: Icons.dns_outlined,
                 validator: (v) => (v == null || v.isEmpty) ? '请输入地址' : null,
@@ -123,7 +123,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
               _buildSwitchTile(
                 icon: Icons.lock_outlined,
                 title: '加密连接 (TLS)',
-                subtitle: '云端服务器建议开启',
+                subtitle: '云端网关建议开启',
                 value: _useTLS,
                 onChanged: (v) => setState(() => _useTLS = v),
               ),
@@ -218,12 +218,21 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
             const SizedBox(height: 12),
 
-            OutlinedButton.icon(
-              onPressed: _isTesting ? null : _testConnection,
-              icon: const Icon(Icons.wifi_tethering, size: 18),
-              label: const Text('测试连接'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+            SizedBox(
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: _isTesting ? null : _testConnection,
+                label: const Text('测试连接'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(48),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -237,17 +246,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                     borderRadius: BorderRadius.circular(AppRadius.round),
                   ),
                 ),
-                child: Text(
-                  _isEditing ? '保存' : '添加服务器',
-                  style: TextStyle(color: Colors.white),
-                ),
+                child: Text('保存', style: TextStyle(color: Colors.white)),
               ),
-            ),
-            TextButton(
-              onPressed: () {
-                context.push(Routes.more);
-              },
-              child: const Text('帮助'),
             ),
             const SizedBox(height: 32),
           ],

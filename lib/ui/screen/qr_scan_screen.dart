@@ -118,7 +118,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('扫一扫添加服务器'),
+        title: const Text('扫二维码连接网关'),
         elevation: 0,
       ),
       body: Column(

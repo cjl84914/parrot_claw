@@ -20,6 +20,7 @@ import 'package:parrot_app/data/service/openclaw_model_service.dart';
 import 'package:parrot_app/data/service/shared_preferences_service.dart';
 import 'package:parrot_app/data/service/storage_service.dart';
 import 'package:parrot_app/ui/screen/chat_screen.dart';
+import 'package:parrot_app/ui/screen/conn_gateway_screen.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/setup_screen.dart';
 import 'package:parrot_app/ui/screen/setup_model_screen.dart';
@@ -44,8 +45,9 @@ import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
-import 'ui/screen/live2d_screen.dart';
-import 'ui/view_model/server_viewmodel.dart';
+import 'package:parrot_app/ui/screen/live2d_screen.dart';
+import 'package:parrot_app/ui/screen/launch_screen.dart';
+import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
@@ -195,7 +197,7 @@ class _MyAppState extends State<MyApp> {
 }
 
 final GoRouter router = GoRouter(
-  initialLocation: Routes.home,
+  initialLocation: Routes.launch,
   debugLogDiagnostics: true,
   routes: <RouteBase>[
     GoRoute(
@@ -257,6 +259,14 @@ final GoRouter router = GoRouter(
               ),
         ),
       ],
+    ),
+    GoRoute(
+      path: Routes.launch,
+      builder: (context, state) => const LaunchScreen(),
+    ),
+    GoRoute(
+      path: Routes.connGateway,
+      builder: (context, state) => const ConnGatewayScreen(),
     ),
     GoRoute(
       path: Routes.setup,
@@ -345,6 +355,8 @@ final GoRouter router = GoRouter(
 
 abstract final class Routes {
   static const home = '/';
+  static const launch = '/launch';
+  static const connGateway = '/conn_gateway';
   static const index = '/index';
   static const login = '/login';
   static const chat = '/chat';
