@@ -23,18 +23,18 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: ConnGatewayScreen._background,
-      // appBar: AppBar(
-      //   backgroundColor: ConnGatewayScreen._background,
-      //   foregroundColor: Colors.white,
-      //   elevation: 0,
-      //   scrolledUnderElevation: 0,
-      //   centerTitle: true,
-      //   leading: IconButton(
-      //     tooltip: '返回',
-      //     icon: const Icon(Icons.arrow_back_rounded),
-      //     onPressed: () => context.pop(),
-      //   ),
-      // ),
+      appBar: AppBar(
+        backgroundColor: ConnGatewayScreen._background,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        // leading: IconButton(
+        //   tooltip: '返回',
+        //   icon: const Icon(Icons.arrow_back_rounded),
+        //   onPressed: () => context.pop(),
+        // ),
+      ),
       body: SafeArea(
         top: false,
         child: Padding(
@@ -142,7 +142,7 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
         Center(
           child: TextButton.icon(
             onPressed: () {
-              context.push(Routes.more);
+              context.push(Routes.help);
             },
             icon: const Icon(Icons.live_help, size: 18),
             label: const Text('使用指南'),

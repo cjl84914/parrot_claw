@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:provider/provider.dart';
@@ -30,29 +31,26 @@ class _ServerListPageState extends State<ServerListScreen> {
 
         return Scaffold(
           appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: '打开侧边栏',
+              onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+            ),
             title: const Text('网关管理', style: AppTextStyles.headlineMedium),
             elevation: 0,
             actions: [
-              // 桌面端无摄像头，不显示扫码入口（扫码由移动端完成）
-              if (Platform.isAndroid || Platform.isIOS)
-                TextButton(
-                  onPressed: () {
-                    context.push(Routes.qrScan);
-                  },
-                  child: const Text('扫码添加'),
-                ),
-              const SizedBox(width: 4),
+              TextButton(
+                onPressed: () {
+                  context.push(Routes.connGateway);
+                },
+                child: const Text('添加'),
+              ),
             ],
           ),
           body:
               servers.isEmpty
                   ? _buildEmptyState()
                   : _buildServerList(servers, defaultServer),
-          floatingActionButton: FloatingActionButton(
-            elevation: 0,
-            onPressed: _addServer,
-            child: const Icon(Icons.add),
-          ),
         );
       },
     );
@@ -147,7 +145,8 @@ class _ServerListPageState extends State<ServerListScreen> {
               },
               itemCount: servers.length,
               itemBuilder: (context, i) {
-                return Column(
+                return
+                  Column(
                   key: ValueKey(servers[i].id),
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -156,7 +155,7 @@ class _ServerListPageState extends State<ServerListScreen> {
                       child: ServerCard(
                         config: servers[i],
                         isDefault: servers[i].id == defaultServer?.id,
-                        onTap: () => _openChat(servers[i]),
+                        onTap: () => _editServer(servers[i]),
                         onEdit: () => _editServer(servers[i]),
                         onDelete: () => _deleteServer(servers[i]),
                         onShareQr: () => _shareQr(servers[i]),

@@ -105,7 +105,8 @@ ParrotClaw App（Flutter 交互层）
 - [x] 配置 GitHub Actions
 - [x] Windows 版本
 - [x] 扫码克隆服务器
-- [ ] 会话管理
+- [x] 会话管理
+- [ ] 定时任务
 - [ ] Skill管理
 - [ ] Agent配置
 - [ ] 英文 README DOCS

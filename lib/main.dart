@@ -24,7 +24,6 @@ import 'package:parrot_app/ui/screen/conn_gateway_screen.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/setup_screen.dart';
 import 'package:parrot_app/ui/screen/setup_model_screen.dart';
-import 'package:parrot_app/ui/screen/more_screen.dart';
 import 'package:parrot_app/ui/screen/model_list_screen.dart';
 import 'package:parrot_app/ui/screen/webview_screen.dart';
 import 'package:parrot_app/ui/screen/server_edit_screen.dart';
@@ -48,6 +47,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/screen/launch_screen.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'ui/screen/help_screen.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
@@ -168,6 +168,7 @@ class _MyAppState extends State<MyApp> {
       // Use builder only if you need to use library outside ScreenUtilInit context
       builder: (_, child) {
         return MaterialApp.router(
+          debugShowCheckedModeBanner: false,
           title: '语鹦助手',
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
@@ -239,18 +240,24 @@ final GoRouter router = GoRouter(
           },
         ),
         GoRoute(
-          path: Routes.voice,
-          pageBuilder:
-              (context, state) => NoTransitionPage(
-                child: VoiceScreen(viewModel: context.read()),
-              ),
-        ),
-        GoRoute(
-          path: Routes.about,
+          path: Routes.setting,
           pageBuilder:
               (context, state) => NoTransitionPage(
                 child: SettingScreen(viewmodel: context.read()),
               ),
+        ),
+        GoRoute(
+          path: Routes.serverList,
+          pageBuilder:
+              (context, state) => NoTransitionPage(
+                child: ServerListScreen(viewModel: context.read()),
+              ),
+        ),
+        GoRoute(
+          path: Routes.voice,
+          pageBuilder:
+              (context, state) =>
+              NoTransitionPage(child: VoiceScreen(viewModel: context.read())),
         ),
       ],
     ),
@@ -286,10 +293,11 @@ final GoRouter router = GoRouter(
     ),
     GoRoute(
       path: Routes.gatewayPairing,
-      builder: (context, state) => GatewayPairingScreen(
-        viewModel: context.read(),
-        deviceId: state.uri.queryParameters['deviceId'],
-      ),
+      builder:
+          (context, state) => GatewayPairingScreen(
+            viewModel: context.read(),
+            deviceId: state.uri.queryParameters['deviceId'],
+          ),
     ),
     GoRoute(
       path: Routes.serverEdit,
@@ -302,12 +310,6 @@ final GoRouter router = GoRouter(
         } else {
           return ServerEditScreen(viewModel: context.read());
         }
-      },
-    ),
-    GoRoute(
-      path: Routes.serverList,
-      builder: (context, state) {
-        return ServerListScreen(viewModel: context.read());
       },
     ),
     GoRoute(
@@ -329,9 +331,9 @@ final GoRouter router = GoRouter(
       },
     ),
     GoRoute(
-      path: Routes.more,
+      path: Routes.help,
       builder: (context, state) {
-        return const MoreScreen();
+        return const HelpScreen();
       },
     ),
     GoRoute(
@@ -361,6 +363,7 @@ abstract final class Routes {
   static const about = '/about';
   static const live2d = '/live2d';
   static const more = '/more';
+  static const help = '/help';
   static const webview = '/webview';
   static const setup = '/setup';
   static const setupModel = '/setup_model';

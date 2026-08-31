@@ -71,9 +71,9 @@ class ServerCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(AppRadius.small),
                           ),
                           child: Text(
-                            '默认',
+                            '已选择',
                             style: AppTextStyles.captionSmall.copyWith(
-                              color: AppColors.primary,
+                              color: Colors.green,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -123,12 +123,6 @@ class ServerCard extends StatelessWidget {
                 ),
                 onSelected: (value) {
                   switch (value) {
-                    case 'copy':
-                      Clipboard.setData(ClipboardData(text: config.displayAddress));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('地址已复制')),
-                      );
-                      break;
                     case 'edit':
                       onEdit?.call();
                       break;
@@ -143,25 +137,15 @@ class ServerCard extends StatelessWidget {
                 itemBuilder: (context) {
                   return [
                     // PopupMenuItem(
-                    //   value: 'copy',
+                    //   value: 'edit',
                     //   child: Row(
                     //     children: [
-                    //       const Icon(Icons.copy_outlined, size: 18, color: AppColors.textSecondary),
+                    //       const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
                     //       const SizedBox(width: 10),
-                    //       const Text('复制地址', style: AppTextStyles.bodyMedium),
+                    //       const Text('控制', style: AppTextStyles.bodyMedium),
                     //     ],
                     //   ),
                     // ),
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
-                          const SizedBox(width: 10),
-                          const Text('编辑', style: AppTextStyles.bodyMedium),
-                        ],
-                      ),
-                    ),
                     PopupMenuItem(
                       value: 'qr',
                       child: Row(
@@ -219,19 +203,19 @@ class ServerCard extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: isConnected ? AppColors.online : AppColors.offline,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.surface, width: 1.5),
-              ),
-            ),
-          ),
+          // Positioned(
+          //   right: 0,
+          //   bottom: 0,
+          //   child: Container(
+          //     width: 10,
+          //     height: 10,
+          //     decoration: BoxDecoration(
+          //       color: isConnected ? AppColors.online : AppColors.offline,
+          //       shape: BoxShape.circle,
+          //       border: Border.all(color: AppColors.surface, width: 1.5),
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );

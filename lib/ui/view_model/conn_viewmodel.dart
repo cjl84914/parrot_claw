@@ -29,10 +29,10 @@ class ConnViewModel extends ChangeNotifier {
 
   ServerConfig? _config;
 
-  List<dynamic> _sessions = [];
+  List<GatewaySessionEntry> _sessions = [];
 
-  /// 获取当前服务器的会话列表
-  List<dynamic> get sessions => _sessions;
+  /// 获取当前服务器的会话列表。
+  List<GatewaySessionEntry> get sessions => List.unmodifiable(_sessions);
 
   final messageController = StreamController<ChatMessage>.broadcast();
 
@@ -137,7 +137,6 @@ class ConnViewModel extends ChangeNotifier {
 
   String? _resolvePairingDeviceId(Object error) {
     if (error is! GatewayResponseError) return null;
-
     // The approval command must use the request ID returned by Gateway.
     // Never generate or substitute a local ID here: it would approve a
     // different request and make the copied command appear to change.
@@ -146,15 +145,6 @@ class ConnViewModel extends ChangeNotifier {
     if (returnedRequestId != null && returnedRequestId.isNotEmpty) {
       return returnedRequestId;
     }
-    // for (final key in const [
-    //   'deviceId',
-    //   'deviceID',
-    //   'device_id',
-    //   'id',
-    // ]) {
-    //   final value = details[key]?.toString().trim();
-    //   if (value != null && value.isNotEmpty) return value;
-    // }
     final match = RegExp(
       r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
     ).firstMatch(error.message);
@@ -303,12 +293,12 @@ class ConnViewModel extends ChangeNotifier {
     _connected = true;
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
     _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
-    if (health is Map) {
-      final sessions = health['sessions'];
-      if (sessions is Map && sessions['recent'] is List) {
-        _sessions = sessions['recent'] as List<dynamic>;
-      }
-    }
+    // if (health is Map) {
+    //   final recentSessions = health['sessions'];
+    //   if (recentSessions is Map && recentSessions['recent'] is List) {
+    //     _sessions = _decodeSessionEntries(recentSessions['recent']);
+    //   }
+    // }
     _isHistoryLoading = false;
     notifyListeners();
     unawaited(_initializeSessionData());
@@ -570,8 +560,80 @@ class ConnViewModel extends ChangeNotifier {
 
   Future<void> switchSession(String key) async {
     _sessionKey = key;
-    beginHistoryLoad();
+    await beginHistoryLoad();
   }
+
+  /// 从 Gateway 获取完整会话列表，并同步更新 ViewModel 状态。
+  Future<GatewaySessionsListResponse> listSessions({
+    int? limit,
+    String? search,
+    bool archived = false,
+    String? agentId,
+    bool includeGlobal = true,
+    bool includeUnknown = false,
+    int? activeMinutes,
+    String? spawnedBy,
+    int? offset,
+    bool? configuredAgentsOnly,
+  }) async {
+    final response = await GatewayConnection.shared.sessionsList(
+      limit: limit,
+      search: search,
+      archived: archived,
+      agentId: agentId,
+      includeGlobal: includeGlobal,
+      includeUnknown: includeUnknown,
+      activeMinutes: activeMinutes,
+      spawnedBy: spawnedBy,
+      offset: offset,
+      configuredAgentsOnly: configuredAgentsOnly,
+    );
+    _sessions = response.sessions;
+    notifyListeners();
+    return response;
+  }
+
+  /// 创建会话，并把新会话加入本地列表。
+  Future<GatewayCreateSessionResponse> createSession({
+    required String key,
+    String? agentId,
+    String? label,
+    String? parentSessionKey,
+    bool? worktree,
+    String? worktreeBaseRef,
+  }) async {
+    final response = await GatewayConnection.shared.sessionsCreate(
+      key: key,
+      agentId: agentId,
+      label: label,
+      parentSessionKey: parentSessionKey,
+      worktree: worktree,
+      worktreeBaseRef: worktreeBaseRef,
+    );
+    await listSessions();
+    return response;
+  }
+
+  /// 删除会话及其 transcript，并清理本地状态。
+  Future<void> deleteSession({required String sessionKey, String? agentId}) async {
+    await GatewayConnection.shared.sessionsDelete(
+      sessionKey: sessionKey,
+      agentId: agentId,
+    );
+    _sessions = _sessions.where((session) => session.key != sessionKey).toList();
+    if (_sessionKey == sessionKey) {
+      _sessionKey = null;
+    }
+    notifyListeners();
+  }
+
+  // List<GatewaySessionEntry> _decodeSessionEntries(dynamic value) {
+  //   if (value is! List) return [];
+  //   return value
+  //       .whereType<Map>()
+  //       .map((item) => GatewaySessionEntry.fromJson(item.cast<String, dynamic>()))
+  //       .toList();
+  // }
 
   Future<void> refresh() async {
     GatewayConnection.shared.refresh();

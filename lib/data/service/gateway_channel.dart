@@ -476,7 +476,7 @@ class GatewayChannelActor {
       _listening = false;
       _task?.sink.close();
       _task = null;
-      _disconnectHandler?.call('connect failed: $e');
+      _disconnectHandler?.call('$e');
 
       final waiters = List.of(_connectWaiters);
       _connectWaiters.clear();

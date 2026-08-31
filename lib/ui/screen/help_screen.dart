@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/main.dart';
 
-class MoreScreen extends StatelessWidget {
-  const MoreScreen({super.key});
+class HelpScreen extends StatelessWidget {
+  const HelpScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('更多'),
+        title: const Text('使用指南'),
         centerTitle: true,
       ),
       body: ListView(

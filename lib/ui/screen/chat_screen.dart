@@ -10,9 +10,12 @@ import 'package:flyer_chat_file_message/flyer_chat_file_message.dart';
 import 'package:flyer_chat_image_message/flyer_chat_image_message.dart';
 import 'package:flyer_chat_system_message/flyer_chat_system_message.dart';
 import 'package:flyer_chat_text_message/flyer_chat_text_message.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/message.dart' hide ChatMessage;
+import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
@@ -230,6 +233,29 @@ class _ChatScreenState extends State<ChatScreen>
           return const Center(child: CircularProgressIndicator());
         }
         return Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: '打开侧边栏',
+              onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+            ),
+            centerTitle: false,
+            title: const Text('ParrotClaw'),
+            actions: [
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white.withOpacity(0.5)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  onPressed: () => context.go(Routes.voice),
+                  icon: const Icon(Icons.phone_outlined, size: 24),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
           body: Stack(
             children: [
               Chat(
@@ -533,6 +559,7 @@ class _ChatScreenState extends State<ChatScreen>
               Positioned(
                 bottom: 0,
                 left: 0,
+                right: 12,
                 child: Container(
                   width: MediaQuery.of(context).size.width,
                   height: _composerHeight,

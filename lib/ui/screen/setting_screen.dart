@@ -6,6 +6,7 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
 import 'package:provider/provider.dart';
 
@@ -82,6 +83,14 @@ class _SettingScreenState extends State<SettingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: '打开侧边栏',
+          onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+        ),
+        title: const Text('设置'),
+      ),
       body: SingleChildScrollView(
         scrollDirection: Axis.vertical,
         child: ListenableBuilder(
@@ -96,11 +105,11 @@ class _SettingScreenState extends State<SettingScreen> {
                     : false;
             return Column(
               children: [
-                if (isLocalGateway)
-                  Card(
-                    margin: const EdgeInsets.all(10),
-                    child: _buildGatewayControl(),
-                  ),
+                // if (isLocalGateway)
+                //   Card(
+                //     margin: const EdgeInsets.all(10),
+                //     child: _buildGatewayControl(),
+                //   ),
                 Card(
                   margin: const EdgeInsets.all(10),
                   child: _buildTtsSetting(),
@@ -283,9 +292,9 @@ class _SettingScreenState extends State<SettingScreen> {
 
   Widget _buildMore() {
     return ListTile(
-      title: const Text('更多', style: TextStyle(fontSize: 12)),
+      title: const Text('使用指南', style: TextStyle(fontSize: 12)),
       trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: () => context.push(Routes.more),
+      onTap: () => context.push(Routes.help),
     );
   }
 }

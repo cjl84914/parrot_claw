@@ -4,8 +4,10 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
+import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/util/asr_util.dart';
@@ -165,7 +167,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
     if (!widget.viewModel.settingRepository.isTTSAbort) {
       await ASRUtil().pause();
     }
-    if(mounted) {
+    if (mounted) {
       setState(() {
         _isPendding = false;
       });
@@ -196,38 +198,43 @@ class _VoiceScreenState extends State<VoiceScreen> {
     }
   }
 
-  void _initTalk() async{
+  void _initTalk() async {
     ASRUtil().setCallbacks(
       onStateChanged: (RecordState recordState) {
-        // if (mounted) {
-        //   if (recordState == RecordState.record) {
-        //     setState(() {
-        //       _isRecording = true;
-        //     });
-        //   }
-        //   if (recordState == RecordState.stop) {
-        //     setState(() {
-        //       _isRecording = false;
-        //     });
-        //   }
-        // }
+        if (mounted) {
+          if (recordState == RecordState.record) {
+            setState(() {
+              _isRecording = true;
+            });
+          }
+          if (recordState == RecordState.stop) {
+            setState(() {
+              _isRecording = false;
+            });
+          }
+        }
       },
       onTextResult: (String text) => _sendMessage(text),
       onError: (String error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(error, maxLines: 3, overflow: TextOverflow.ellipsis),
+              content: Text(
+                error,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           );
         }
       },
-      initCallback: () async{
+      initCallback: () async {
         setState(() {
           _isAsrInited = true;
         });
       },
     );
+    ASRUtil().start();
   }
 
   @override
@@ -264,9 +271,9 @@ class _VoiceScreenState extends State<VoiceScreen> {
                     // 扬声器开关
                     _buildIconButton(
                       icon:
-                      widget.viewModel.settingRepository.isSpeakerOn
-                          ? Icons.volume_up
-                          : Icons.volume_off,
+                          widget.viewModel.settingRepository.isSpeakerOn
+                              ? Icons.volume_up
+                              : Icons.volume_off,
                       color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () async {
@@ -279,38 +286,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
                       },
                     ),
 
-                    // 麦克风开关
-                    _buildIconButton(
-                      icon: _isRecording ? Icons.mic : Icons.mic_off,
-                      color: _isRecording ? Colors.red: Colors.white,
-                      iconColor: _isRecording ? Colors.white :AppColors.textSecondary,
-                      onTap: () async {
-                        // _sendMessage('测试');
-                        if (_isRecording) {
-                          await ASRUtil().stop();
-                          _isRecording = false;
-                        } else {
-                          widget.viewModel.subscribeSessionMessage();
-                          // 按实际启动结果更新状态，失败时给出原因提示
-                          _isRecording = await ASRUtil().start();
-                          if (!_isRecording && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('录音启动失败，请检查麦克风权限/设备'),
-                              ),
-                            );
-                          }
-                        }
-
-                        if (mounted) {
-                          setState(() {});
-                        }
-                      },
-                    ),
-
                     // 字幕开关
                     _buildIconButton(
-                      icon: _isShowSubtitle ? Icons.subtitles : Icons.subtitles_off,
+                      icon:
+                          _isShowSubtitle
+                              ? Icons.subtitles
+                              : Icons.subtitles_off,
                       color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () {
@@ -323,13 +304,46 @@ class _VoiceScreenState extends State<VoiceScreen> {
                     // 数字人开关
                     _buildIconButton(
                       icon:
-                      widget.viewModel.settingRepository.isShowFace
-                          ? Icons.face
-                          : Icons.face_retouching_off,
+                          widget.viewModel.settingRepository.isShowFace
+                              ? Icons.face
+                              : Icons.face_retouching_off,
                       color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () {
                         widget.viewModel.settingRepository.switchShowFace();
+                      },
+                    ),
+
+                    _buildIconButton(
+                      icon: _isRecording ? Icons.mic : Icons.mic_off,
+                      color: _isRecording ? Colors.red : Colors.white,
+                      iconColor:
+                          _isRecording ? Colors.white : AppColors.textSecondary,
+                      onTap: () async {
+                        // _sendMessage('测试');
+                        if (_isRecording) {
+                          await ASRUtil().stop();
+                          _isRecording = false;
+                        }
+
+                        context.go(Routes.index);
+
+                        // else {
+                        //   widget.viewModel.subscribeSessionMessage();
+                        //   // 按实际启动结果更新状态，失败时给出原因提示
+                        //   _isRecording = await ASRUtil().start();
+                        //   if (!_isRecording && context.mounted) {
+                        //     ScaffoldMessenger.of(context).showSnackBar(
+                        //       const SnackBar(
+                        //         content: Text('录音启动失败，请检查麦克风权限/设备'),
+                        //       ),
+                        //     );
+                        //   }
+                        // }
+                        //
+                        // if (mounted) {
+                        //   setState(() {});
+                        // }
                       },
                     ),
                   ],
@@ -346,56 +360,52 @@ class _VoiceScreenState extends State<VoiceScreen> {
   }
 
   Widget _faceTalk() {
-  final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.of(context).size.height;
 
-  return Stack(
-    children: [
-      Live2dScreen(controller: _live2dController),
-      // 字幕区域：位于屏幕中部和底部按钮上方
-      if (_isShowSubtitle)
-        Positioned(
-          left: 20.w,
-          right: 20.w,
-          top: screenHeight * 0.4,
-          bottom: 110.h,
-          child: _buildSubtitle(),
+    return Stack(
+      children: [
+        Live2dScreen(controller: _live2dController),
+        // 字幕区域：位于屏幕中部和底部按钮上方
+        if (_isShowSubtitle)
+          Positioned(
+            left: 20.w,
+            right: 20.w,
+            top: screenHeight * 0.4,
+            bottom: 110.h,
+            child: _buildSubtitle(),
+          ),
+        if (_isPendding) SpinKitThreeBounce(size: 24, color: Colors.white),
+      ],
+    );
+  }
+
+  Widget _buildSubtitle() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [
+            Colors.black.withOpacity(0.48),
+            Colors.black.withOpacity(0.0),
+          ],
         ),
-      if (_isPendding)
-        SpinKitThreeBounce(size: 24, color: Colors.white),
-    ],
-  );
-}
-
-Widget _buildSubtitle() {
-  return Container(
-    padding: EdgeInsets.symmetric(
-      horizontal: 16.w,
-      vertical: 12.h,
-    ),
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.bottomCenter,
-        end: Alignment.topCenter,
-        colors: [
-          Colors.black.withOpacity(0.48),
-          Colors.black.withOpacity(0.0),
-        ],
+        borderRadius: BorderRadius.circular(24.r),
       ),
-      borderRadius: BorderRadius.circular(24.r),
-    ),
-    child: SingleChildScrollView(
-      reverse: true,
-      child: Text(
-        _lastTextContent,
-        style: AppTextStyles.bodyMedium.copyWith(
-          color: Colors.white,
-          fontSize: 16.sp,
-          height: 1.6,
+      child: SingleChildScrollView(
+        reverse: true,
+        child: Text(
+          _lastTextContent,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: Colors.white,
+            fontSize: 16.sp,
+            height: 1.6,
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _sendMessage(String? text) async {
     if (text == null || text.trim().isEmpty) return;
@@ -472,11 +482,7 @@ Widget _buildSubtitle() {
             ),
           ],
         ),
-        child: Icon(
-          icon,
-          size: 28.r,
-          color: iconColor,
-        ),
+        child: Icon(icon, size: 28.r, color: iconColor),
       ),
     );
   }

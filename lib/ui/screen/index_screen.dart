@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/main.dart';
-import 'package:parrot_app/ui/screen/server_list_screen.dart';
+import 'package:parrot_app/ui/widget/sidebar_widget.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/tts_util.dart';
 import 'package:provider/provider.dart';
+
+final GlobalKey<ScaffoldState> indexScaffoldKey = GlobalKey<ScaffoldState>();
 
 class IndexScreen extends StatefulWidget {
   final ConnViewModel viewModel;
@@ -27,7 +29,6 @@ class _IndexScreenState extends State<IndexScreen> {
     widget.viewModel.addListener(_onViewModelChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _connect();
-      // _openPairingPageIfNeeded();
     });
   }
 
@@ -51,7 +52,6 @@ class _IndexScreenState extends State<IndexScreen> {
     });
   }
 
-
   void _connect() {
     widget.viewModel.connect();
   }
@@ -59,19 +59,17 @@ class _IndexScreenState extends State<IndexScreen> {
   @override
   void dispose() {
     widget.viewModel.removeListener(_onViewModelChanged);
-    // ConnViewModel 是全局 Provider。IndexScreen 可能因服务器切换重建，
-    // 页面销毁不代表应用需要断开网关连接。
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentPath = GoRouterState.of(context).matchedLocation;
     return ListenableBuilder(
       listenable: Listenable.merge([widget.viewModel]),
       builder: (context, child) {
         return Scaffold(
-          drawer: Drawer(child: ServerListScreen(viewModel: context.read())),
+          key: indexScaffoldKey,
+          drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
           onDrawerChanged: (isOpened) {
             if (!isOpened) {
               // 确保在路由切换和焦点恢复逻辑完成后，强制收起键盘
@@ -80,119 +78,18 @@ class _IndexScreenState extends State<IndexScreen> {
               });
             }
           },
-          appBar: AppBar(
-            title: Builder(
-              builder: (c) {
-                if (widget.viewModel.isConnecting) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 8),
-                        Text('连接中...', style: TextStyle(fontSize: 14)),
-                      ],
-                    ),
-                  );
-                } else if (!widget.viewModel.connected) {
-                  return Container(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.cloud_off_outlined, size: 14),
-                            const SizedBox(width: 8),
-                            const Text('已断开连接', style: AppTextStyles.caption),
-                            TextButton(
-                              onPressed: _connect,
-                              child: const Text(
-                                '连接',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                } else {
-                  return PopupMenuButton<String>(
-                    initialValue: widget.viewModel.sessionKey,
-                    tooltip: '选择会话',
-                    onSelected: (String newValue) {
-                      widget.viewModel.switchSession(newValue);
-                    },
-                    offset: const Offset(0, 36),
-                    itemBuilder: (BuildContext context) {
-                      return widget.viewModel.sessions.map((session) {
-                        return PopupMenuItem<String>(
-                          value: session['key'],
-                          child: Text(session['key']),
-                        );
-                      }).toList();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              widget.viewModel.sessionKey ?? '',
-                              style: AppTextStyles.appBarTitle,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const Icon(Icons.arrow_drop_down),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-              },
-            ),
-            actions: [],
-          ),
           body: Column(
             children: [
               if (widget.viewModel.disconnectReason != null &&
                   !widget.viewModel.connected)
-                Container(
-                  margin: const EdgeInsets.only(left: 12, right: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(AppRadius.large),
-                  ),
-                  child: Text(
-                    widget.viewModel.disconnectReason!,
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.error,
-                    ),
-                  ),
+                _buildResultBanner(
+                  icon: Icons.error_outline,
+                  color: AppColors.error,
+                  title: '连接失败',
+                  detail: widget.viewModel.disconnectReason!,
                 ),
               Expanded(child: widget.child),
-            ],
-          ),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _currentIndex(currentPath),
-            onTap: (index) {
-              final routes = [Routes.index, Routes.voice, Routes.about];
-              context.go(routes[index]);
-            },
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.chat), label: '聊天'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.keyboard_voice),
-                label: '对话',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
+              const SizedBox(height: 12),
             ],
           ),
         );
@@ -200,10 +97,47 @@ class _IndexScreenState extends State<IndexScreen> {
     );
   }
 
-  int _currentIndex(String path) {
-    if (path.startsWith(Routes.index)) return 0;
-    if (path.startsWith(Routes.voice)) return 1;
-    if (path.startsWith(Routes.about)) return 2;
-    return 0;
+  Widget _buildResultBanner({
+    required IconData icon,
+    required Color color,
+    required String title,
+    String? detail,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadius.large),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (detail != null) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
+                detail,
+                style: AppTextStyles.caption.copyWith(color: color),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
