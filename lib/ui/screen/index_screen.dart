@@ -64,36 +64,38 @@ class _IndexScreenState extends State<IndexScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Listenable.merge([widget.viewModel]),
-      builder: (context, child) {
-        return Scaffold(
-          key: indexScaffoldKey,
-          drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
-          onDrawerChanged: (isOpened) {
-            if (!isOpened) {
-              // 确保在路由切换和焦点恢复逻辑完成后，强制收起键盘
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                FocusManager.instance.primaryFocus?.unfocus();
-              });
-            }
-          },
-          body: Column(
-            children: [
-              if (widget.viewModel.disconnectReason != null &&
-                  !widget.viewModel.connected)
-                _buildResultBanner(
-                  icon: Icons.error_outline,
-                  color: AppColors.error,
-                  title: '连接失败',
-                  detail: widget.viewModel.disconnectReason!,
-                ),
-              Expanded(child: widget.child),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
+    return SafeArea(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([widget.viewModel]),
+        builder: (context, child) {
+          return Scaffold(
+            key: indexScaffoldKey,
+            drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
+            onDrawerChanged: (isOpened) {
+              if (!isOpened) {
+                // 确保在路由切换和焦点恢复逻辑完成后，强制收起键盘
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                });
+              }
+            },
+            body: Column(
+              children: [
+                if (widget.viewModel.disconnectReason != null &&
+                    !widget.viewModel.connected)
+                  _buildResultBanner(
+                    icon: Icons.error_outline,
+                    color: AppColors.error,
+                    title: '连接失败',
+                    detail: widget.viewModel.disconnectReason!,
+                  ),
+                Expanded(child: widget.child),
+                const SizedBox(height: 12),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

@@ -555,8 +555,8 @@ class GatewayChannelActor {
     _listening = false;
     _keepaliveTimer?.cancel();
     _keepaliveTimer = null;
-    _disconnectHandler?.call('receive failed: $reason');
-    _failPending(_gatewayError('receive failed: $reason'));
+    _disconnectHandler?.call(reason);
+    _failPending(_gatewayError(reason));
     _scheduleReconnect();
   }
 

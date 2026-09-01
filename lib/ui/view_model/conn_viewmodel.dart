@@ -893,54 +893,45 @@ class ConnViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 设置会话使用的模型 (参考 Swift WebChatSwiftUI.swift 的 setSessionModel)
-  Future<void> setSessionModel(String? model) async {
-    try {
-      final Map<String, dynamic> params = {
-        'key': _sessionKey,
-        'model': model, // Dart 中 null 会被转为 JSON 的 null
-      };
-
-      final Map<String, dynamic> json = await GatewayConnection.shared.request(
-        method: Method.sessionsPatch.rawValue,
-        params: params,
-        timeoutMs: 15000,
-      );
-      _log.info(json);
-      _modelDefault = model;
-      notifyListeners();
-
-      _log.info('Successfully updated session model to: $model');
-    } catch (e) {
-      _log.warning('setSessionModel failed: $e');
-      rethrow;
+  /// 更新会话使用的模型和思考深度。
+  ///
+  /// 只会把非 null 的字段写入请求，因此可以单独更新其中一项，
+  /// 也可以在一次 sessions.patch 请求中同时更新两项。
+  Future<void> setSessionConfig({String? model, String? thinkingLevel}) async {
+    if (model == null && thinkingLevel == null) {
+      return;
     }
-  }
 
-  /// 设置会话的思考深度 (参考 Swift WebChatSwiftUI.swift 的 setSessionThinking)
-  Future<void> setSessionThinking(String thinkingLevel) async {
     try {
-      final Map<String, dynamic> params = {
-        'key': _sessionKey,
-        'thinkingLevel': thinkingLevel,
-      };
+      final Map<String, dynamic> params = {'key': _sessionKey};
+      if (model != null) {
+        params['model'] = model;
+      }
+      if (thinkingLevel != null) {
+        params['thinkingLevel'] = thinkingLevel;
+      }
 
       final Map<String, dynamic> json = await GatewayConnection.shared.request(
         method: Method.sessionsPatch.rawValue,
         params: params,
         timeoutMs: 15000,
       );
-
       _log.info(json);
-      // 同时更新本地状态
-      _thinkingDefault = thinkingLevel;
+
+      if (model != null) {
+        _modelDefault = model;
+      }
+      if (thinkingLevel != null) {
+        _thinkingDefault = thinkingLevel;
+      }
       notifyListeners();
 
       _log.info(
-        'Successfully updated session thinkingLevel to: $thinkingLevel',
+        'Successfully updated session config: '
+        'model=$model, thinkingLevel=$thinkingLevel',
       );
     } catch (e) {
-      _log.warning('setSessionThinking failed: $e');
+      _log.warning('setSessionConfig failed: $e');
       rethrow;
     }
   }

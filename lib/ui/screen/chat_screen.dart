@@ -63,6 +63,7 @@ class _ChatScreenState extends State<ChatScreen>
   InputMode _inputMode = InputMode.Text;
 
   final GlobalKey _composerKey = GlobalKey();
+  final GlobalKey _modelButtonKey = GlobalKey();
   double _composerHeight = 60;
 
   final _textEditingController = TextEditingController();
@@ -358,7 +359,12 @@ class _ChatScreenState extends State<ChatScreen>
                       (context) => Composer(
                         key: _composerKey,
                         textEditingController: _textEditingController,
-                        padding: EdgeInsets.only(top: 8, bottom: 4, right: 48),
+                        padding: const EdgeInsets.only(
+                          left: 12,
+                          top: 8,
+                          bottom: 4,
+                          right: 12,
+                        ),
                         backgroundColor: ChatColors.dark().surface,
                         topWidget: ComposerActionBar(
                           buttons: [
@@ -382,17 +388,27 @@ class _ChatScreenState extends State<ChatScreen>
                                       : Colors.grey,
                             ),
                             ComposerActionButton(
+                              key: _modelButtonKey,
                               visible: true,
                               icon: Icons.psychology_outlined,
-                              title: widget.viewModel.model!,
+                              title: widget.viewModel.model ?? '模型',
                               onPressed: () => _showModelOptions(context),
                               color: Colors.grey,
                             ),
                             ComposerActionButton(
                               visible: true,
-                              icon: Icons.lightbulb_outline,
-                              title: widget.viewModel.thinkingDefault,
-                              onPressed: () => _showThinkOptions(context),
+                              icon:  _inputMode == InputMode.Voice
+                                  ? Icons.keyboard_alt_outlined
+                                  : Icons.mic_outlined,
+                              title: 'MIC',
+                              onPressed: () {
+                                if (_inputMode == InputMode.Voice) {
+                                  _inputMode = InputMode.Text;
+                                } else if (_inputMode == InputMode.Text) {
+                                  _inputMode = InputMode.Voice;
+                                }
+                                setState(() {});
+                              },
                               color: Colors.grey,
                             ),
                           ],
@@ -579,22 +595,6 @@ class _ChatScreenState extends State<ChatScreen>
                               ASRUtil().stop();
                             },
                           ),
-                        ),
-                      ),
-                      IconButton(
-                        alignment: Alignment.center,
-                        onPressed: () async {
-                          if (_inputMode == InputMode.Voice) {
-                            _inputMode = InputMode.Text;
-                          } else if (_inputMode == InputMode.Text) {
-                            _inputMode = InputMode.Voice;
-                          }
-                          setState(() {});
-                        },
-                        icon: Icon(
-                          _inputMode == InputMode.Voice
-                              ? Icons.keyboard_alt_outlined
-                              : Icons.mic_outlined,
                         ),
                       ),
                     ],
@@ -828,101 +828,105 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  void _showThinkOptions(BuildContext context) {
-    FocusManager.instance.primaryFocus?.unfocus();
-    showModalBottomSheet(
-      context: context,
-      builder:
-          (context) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    '思考层级 (Think Level)',
-                    style: AppTextStyles.titleMedium,
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: widget.viewModel.thinkingOptions.length,
-                    itemBuilder: (c, i) {
-                      final String think = widget.viewModel.thinkingOptions[i];
-                      return ListTile(
-                        title: Text(
-                          think.toUpperCase(),
-                          style: AppTextStyles.bodyLarge,
-                        ),
-                        trailing:
-                            think == widget.viewModel.thinkingDefault
-                                ? const Icon(
-                                  Icons.check_circle,
-                                  color: AppColors.secondary,
-                                )
-                                : const Icon(
-                                  Icons.circle_outlined,
-                                  color: AppColors.textTertiary,
-                                ),
-                        onTap: () {
-                          widget.viewModel.setSessionThinking(think);
-                          Navigator.pop(context);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-    );
+  Rect? _buttonRect(GlobalKey key) {
+    final buttonContext = key.currentContext;
+    final renderObject = buttonContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & renderObject.size;
   }
 
   void _showModelOptions(BuildContext context) {
     FocusManager.instance.primaryFocus?.unfocus();
-    showModalBottomSheet(
+    final modelButtonRect = _buttonRect(_modelButtonKey);
+    if (modelButtonRect == null) return;
+
+    final items =
+        (widget.viewModel.rawModels ?? []).whereType<Map>().map((model) {
+          final modelId = model['id']?.toString();
+          final modelName = model['name']?.toString() ?? modelId ?? '未知模型';
+          return PullDownMenuItem(
+            title: modelName,
+            icon:
+                modelId == widget.viewModel.model
+                    ? CupertinoIcons.check_mark_circled
+                    : CupertinoIcons.circle,
+            tapHandler: PullDownMenuItem.noPopTapHandler,
+            onTap: () {
+              _showThinkingOptionsForModel(context, modelButtonRect, modelId);
+            },
+          );
+        }).toList();
+
+    showPullDownMenu(
       context: context,
-      builder:
-          (context) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text('选择模型 (LLM)', style: AppTextStyles.titleMedium),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: widget.viewModel.rawModels?.length ?? 0,
-                    itemBuilder: (c, i) {
-                      final dynamic model = widget.viewModel.rawModels?[i];
-                      return ListTile(
-                        title: Text(
-                          model?['name'],
-                          style: AppTextStyles.bodyLarge,
-                        ),
-                        trailing:
-                            model?['id'] == widget.viewModel.model
-                                ? const Icon(
-                                  Icons.check_circle,
-                                  color: AppColors.secondary,
-                                )
-                                : const Icon(
-                                  Icons.circle_outlined,
-                                  color: AppColors.textTertiary,
-                                ),
-                        onTap: () {
-                          widget.viewModel.setSessionModel(model?['id']);
-                          Navigator.pop(context);
-                          _showThinkOptions(context);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
+      position: modelButtonRect,
+      items: items,
+      itemsOrder: PullDownMenuItemsOrder.upwards,
     );
+  }
+
+  void _showThinkingOptionsForModel(
+    BuildContext context,
+    Rect modelButtonRect,
+    String? model,
+  ) {
+    final options = widget.viewModel.thinkingOptions;
+    if (options.isEmpty) {
+      unawaited(_updateSessionConfig(model: model));
+      return;
+    }
+
+    final items =
+        options.map((option) {
+          final thinkingLevel = option.toString();
+          return PullDownMenuItem(
+            title: thinkingLevel.toUpperCase(),
+            icon:
+                thinkingLevel == widget.viewModel.thinkingDefault
+                    ? CupertinoIcons.check_mark_circled
+                    : CupertinoIcons.circle,
+            onTap: () {
+              unawaited(
+                _updateSessionConfig(
+                  model: model,
+                  thinkingLevel: thinkingLevel,
+                ),
+              );
+            },
+          );
+        }).toList();
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final thinkingPosition = Rect.fromLTWH(
+      modelButtonRect.right,
+      modelButtonRect.top,
+      0,
+      modelButtonRect.height,
+    );
+    showPullDownMenu(
+      context: context,
+      position: thinkingPosition,
+      items: items,
+      menuOffset: screenWidth - modelButtonRect.right < 260 ? -16 : 16,
+    );
+  }
+
+  Future<void> _updateSessionConfig({
+    String? model,
+    String? thinkingLevel,
+  }) async {
+    try {
+      await widget.viewModel.setSessionConfig(
+        model: model,
+        thinkingLevel: thinkingLevel,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 }

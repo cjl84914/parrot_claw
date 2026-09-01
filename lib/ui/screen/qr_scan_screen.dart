@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:logging/logging.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
@@ -19,7 +20,7 @@ class QrScanScreen extends StatefulWidget {
 class _QrScanScreenState extends State<QrScanScreen> {
   final MobileScannerController _controller = MobileScannerController();
   bool _handling = false;
-
+  final Logger _log = Logger('QrScanScreen');
   @override
   void dispose() {
     _controller.dispose();
@@ -37,6 +38,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   }
 
   Future<void> _handlePayload(String payload) async {
+    _log.info(payload);
     _handling = true;
     try {
       final config = ServerConfig.fromQrPayload(payload);
