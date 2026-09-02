@@ -140,6 +140,7 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
   // 取消录音
   void _cancelRecording() async {
     EasyLoading.showToast('取消发送');
+    widget.stopRecording();
   }
 
   // 构建波形动画指示器

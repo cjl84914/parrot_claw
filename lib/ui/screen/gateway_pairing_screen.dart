@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
+import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 
 class GatewayPairingScreen extends StatelessWidget {
   final ConnViewModel viewModel;
-  final String? deviceId;
 
-  const GatewayPairingScreen({super.key, required this.viewModel, this.deviceId});
+  const GatewayPairingScreen({super.key, required this.viewModel});
 
   @override
   Widget build(BuildContext context) {
-    final id = deviceId ?? viewModel.pairingDeviceId;
+    final id = viewModel.pairingDeviceId;
     final command = id == null ? null : 'openclaw devices approve $id';
     return Scaffold(
       backgroundColor: Colors.black,
@@ -45,21 +45,21 @@ class GatewayPairingScreen extends StatelessWidget {
                       const SizedBox(height: 28),
                       _CommandCard(command: command),
                       const SizedBox(height: 28),
-                      _StepRow(active: true, text: '网关需要设备授权'),
+                      _StepRow(active: false, text: '网关需要设备授权'),
                       const SizedBox(height: 18),
                       _StepRow(active: false, text: '在网关上运行授权命令'),
                       const SizedBox(height: 18),
-                      TextButton(
-                        onPressed: () => showDialog<void>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('配对说明'),
-                            content: const Text('请在运行 OpenClaw Gateway 的终端中执行授权命令，然后返回本页面重试连接。'),
-                            actions: [TextButton(onPressed: () => context.pop(), child: const Text('知道了'))],
-                          ),
-                        ),
-                        child: const Text('查看详情', style: TextStyle(color: Colors.white, fontSize: 15)),
-                      ),
+                      // TextButton(
+                      //   onPressed: () => showDialog<void>(
+                      //     context: context,
+                      //     builder: (context) => AlertDialog(
+                      //       title: const Text('配对说明'),
+                      //       content: const Text('请在运行 OpenClaw Gateway 的终端中执行授权命令，然后返回本页面重试连接。'),
+                      //       actions: [TextButton(onPressed: () => context.pop(), child: const Text('知道了'))],
+                      //     ),
+                      //   ),
+                      //   child: const Text('查看详情', style: TextStyle(color: Colors.white, fontSize: 15)),
+                      // ),
                     ],
                   ),
                 ),
@@ -71,8 +71,11 @@ class GatewayPairingScreen extends StatelessWidget {
                   style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                   onPressed: () async {
                     viewModel.clearPairingRequired();
-                    if (context.mounted) context.pop();
                     await viewModel.reconnect();
+                    if (!context.mounted) return;
+                    if (viewModel.connected) {
+                      context.go(Routes.index);
+                    }
                   },
                   icon: const Icon(Icons.radar),
                   label: const Text('重试连接', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),

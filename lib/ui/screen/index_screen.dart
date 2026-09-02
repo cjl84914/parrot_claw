@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
-import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/widget/sidebar_widget.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/util/asr_util.dart';
@@ -21,45 +19,12 @@ class IndexScreen extends StatefulWidget {
 }
 
 class _IndexScreenState extends State<IndexScreen> {
-  bool _pairingRoutePushed = false;
-
   @override
   void initState() {
     super.initState();
-    widget.viewModel.addListener(_onViewModelChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _connect();
+      widget.viewModel.connect();
     });
-  }
-
-  void _onViewModelChanged() {
-    if (!mounted || !widget.viewModel.pairingRequired) return;
-    _openPairingPageIfNeeded();
-  }
-
-  void _openPairingPageIfNeeded() {
-    if (!mounted || _pairingRoutePushed || !widget.viewModel.pairingRequired) {
-      return;
-    }
-    final location = GoRouterState.of(context).matchedLocation;
-    if (location == Routes.gatewayPairing) return;
-    _pairingRoutePushed = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.push(Routes.gatewayPairing).whenComplete(() {
-        _pairingRoutePushed = false;
-      });
-    });
-  }
-
-  void _connect() {
-    widget.viewModel.connect();
-  }
-
-  @override
-  void dispose() {
-    widget.viewModel.removeListener(_onViewModelChanged);
-    super.dispose();
   }
 
   @override

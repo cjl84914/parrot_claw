@@ -158,9 +158,10 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    final statusBarHeight = Platform.isIOS ? 128 : 48;
     return ScreenUtilInit(
       designSize: const Size(390, 844),
       minTextAdapt: true,
@@ -180,6 +181,16 @@ class _MyAppState extends State<MyApp> {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
+            snackBarTheme: SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
+              insetPadding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                mediaQuery.size.height - 128,
+              ),
+              showCloseIcon: true,
+            ),
           ),
           themeMode: ThemeMode.dark,
           builder: (context, widget) {
@@ -256,8 +267,16 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: Routes.voice,
           pageBuilder:
-              (context, state) =>
-              NoTransitionPage(child: VoiceScreen(viewModel: context.read())),
+              (context, state) => NoTransitionPage(
+                child: VoiceScreen(viewModel: context.read()),
+              ),
+        ),
+        GoRoute(
+          path: Routes.qrCode,
+          pageBuilder:
+              (context, state) => NoTransitionPage(
+                child: QrCodeScreen(config: state.extra as ServerConfig),
+              ),
         ),
       ],
     ),
@@ -294,10 +313,7 @@ final GoRouter router = GoRouter(
     GoRoute(
       path: Routes.gatewayPairing,
       builder:
-          (context, state) => GatewayPairingScreen(
-            viewModel: context.read(),
-            deviceId: state.uri.queryParameters['deviceId'],
-          ),
+          (context, state) => GatewayPairingScreen(viewModel: context.read()),
     ),
     GoRoute(
       path: Routes.serverEdit,
@@ -318,32 +334,16 @@ final GoRouter router = GoRouter(
         return QrScanScreen(viewModel: context.read());
       },
     ),
-    GoRoute(
-      path: Routes.qrCode,
-      builder: (context, state) {
-        return QrCodeScreen(config: state.extra as ServerConfig);
-      },
-    ),
-    GoRoute(
-      path: Routes.live2d,
-      builder: (context, state) {
-        return const Live2dScreen();
-      },
-    ),
+    // GoRoute(
+    //   path: Routes.live2d,
+    //   builder: (context, state) {
+    //     return const Live2dScreen();
+    //   },
+    // ),
     GoRoute(
       path: Routes.help,
       builder: (context, state) {
         return const HelpScreen();
-      },
-    ),
-    GoRoute(
-      path: '/webview',
-      builder: (context, state) {
-        final params = state.uri.queryParameters;
-        return WebViewScreen(
-          title: params['title'] ?? '',
-          assetPath: params['assetPath'] ?? '',
-        );
       },
     ),
   ],

@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
+import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,9 +36,19 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   void initState() {
     super.initState();
     widget.viewModel.addListener(_onViewModelChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_){
-      widget.viewModel.listSessions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSessions();
     });
+  }
+
+  Future<void> _loadSessions() async {
+    try {
+      await widget.viewModel.listSessions();
+    } catch (error) {
+      // Session loading is best-effort. A temporary gateway disconnect should
+      // not escape from a post-frame callback as an unhandled exception.
+      debugPrint('[ParrotClaw] Failed to load sessions: $error');
+    }
   }
 
   @override
@@ -144,6 +158,29 @@ class _SidebarWidgetState extends State<SidebarWidget> {
                           },
                         ),
               ),
+              const SizedBox(height: 12),
+              if (Platform.isWindows || Platform.isMacOS)
+                Column(
+                  children: [
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.05,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: '分享网关配置',
+                        onPressed: () => _openQrCode(context),
+                        icon: const Icon(Icons.phone_iphone_outlined, size: 21),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -234,6 +271,18 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
       ),
     );
+  }
+
+  void _openQrCode(BuildContext context) {
+    final config = context.read<ServerRepository>().selectedServer;
+    if (config == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('暂无可分享的网关配置')));
+      return;
+    }
+    _closeDrawer(context);
+    context.go(Routes.qrCode, extra: config);
   }
 
   Future<void> _createSession(BuildContext context) async {
@@ -344,7 +393,6 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         );
       }
     } catch (error) {
-      print(error);
       if (mounted) {
         ScaffoldMessenger.of(
           context,

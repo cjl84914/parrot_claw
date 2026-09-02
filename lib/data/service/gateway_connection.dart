@@ -106,6 +106,7 @@ enum Method {
   nodePairApprove('node.pair.approve'),
   nodePairReject('node.pair.reject'),
   devicePairList('device.pair.list'),
+  devicePairSetupCode('device.pair.setupCode'),
   devicePairApprove('device.pair.approve'),
   devicePairReject('device.pair.reject'),
   execApprovalResolve('exec.approval.resolve'),
@@ -388,12 +389,15 @@ class GatewayConnection {
   String? _configuredURL;
   String? _configuredToken;
   String? _configuredPassword;
+  String? _configuredBootstrapToken;
 
   // ── subscribers / snapshot ─────────────────
   // Mirrors Swift `subscribers: [UUID: AsyncStream<GatewayPush>.Continuation]`
   final Map<String, StreamController<GatewayPush>> _subscribers = {};
   HelloOk? _lastSnapshot;
   Function(String)? onDisconnect;
+
+  HelloOk? get lastSnapshot => _lastSnapshot;
 
   /// 当前连接代际：每次 shutdown/重建 client 时递增。
   /// 旧 client 的迟到断开事件（异步 onDone/onError）携带旧代际，一律忽略，
@@ -409,6 +413,7 @@ class GatewayConnection {
     _configuredURL = null;
     _configuredToken = null;
     _configuredPassword = null;
+    _configuredBootstrapToken = null;
     _lastSnapshot = null;
   }
 
@@ -587,14 +592,17 @@ class GatewayConnection {
     required String url,
     String? token,
     String? password,
+    String? bootstrapToken,
     GatewayConnectOptions? connectOptions,
   }) async {
     final normalizedToken = _nonEmptyCredential(token);
     final normalizedPassword = _nonEmptyCredential(password);
+    final normalizedBootstrapToken = _nonEmptyCredential(bootstrapToken);
     if (_client != null &&
         _configuredURL == url &&
         _configuredToken == normalizedToken &&
-        _configuredPassword == normalizedPassword) {
+        _configuredPassword == normalizedPassword &&
+        _configuredBootstrapToken == normalizedBootstrapToken) {
       // 同配置复用现有连接；若仍在连接中，connect() 内部会排队等待
       // 握手完成后再返回，避免调用方误以为连接已就绪。
       if (!_client!.connected) {
@@ -611,6 +619,7 @@ class GatewayConnection {
       url: url,
       token: normalizedToken,
       password: normalizedPassword,
+      bootstrapToken: normalizedBootstrapToken,
       pushHandler: (push) => _handle(push),
       disconnectHandler: (reason) => _handleDisconnected(reason, generation),
       connectOptions: connectOptions,
@@ -618,6 +627,7 @@ class GatewayConnection {
     _configuredURL = url;
     _configuredToken = normalizedToken;
     _configuredPassword = normalizedPassword;
+    _configuredBootstrapToken = normalizedBootstrapToken;
     await _client!.connect();
   }
 
@@ -689,6 +699,7 @@ class GatewayConnection {
         url: _configuredURL!,
         token: _configuredToken,
         password: _configuredPassword,
+        bootstrapToken: _configuredBootstrapToken,
       );
     }
   }
@@ -702,6 +713,66 @@ class GatewayConnection {
 String? _nonEmptyString(String? value, {bool trim = true}) {
   final normalized = trim ? value?.trim() : value;
   return normalized?.isNotEmpty == true ? normalized : null;
+}
+
+class DevicePairSetupCodeResponse {
+  final String setupCode;
+  final String gatewayUrl;
+  final String auth;
+  final String urlSource;
+  final String? setupId;
+  final String? joinUrl;
+  final String? qrDataUrl;
+  final List<String>? gatewayUrls;
+  final String? access;
+  final bool? accessDowngraded;
+  final int? expiresAtMs;
+
+  const DevicePairSetupCodeResponse({
+    required this.setupCode,
+    required this.gatewayUrl,
+    required this.auth,
+    required this.urlSource,
+    this.setupId,
+    this.joinUrl,
+    this.qrDataUrl,
+    this.gatewayUrls,
+    this.access,
+    this.accessDowngraded,
+    this.expiresAtMs,
+  });
+
+  factory DevicePairSetupCodeResponse.fromJson(Map<String, dynamic> json) {
+    final setupCode = json['setupCode'] as String?;
+    final gatewayUrl = json['gatewayUrl'] as String?;
+    final auth = json['auth'] as String?;
+    final urlSource = json['urlSource'] as String?;
+    if (setupCode == null || setupCode.trim().isEmpty) {
+      throw const FormatException('device.pair.setupCode response missing setupCode');
+    }
+    if (gatewayUrl == null || gatewayUrl.trim().isEmpty) {
+      throw const FormatException('device.pair.setupCode response missing gatewayUrl');
+    }
+    if (auth == null || auth.trim().isEmpty) {
+      throw const FormatException('device.pair.setupCode response missing auth');
+    }
+    if (urlSource == null || urlSource.trim().isEmpty) {
+      throw const FormatException('device.pair.setupCode response missing urlSource');
+    }
+    return DevicePairSetupCodeResponse(
+      setupCode: setupCode,
+      gatewayUrl: gatewayUrl,
+      auth: auth,
+      urlSource: urlSource,
+      setupId: json['setupId'] as String?,
+      joinUrl: json['joinUrl'] as String?,
+      qrDataUrl: json['qrDataUrl'] as String?,
+      gatewayUrls: (json['gatewayUrls'] as List?)?.whereType<String>().toList(),
+      access: json['access'] as String?,
+      accessDowngraded: json['accessDowngraded'] as bool?,
+      expiresAtMs: (json['expiresAtMs'] as num?)?.toInt(),
+    );
+  }
 }
 
 class GatewaySessionAgentStatus {
@@ -1057,12 +1128,13 @@ extension GatewayConnectionApi on GatewayConnection {
 
   // ── status  (≈ Swift func status()) ─────────────────────────────────
 
-  Future<({bool ok, String? error})> status() async {
+  Future<({bool ok, Object? error})> status() async {
     try {
       await requestRaw(Method.status);
       return (ok: true, error: null);
     } catch (e) {
-      return (ok: false, error: e.toString());
+      // 保留原始异常，配对流程需要从异常 details/requestId 中提取设备 ID。
+      return (ok: false, error: e);
     }
   }
 
@@ -1398,6 +1470,48 @@ extension GatewayConnectionApi on GatewayConnection {
   );
 
   // ── device pairing ────────────────────────────────────────────────────
+
+  /// Requests a short-lived device pairing setup code and optional QR image.
+  ///
+  /// The gateway returns [qrDataUrl] as a PNG data URL when [includeQr] is
+  /// true (the default). The setup code itself is a Base64URL payload and
+  /// should be treated as a bearer credential until [expiresAtMs].
+  Future<DevicePairSetupCodeResponse> devicePairSetupCode({
+    String? publicUrl,
+    bool? preferRemoteUrl,
+    bool includeQr = true,
+    String? bootstrapProfile,
+    bool joinUrl = false,
+    double timeoutMs = 15000,
+  }) async {
+    if (bootstrapProfile != null &&
+        bootstrapProfile != 'limited' &&
+        bootstrapProfile != 'node') {
+      throw ArgumentError.value(
+        bootstrapProfile,
+        'bootstrapProfile',
+        'must be limited or node',
+      );
+    }
+    if (joinUrl && bootstrapProfile != null && bootstrapProfile != 'node') {
+      throw ArgumentError('joinUrl requires bootstrapProfile=node');
+    }
+
+    final params = <String, dynamic>{
+      if (publicUrl?.trim().isNotEmpty == true) 'publicUrl': publicUrl!.trim(),
+      if (preferRemoteUrl != null) 'preferRemoteUrl': preferRemoteUrl,
+      'includeQr': includeQr,
+      if (bootstrapProfile != null) 'bootstrapProfile': bootstrapProfile,
+      if (joinUrl) 'joinUrl': true,
+    };
+    return DevicePairSetupCodeResponse.fromJson(
+      await requestRaw(
+        Method.devicePairSetupCode,
+        params: params,
+        timeoutMs: timeoutMs,
+      ),
+    );
+  }
 
   Future<void> devicePairApprove(String requestId) => requestVoid(
     Method.devicePairApprove,

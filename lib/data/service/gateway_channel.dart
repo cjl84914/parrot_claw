@@ -694,7 +694,9 @@ class GatewayChannelActor {
         role: role,
         scopes: scopes,
         signedAtMs: signedAtMs,
-        token: _token,
+        // The device signature must cover the credential sent in auth.
+        // Setup-code pairing sends bootstrapToken when token is absent.
+        token: _token ?? _bootstrapToken,
         nonce: connectNonce,
       );
       signature = identity.signPayload(authPayload);

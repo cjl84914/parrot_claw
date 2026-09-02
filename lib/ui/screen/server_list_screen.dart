@@ -235,9 +235,4 @@ class _ServerListPageState extends State<ServerListScreen> {
           ),
     );
   }
-
-  void _openChat(ServerConfig server) {
-    widget.viewModel.selectServer(server);
-    Navigator.pop(context);
-  }
 }

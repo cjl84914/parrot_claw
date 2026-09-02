@@ -122,33 +122,42 @@ class ConnViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _isPairingRequiredError(Object error) {
+  /// 从网关错误中提取配对设备 ID。
+  ///
+  /// 设备 ID 必须是 UUID 格式，例如：
+  /// `d501e7a8-2367-42d3-b44c-83bdd8c175a7`。
+  /// 连接握手阶段可能抛出 GatewayConnectAuthError，也可能抛出
+  /// GatewayResponseError，因此两种异常都要保留并解析 requestId/details。
+  String? resolvePairingDeviceId(Object error) {
+    final uuidPattern = RegExp(
+      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+    );
+    final candidates = <String>[];
     if (error is GatewayResponseError) {
-      return error.code == 'PAIRING_REQUIRED' ||
-          error.code == 'NOT_PAIRED' ||
-          error.message.toUpperCase().contains('PAIRING REQUIRED') ||
-          error.message.toUpperCase().contains('NOT_PAIRED');
+      candidates.add(error.details['requestId']);
+      final requestId = error.requestId?.trim();
+      if (requestId != null && requestId.isNotEmpty) candidates.add(requestId);
+      candidates.add(error.message);
+    } else if (error is GatewayConnectAuthError) {
+      final requestId = error.requestId?.trim();
+      if (requestId != null && requestId.isNotEmpty) candidates.add(requestId);
+      candidates.add(error.message);
     }
-    final text = error.toString().toUpperCase();
-    return text.contains('PAIRING_REQUIRED') ||
-        text.contains('NOT_PAIRED') ||
-        text.contains('PAIRING REQUIRED');
+
+    candidates.add(error.toString());
+    for (final candidate in candidates) {
+      final match = uuidPattern.firstMatch(candidate);
+      if (match != null) return match.group(0);
+    }
+    return null;
   }
 
-  String? _resolvePairingDeviceId(Object error) {
-    if (error is! GatewayResponseError) return null;
-    // The approval command must use the request ID returned by Gateway.
-    // Never generate or substitute a local ID here: it would approve a
-    // different request and make the copied command appear to change.
-    // final details = error.details;
-    final returnedRequestId = error.requestId?.trim();
-    if (returnedRequestId != null && returnedRequestId.isNotEmpty) {
-      return returnedRequestId;
-    }
-    final match = RegExp(
-      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
-    ).firstMatch(error.message);
-    return match?.group(0);
+  /// 将外部连接测试得到的配对错误同步到 ViewModel。
+  void capturePairingDeviceId(Object error) {
+    final deviceId = resolvePairingDeviceId(error);
+    _pairingDeviceId = deviceId;
+    _pairingRequired = true;
+    notifyListeners();
   }
 
   ConnViewModel({
@@ -275,13 +284,6 @@ class ConnViewModel extends ChangeNotifier {
       }
       _isConnecting = false;
       _connected = false;
-      if (_isPairingRequiredError(e)) {
-        _pairingDeviceId = _resolvePairingDeviceId(e);
-        _pairingRequired = true;
-        // disconnectReason = '需要在网关上批准此设备';
-      } else {
-        disconnectReason = e.toString();
-      }
       notifyListeners();
       _log.warning('Connect failed in ViewModel: $e');
     }
@@ -293,12 +295,6 @@ class ConnViewModel extends ChangeNotifier {
     _connected = true;
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
     _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
-    // if (health is Map) {
-    //   final recentSessions = health['sessions'];
-    //   if (recentSessions is Map && recentSessions['recent'] is List) {
-    //     _sessions = _decodeSessionEntries(recentSessions['recent']);
-    //   }
-    // }
     _isHistoryLoading = false;
     notifyListeners();
     unawaited(_initializeSessionData());
@@ -610,17 +606,25 @@ class ConnViewModel extends ChangeNotifier {
       worktree: worktree,
       worktreeBaseRef: worktreeBaseRef,
     );
-    await listSessions();
+    try {
+      await listSessions();
+    } catch (error) {
+      _log.warning('Failed to refresh sessions after creation: $error');
+    }
     return response;
   }
 
   /// 删除会话及其 transcript，并清理本地状态。
-  Future<void> deleteSession({required String sessionKey, String? agentId}) async {
+  Future<void> deleteSession({
+    required String sessionKey,
+    String? agentId,
+  }) async {
     await GatewayConnection.shared.sessionsDelete(
       sessionKey: sessionKey,
       agentId: agentId,
     );
-    _sessions = _sessions.where((session) => session.key != sessionKey).toList();
+    _sessions =
+        _sessions.where((session) => session.key != sessionKey).toList();
     if (_sessionKey == sessionKey) {
       _sessionKey = null;
     }

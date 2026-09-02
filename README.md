@@ -106,7 +106,7 @@ ParrotClaw App（Flutter 交互层）
 - [x] Windows 版本
 - [x] 扫码克隆服务器
 - [x] 会话管理
-- [ ] 兼容官方二维码
+- [x] 兼容官方二维码
 - [ ] Skill管理
 - [ ] 定时任务
 - [ ] Agent配置

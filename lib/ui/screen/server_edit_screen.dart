@@ -1,12 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/service/gateway_channel.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 class ServerEditScreen extends StatefulWidget {
@@ -384,6 +385,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
     final config = _buildConfig();
     var shouldEnterIndex = false;
+    var openPairingPage = false;
+    Object? pairingError;
     try {
       await GatewayConnection.shared.configure(
         url: config.wsUrl,
@@ -397,19 +400,25 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       if (mounted) {
         setState(() {
           _testSuccess = result.ok;
-          _testError = result.error;
+          _testError = result.error?.toString().replaceFirst('Exception: ', '');
         });
       }
+
+      openPairingPage = isPairingRequired;
+      if (isPairingRequired && result.error != null) {
+        pairingError = result.error;
+      }
     } catch (e) {
-      final error = e.toString().replaceFirst('Exception: ', '');
-      final isPairingRequired =
-          error.toLowerCase().contains('pairingrequired') ||
-          error.toLowerCase().contains('pairing_required');
+      final isPairingRequired = _isPairingRequiredError(e);
       shouldEnterIndex = isPairingRequired;
+      openPairingPage = isPairingRequired;
+      if (isPairingRequired) {
+        pairingError = e;
+      }
       if (mounted) {
         setState(() {
           _testSuccess = false;
-          _testError = error;
+          _testError = e.toString();
         });
       }
     } finally {
@@ -429,24 +438,34 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
     if (!shouldEnterIndex || !mounted) return;
 
-    if (_isEditing) {
-      await widget.viewModel.updateServer(widget.server!.id, config);
-    } else {
-      await widget.viewModel.addServer(config);
+    await _saveConfig(config);
+    if (!mounted) return;
+
+    if (openPairingPage) {
+      if (pairingError != null) {
+        context.read<ConnViewModel>().capturePairingDeviceId(pairingError);
+      }
+      context.push(Routes.gatewayPairing);
+      return;
     }
 
-    widget.viewModel.selectServer(config);
     context.go(Routes.index);
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(_isEditing ? '网关已更新' : '网关已添加')));
   }
 
-  bool _isPairingRequiredError(String? error) {
-    final normalized = error?.toLowerCase() ?? '';
-    return normalized.contains('pairingrequired') ||
-        normalized.contains('pairing_required') ||
-        normalized.contains('pairing required');
+  Future<void> _saveConfig(ServerConfig config) async {
+    if (_isEditing) {
+      await widget.viewModel.updateServer(widget.server!.id, config);
+    } else {
+      await widget.viewModel.addServer(config);
+    }
+    widget.viewModel.selectServer(config);
+  }
+
+  bool _isPairingRequiredError(Object? error) {
+    return error.toString().toLowerCase().contains('pairing required');
   }
 
   ServerConfig _buildConfig() {

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:pull_down_button/pull_down_button.dart';
+
 class ServerCard extends StatelessWidget {
   final ServerConfig config;
   final bool isConnected;
@@ -35,10 +36,33 @@ class ServerCard extends StatelessWidget {
     return colors[index];
   }
 
+  Future<void> _showActions(BuildContext context, Offset globalPosition) async {
+    final menuRect = Rect.fromCenter(
+      center: globalPosition,
+      width: 0,
+      height: 0,
+    );
+
+    await showPullDownMenu(
+      context: context,
+      position: menuRect,
+      items: [
+        PullDownMenuItem(
+          title: '删除',
+          icon: Icons.delete_outline,
+          isDestructive: true,
+          onTap: onDelete,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
+      onLongPressStart: (details) =>
+          _showActions(context, details.globalPosition),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -46,7 +70,6 @@ class ServerCard extends StatelessWidget {
             // Avatar with status indicator
             _buildAvatar(),
             const SizedBox(width: 12),
-
             // Server info
             Expanded(
               child: Column(
@@ -63,19 +86,12 @@ class ServerCard extends StatelessWidget {
                         ),
                       ),
                       if (isDefault)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            // color: AppColors.primaryLight,
-                            borderRadius: BorderRadius.circular(AppRadius.small),
-                          ),
-                          child: Text(
-                            '已选择',
-                            style: AppTextStyles.captionSmall.copyWith(
-                              color: Colors.green,
-                              fontWeight: FontWeight.w500,
-                            ),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: Icon(
+                            Icons.check_circle,
+                            size: 18,
+                            color: Colors.green,
                           ),
                         ),
                     ],
@@ -108,68 +124,6 @@ class ServerCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(width: 4),
-
-            // Actions menu
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                iconSize: 18,
-                icon: const Icon(
-                  Icons.more_horiz,
-                  color: AppColors.textSecondary,
-                ),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'edit':
-                      onEdit?.call();
-                      break;
-                    case 'qr':
-                      onShareQr?.call();
-                      break;
-                    case 'delete':
-                      onDelete?.call();
-                      break;
-                  }
-                },
-                itemBuilder: (context) {
-                  return [
-                    // PopupMenuItem(
-                    //   value: 'edit',
-                    //   child: Row(
-                    //     children: [
-                    //       const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
-                    //       const SizedBox(width: 10),
-                    //       const Text('控制', style: AppTextStyles.bodyMedium),
-                    //     ],
-                    //   ),
-                    // ),
-                    PopupMenuItem(
-                      value: 'qr',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.qr_code_rounded, size: 18, color: AppColors.textSecondary),
-                          const SizedBox(width: 10),
-                          const Text('二维码', style: AppTextStyles.bodyMedium),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
-                          const SizedBox(width: 10),
-                          Text('删除', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error)),
-                        ],
-                      ),
-                    ),
-                  ];
-                },
-              ),
-            ),
           ],
         ),
       ),
