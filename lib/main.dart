@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-// import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -343,6 +342,16 @@ final GoRouter router = GoRouter(
       path: Routes.help,
       builder: (context, state) {
         return const HelpScreen();
+      },
+    ),
+    GoRoute(
+      path: Routes.webview,
+      builder: (context, state) {
+        final params = state.uri.queryParameters;
+        return WebViewScreen(
+          title: params['title'] ?? '',
+          assetPath: params['assetPath'] ?? '',
+        );
       },
     ),
   ],

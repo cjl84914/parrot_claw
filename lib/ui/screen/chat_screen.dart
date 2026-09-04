@@ -64,16 +64,12 @@ class _ChatScreenState extends State<ChatScreen>
 
   final GlobalKey _composerKey = GlobalKey();
   final GlobalKey _modelButtonKey = GlobalKey();
-  double _composerHeight = 60;
 
   final _textEditingController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _textEditingController.addListener(() {
-      _updateComposerHeight();
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _init();
       _initTalk();
@@ -132,22 +128,6 @@ class _ChatScreenState extends State<ChatScreen>
     _chatController.dispose();
     ASRUtil().stop();
     super.dispose();
-  }
-
-  void _updateComposerHeight() async {
-    final context = _composerKey.currentContext;
-    if (context == null) return;
-
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.hasSize) return;
-
-    await Future.delayed(Duration(seconds: 1));
-    final height = renderBox.size.height;
-    if (height != _composerHeight) {
-      setState(() {
-        _composerHeight = height - 48;
-      });
-    }
   }
 
   Message _toUiMessage(model.ChatMessage m) {
@@ -405,6 +385,8 @@ class _ChatScreenState extends State<ChatScreen>
                                 if (_inputMode == InputMode.Voice) {
                                   _inputMode = InputMode.Text;
                                 } else if (_inputMode == InputMode.Text) {
+                                  _textEditingController.clear();
+                                  FocusManager.instance.primaryFocus?.unfocus();
                                   _inputMode = InputMode.Voice;
                                 }
                                 setState(() {});
@@ -578,7 +560,7 @@ class _ChatScreenState extends State<ChatScreen>
                 right: 12,
                 child: Container(
                   width: MediaQuery.of(context).size.width,
-                  height: _composerHeight,
+                  height: 60,
                   padding: EdgeInsets.only(left: 48),
                   child: Row(
                     children: [
@@ -587,11 +569,9 @@ class _ChatScreenState extends State<ChatScreen>
                           visible: _inputMode == InputMode.Voice,
                           child: VoiceInputButton(
                             startRecording: () {
-                              print("startRecording");
                               ASRUtil().start();
                             },
                             stopRecording: () {
-                              print("stopRecording");
                               ASRUtil().stop();
                             },
                           ),

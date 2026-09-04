@@ -433,7 +433,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(Icons.mic, size: 80.r, color: AppColors.textTertiary),
-        SizedBox(height: 20.h),
+        SizedBox(height: 12.h),
         Text(
           '对话模式',
           style: AppTextStyles.titleLarge.copyWith(
@@ -445,7 +445,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 40.w),
             child: Text(
-              '点击麦克风开始',
+              '',
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(
                 fontSize: 14.sp,
