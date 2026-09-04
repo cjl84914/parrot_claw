@@ -3,14 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:logging/logging.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
-import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
+import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_channel.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/gateway_scope_store.dart';
 import 'package:parrot_app/main.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
-import 'package:provider/provider.dart';
 
 /// 扫码导入网关配置页
 class QrScanScreen extends StatefulWidget {
@@ -24,8 +23,26 @@ class QrScanScreen extends StatefulWidget {
 
 class _QrScanScreenState extends State<QrScanScreen> {
   final MobileScannerController _controller = MobileScannerController();
-  bool _handling = false;
   final Logger _log = Logger('QrScanScreen');
+
+  bool _handling = false;
+  bool _connectionHandedOff = false;
+  GatewayPairingRequest? pairing;
+  String? _lastPayload;
+
+  /// 官方移动端 bootstrap 静默放行要求 canonical client id；
+  /// node-host 只对 node-only profile 静默，兑默认双角色码会被踢进人工审批。
+  String get _clientId => canonicalMobileClientId();
+
+  /// 默认 QR（device.pair.setupCode）profile 授权的受限 operator scopes
+  /// （BOOTSTRAP_HANDOFF_OPERATOR_SCOPES，无 admin/pairing）。
+  static const List<String> _operatorHandoffScopes = [
+    'operator.approvals',
+    'operator.questions',
+    'operator.read',
+    'operator.talk.secrets',
+    'operator.write',
+  ];
 
   @override
   void dispose() {
@@ -43,9 +60,47 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // 握手参数
+  // ─────────────────────────────────────────────
+
+  /// 第一阶段 node bootstrap：OpenClaw setup-code 配对是 node bootstrap 握手，
+  /// role=node + 空 scopes + mode=node 是服务端接受的精确形态；
+  /// 客户端身份必须用 canonical id（openclaw-android/ios）。
+  GatewayConnectOptions get _bootstrapOptions => GatewayConnectOptions(
+    role: 'node',
+    scopes: const <String>[],
+    scopesAreExplicit: true,
+    caps: const <String>[],
+    commands: const <String>[],
+    permissions: const <String, bool>{},
+    clientId: _clientId,
+    clientMode: 'node',
+    clientDisplayName: 'parrotClaw',
+  );
+
+  /// 第二阶段 operator 会话：只请求 bootstrap 实际授权的受限 scopes，
+  /// 避免按默认全量（含 admin/pairing）请求触发 scope-upgrade 审批。
+  GatewayConnectOptions operatorOptions(List<String> scopes) =>
+      GatewayConnectOptions(
+        role: 'operator',
+        scopes: scopes,
+        scopesAreExplicit: true,
+        caps: const <String>[],
+        commands: const <String>[],
+        permissions: const <String, bool>{},
+        clientId: _clientId,
+        clientMode: 'ui',
+        clientDisplayName: 'parrotClaw',
+      );
+
+  // ─────────────────────────────────────────────
+  // 主流程
+  // ─────────────────────────────────────────────
+
   Future<void> _handlePayload(String payload) async {
     _handling = true;
-    GatewayPairingRequest? pairing;
+    _lastPayload = payload;
     try {
       pairing = GatewayPairingRequest.fromSetupCode(payload);
       if (pairing == null) {
@@ -53,123 +108,105 @@ class _QrScanScreenState extends State<QrScanScreen> {
         return;
       }
       await _controller.stop();
-
-      // if (confirmed != true) {
-      //   await _controller.start();
-      //   _handling = false;
-      //   return;
-      // }
-
-      // if (!mounted) return;
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   const SnackBar(content: Text('正在连接网关…')),
-      // );
-
-      // OpenClaw setup-code pairing is a node bootstrap handshake, not an
-      // operator/UI connection. The server only accepts the exact node shape.
-      const bootstrapOptions = GatewayConnectOptions(
-        role: 'node',
-        scopes: <String>[],
-        scopesAreExplicit: true,
-        caps: <String>[],
-        commands: <String>[],
-        permissions: <String, bool>{},
-        clientId: 'node-host',
-        clientMode: 'node',
-        clientDisplayName: 'parrotClaw',
-      );
-
-      await GatewayConnection.shared.configure(
-        url: pairing.wsUrl,
-        token: pairing.token,
-        password: pairing.password,
-        bootstrapToken: pairing.bootstrapToken,
-        connectOptions: bootstrapOptions,
-      );
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      final snapshot = GatewayConnection.shared.lastSnapshot;
-
-      if (!mounted) return;
-
-      final auth = snapshot?.auth ?? const <String, dynamic>{};
-      _log.info(auth.toString());
-
-      final deviceToken = (auth['deviceToken'] as String?)?.trim();
-      if (deviceToken != null) {
-        // operatorToken = _deviceTokenForRole(auth, 'operator');
-        // // 当前页面是 Parrot 的 operator/UI 连接。bootstrap 握手返回的
-        // // auth.deviceToken 属于 node 角色，不能拿它重新按 operator 连接；
-        // // 优先使用服务端在 auth.deviceTokens 中签发的 operator token。
-        // final savedToken = operatorToken ?? (pairing.token?.trim() ?? '');
-        //
-        // if (savedToken.isEmpty) {
-        //   throw StateError(
-        //     '握手成功，但网关未返回 operator 长期 token'
-        //         '${nodeToken == null ? '' : '（仅收到 node token）'}',
-        //   );
-        // }
-
-        // const operatorOptions = GatewayConnectOptions(
-        //   role: 'operator',
-        //   scopes: <String>[
-        //     'operator.admin',
-        //     'operator.approvals',
-        //     'operator.pairing',
-        //     'operator.read',
-        //     'operator.write',
-        //   ],
-        //   scopesAreExplicit: true,
-        //   caps: <String>[],
-        //   commands: <String>[],
-        //   permissions: <String, bool>{},
-        //   clientId: 'gateway-client',
-        //   clientMode: 'ui',
-        //   clientDisplayName: 'parrotClaw',
-        // );
-
-        // 后续 operator/UI 连接使用服务端签发的 operator deviceToken，
-        // 不再使用已经消费的一次性 bootstrapToken。
-        await GatewayConnection.shared.configure(
-          url: pairing.wsUrl,
-          token: deviceToken,
-          // connectOptions: operatorOptions,
-        );
-
-        if (!mounted) return;
-
-        final config = ServerConfig(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: '${pairing.host}:${pairing.port}',
-          host: pairing.host,
-          port: pairing.port,
-          useTLS: pairing.useTLS,
-          token: deviceToken,
-          authMode: 'token',
-        );
-
-        _saveConfig(config);
-        context.go(Routes.index);
-      }
+      await _completePairing();
     } catch (error) {
       if (!mounted) return;
-      if (_isPairingRequiredError(error)) {
-        // await _savePairingConfig(pairing, token: operatorToken);
-        context.read<ConnViewModel>().capturePairingDeviceId(error);
-        context.push(Routes.gatewayPairing).then((_) {
-          _controller.start();
-          _handling = false;
-        });
-        return;
-      } else {
-        _showHandshakeError(error);
-      }
+      await _handleGatewayFailure(
+        gatewayErrorInfoFrom(error, method: 'connect'),
+      );
     } finally {
-      try {
-        await GatewayConnection.shared.shutdown();
-      } catch (e) {
-        print('[ParrotClaw] Failed to close test connection: $e');
+      // 成功后连接已交给首页；仅失败/取消时关闭临时连接。
+      if (!_connectionHandedOff) {
+        try {
+          await GatewayConnection.shared.shutdown();
+        } catch (e) {
+          print('[ParrotClaw] Failed to close test connection: $e');
+        }
       }
+    }
+  }
+
+  /// node bootstrap → 解析 node/operator 双令牌 → operator 会话 → 落配置。
+  /// 返回 true 表示整条链路成功（页面已跳转）。
+  Future<bool> _completePairing() async {
+    final p = pairing;
+    if (p == null) return false;
+
+    final bootstrapResult = await GatewayConnection.shared.configureResult(
+      url: p.wsUrl,
+      token: p.token,
+      password: p.password,
+      bootstrapToken: p.bootstrapToken,
+      connectOptions: _bootstrapOptions,
+    );
+    if (!bootstrapResult.ok) {
+      await _handleGatewayFailure(bootstrapResult.error!);
+      return false;
+    }
+
+    if (!mounted) return false;
+    final snapshot =
+        bootstrapResult.data ?? GatewayConnection.shared.lastSnapshot;
+    final auth = snapshot?.auth ?? const <String, dynamic>{};
+    _log.info('gateway bootstrap handshake completed');
+
+    // auth.deviceToken 属于首握角色（node），不可复用于 operator 会话；
+    // operator 凭据在 auth.deviceTokens 中按 role 区分。
+    final operatorEntry = _operatorTokenEntry(auth);
+    if (operatorEntry == null) {
+      throw StateError('网关未返回 operator 设备授权令牌');
+    }
+    final operatorToken = (operatorEntry['deviceToken'] as String?)?.trim();
+    if (operatorToken == null || operatorToken.isEmpty) {
+      throw StateError('网关未返回 operator 设备授权令牌');
+    }
+    final operatorScopes = _scopesFromEntry(operatorEntry);
+
+    final operatorResult = await GatewayConnection.shared.configureResult(
+      url: p.wsUrl,
+      token: operatorToken,
+      connectOptions: operatorOptions(operatorScopes),
+    );
+    if (!operatorResult.ok) {
+      await _handleGatewayFailure(operatorResult.error!);
+      return false;
+    }
+
+    if (!mounted) return false;
+
+    // 持久化受限 scopes：冷启动重连复用，避免再触发 scope-upgrade 审批。
+    await GatewayScopeStore.saveOperatorScopes(p.wsUrl, operatorScopes);
+
+    final config = ServerConfig(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: '${p.host}:${p.port}',
+      host: p.host,
+      port: p.port,
+      useTLS: p.useTLS,
+      token: operatorToken,
+      authMode: 'token',
+    );
+
+    await _saveConfig(config);
+    // 配对成功后将已建立的 operator 连接交给首页 ConnViewModel。
+    // _handlePayload 的 finally 不能再 shutdown，否则会与首页的 connect()
+    // 形成竞态：刚配对成功就被关闭，首页会一直显示连接中。
+    _connectionHandedOff = true;
+    if (mounted) context.go(Routes.index);
+    return true;
+  }
+
+  /// 桌面批准后重试：同一 bootstrapToken 重新走完整 node → operator 流程。
+  Future<void> _retryPairing() async {
+    final payload = _lastPayload;
+    if (payload == null || pairing == null) return;
+    try {
+      await _handlePayload(payload);
+    } catch (error) {
+      if (!mounted) return;
+      await _handleGatewayFailure(
+        gatewayErrorInfoFrom(error, method: 'connect'),
+      );
     }
   }
 
@@ -178,51 +215,57 @@ class _QrScanScreenState extends State<QrScanScreen> {
     widget.viewModel.selectServer(config);
   }
 
-  bool _isPairingRequiredError(Object error) {
-    final text = error is GatewayResponseError
-        ? '${error.code} ${error.message}'
-        : error is GatewayConnectAuthError
-        ? error.message
-        : error.toString();
-    final normalized = text.toLowerCase();
-    return normalized.contains('device is not approved yet') ||
-        normalized.contains('device_not_approved') ||
-        normalized.contains('device not approved');
+  Future<void> _handleGatewayFailure(GatewayErrorInfo error) async {
+    if (!mounted) return;
+    if (error.recoveryAction == GatewayRecoveryAction.showPairingPage) {
+      final approved = await context.push<bool>(Routes.gatewayPairing);
+      if (!mounted) return;
+      if (approved == true) {
+        // 网关上已授权（openclaw devices/nodes approve <requestId>）。
+        await _retryPairing();
+      } else {
+        // 用户直接返回：复位并恢复相机，等待重新扫码或再次进入。
+        await _resetForRescan();
+      }
+      return;
+    }
+    await _showHandshakeError(error.userMessage ?? error.message);
   }
 
-  Future<void> _savePairingConfig(
-      GatewayPairingRequest pairing, {
-        String? token,
-      }) async {
-    final savedToken = token?.trim();
-    final config = ServerConfig(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: '${pairing.host}:${pairing.port}',
-      host: pairing.host,
-      port: pairing.port,
-      useTLS: pairing.useTLS,
-      token:
-      savedToken?.isNotEmpty == true
-          ? savedToken!
-          : pairing.token?.trim() ?? '',
-      password: pairing.password?.trim() ?? '',
-      authMode:
-      pairing.password?.trim().isNotEmpty == true ? 'password' : 'token',
-    );
-    await widget.viewModel.addServer(config);
-    widget.viewModel.selectServer(config);
+  Future<void> _resetForRescan() async {
+    if (!mounted) return;
+    _handling = false;
+    try {
+      await _controller.start();
+    } catch (_) {
+      // 页面可能已销毁。
+    }
   }
 
-  String? _deviceTokenForRole(Map<String, dynamic> auth, String role) {
+  /// 从 hello-ok auth.deviceTokens 取指定角色的条目（含 scopes）。
+  Map<String, dynamic>? _operatorTokenEntry(Map<String, dynamic> auth) {
     final entries = auth['deviceTokens'];
     if (entries is! List) return null;
     for (final entry in entries) {
       if (entry is! Map) continue;
-      if (entry['role']?.toString() != role) continue;
-      final token = entry['deviceToken']?.toString().trim();
-      if (token != null && token.isNotEmpty) return token;
+      if (entry['role']?.toString() != 'operator') continue;
+      return entry.cast<String, dynamic>();
     }
     return null;
+  }
+
+  List<String> _scopesFromEntry(Map<String, dynamic> entry) {
+    final raw = entry['scopes'];
+    if (raw is List) {
+      final scopes = raw
+          .whereType<String>()
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (scopes.isNotEmpty) return scopes;
+    }
+    // 服务端未逐条回带 scopes 时，回退到默认受限集合（与 QR profile 一致）。
+    return _operatorHandoffScopes;
   }
 
   void _showInvalidQr() {
@@ -232,18 +275,11 @@ class _QrScanScreenState extends State<QrScanScreen> {
     _handling = false;
   }
 
-  Future<void> _showHandshakeError(Object error) async {
+  Future<void> _showHandshakeError(String message) async {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(error.toString())));
-    _handling = false;
-    // The scanner was stopped before the handshake. Restore it after a
-    // failed connection so the user can scan a newly generated setup code.
-    try {
-      await _controller.start();
-    } catch (_) {
-      // The page may already have been disposed while the connection failed.
-    }
+    ).showSnackBar(SnackBar(content: Text(message)));
+    await _resetForRescan();
   }
 
   @override

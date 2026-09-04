@@ -312,8 +312,7 @@ final GoRouter router = GoRouter(
     ),
     GoRoute(
       path: Routes.gatewayPairing,
-      builder:
-          (context, state) => GatewayPairingScreen(viewModel: context.read()),
+      builder: (context, state) => const GatewayPairingScreen(),
     ),
     GoRoute(
       path: Routes.serverEdit,

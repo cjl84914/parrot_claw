@@ -396,8 +396,12 @@ class GatewayConnection {
   final Map<String, StreamController<GatewayPush>> _subscribers = {};
   HelloOk? _lastSnapshot;
   Function(String)? onDisconnect;
+  String? _lastPairingDeviceId;
 
   HelloOk? get lastSnapshot => _lastSnapshot;
+
+  /// The gateway returns the pending pairing device identifier in requestId.
+  String? get pairingDeviceId => _lastPairingDeviceId;
 
   /// 当前连接代际：每次 shutdown/重建 client 时递增。
   /// 旧 client 的迟到断开事件（异步 onDone/onError）携带旧代际，一律忽略，
@@ -483,6 +487,25 @@ class GatewayConnection {
   // MARK: - Low-level request  (≈ Swift func request(method:params:timeoutMs:))
   // ─────────────────────────────────────────────
 
+  Future<GatewayOperationResult<Map<String, dynamic>>> requestResult({
+    required String method,
+    Map<String, dynamic>? params,
+    double? timeoutMs,
+  }) async {
+    try {
+      final data = await request(
+        method: method,
+        params: params,
+        timeoutMs: timeoutMs,
+      );
+      return GatewayOperationResult.success(data: data);
+    } catch (error) {
+      return GatewayOperationResult.failure(
+        error: gatewayErrorInfoFrom(error, method: method),
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> request({
     required String method,
     Map<String, dynamic>? params,
@@ -491,7 +514,7 @@ class GatewayConnection {
     await _refreshConfig();
     final client = _client;
     if (client == null) {
-      throw Exception('gateway not configured');
+      throw StateError('gateway not configured');
     }
     return client.request(method: method, params: params, timeoutMs: timeoutMs);
   }
@@ -587,6 +610,33 @@ class GatewayConnection {
   // ─────────────────────────────────────────────
   // MARK: - configure  (≈ Swift private func configure(url:token:password:))
   // ─────────────────────────────────────────────
+
+  /// Configures and connects, returning business failures as data instead of
+  /// requiring callers to inspect exception types or message text.
+  Future<GatewayOperationResult<HelloOk>> configureResult({
+    required String url,
+    String? token,
+    String? password,
+    String? bootstrapToken,
+    GatewayConnectOptions? connectOptions,
+  }) async {
+    try {
+      await configure(
+        url: url,
+        token: token,
+        password: password,
+        bootstrapToken: bootstrapToken,
+        connectOptions: connectOptions,
+      );
+      return GatewayOperationResult.success(data: _lastSnapshot);
+    } catch (error) {
+      final errorInfo = gatewayErrorInfoFrom(error, method: 'connect');
+      if (errorInfo.recoveryAction == GatewayRecoveryAction.showPairingPage) {
+        _lastPairingDeviceId = errorInfo.requestId;
+      }
+      return GatewayOperationResult.failure(error: errorInfo);
+    }
+  }
 
   Future<void> configure({
     required String url,

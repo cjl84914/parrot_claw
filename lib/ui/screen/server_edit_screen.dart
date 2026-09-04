@@ -5,7 +5,6 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_channel.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -384,75 +383,65 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     });
 
     final config = _buildConfig();
-    var shouldEnterIndex = false;
     var openPairingPage = false;
-    Object? pairingError;
+    GatewayOperationResult<dynamic>? result;
+
     try {
-      await GatewayConnection.shared.configure(
+      result = await GatewayConnection.shared.configureResult(
         url: config.wsUrl,
         token: config.token,
         password: config.password,
       );
       print('[ParrotClaw] Testing connection to ${config.wsUrl}');
-      final result = await GatewayConnection.shared.status();
-      final isPairingRequired = _isPairingRequiredError(result.error);
-      shouldEnterIndex = result.ok || isPairingRequired;
-      if (mounted) {
-        setState(() {
-          _testSuccess = result.ok;
-          _testError = result.error?.toString().replaceFirst('Exception: ', '');
-        });
-      }
-
-      openPairingPage = isPairingRequired;
-      if (isPairingRequired && result.error != null) {
-        pairingError = result.error;
-      }
     } catch (e) {
-      final isPairingRequired = _isPairingRequiredError(e);
-      shouldEnterIndex = isPairingRequired;
-      openPairingPage = isPairingRequired;
-      if (isPairingRequired) {
-        pairingError = e;
-      }
+      // 这里只处理非网关流程本身的意外异常，GatewayFailure 由 result 统一处理。
       if (mounted) {
         setState(() {
           _testSuccess = false;
-          _testError = e.toString();
-        });
-      }
-    } finally {
-      if (!shouldEnterIndex) {
-        try {
-          await GatewayConnection.shared.shutdown();
-        } catch (e) {
-          print('[ParrotClaw] Failed to close test connection: $e');
-        }
-      }
-      if (mounted) {
-        setState(() {
-          _isTesting = false;
+          _testError = e.toString().replaceFirst('Exception: ', '');
         });
       }
     }
 
-    if (!shouldEnterIndex || !mounted) return;
+    if (result != null) {
+      final error = result.error;
+      final isPairingRequired =
+          result.recoveryAction == GatewayRecoveryAction.showPairingPage;
+      openPairingPage = isPairingRequired;
 
-    await _saveConfig(config);
-    if (!mounted) return;
+      if (mounted) {
+        setState(() {
+          _testSuccess = result!.ok;
+          _testError = error?.userMessage ?? error?.message;
+        });
+      }
+    }
+
+    // if (!shouldEnterIndex) {
+    //   try {
+    //     await GatewayConnection.shared.shutdown();
+    //   } catch (e) {
+    //     print('[ParrotClaw] Failed to close test connection: $e');
+    //   }
+    // }
+    if (mounted) {
+      setState(() {
+        _isTesting = false;
+      });
+    }
 
     if (openPairingPage) {
-      if (pairingError != null) {
-        context.read<ConnViewModel>().capturePairingDeviceId(pairingError);
-      }
       context.push(Routes.gatewayPairing);
       return;
     }
 
-    context.go(Routes.index);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(_isEditing ? '网关已更新' : '网关已添加')));
+    if (_testSuccess) {
+      await _saveConfig(config);
+      context.go(Routes.index);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_isEditing ? '网关已更新' : '网关已添加')));
+    }
   }
 
   Future<void> _saveConfig(ServerConfig config) async {
@@ -462,10 +451,6 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       await widget.viewModel.addServer(config);
     }
     widget.viewModel.selectServer(config);
-  }
-
-  bool _isPairingRequiredError(Object? error) {
-    return error.toString().toLowerCase().contains('pairing required');
   }
 
   ServerConfig _buildConfig() {

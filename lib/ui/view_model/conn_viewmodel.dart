@@ -8,6 +8,7 @@ import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/data/service/gateway_channel.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/gateway_scope_store.dart';
 import 'package:parrot_app/util/parse.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:uuid/uuid.dart';
@@ -106,21 +107,7 @@ class ConnViewModel extends ChangeNotifier {
 
   final ServerRepository _serverRepository;
   StreamSubscription? _gatewaySub;
-
   String? disconnectReason;
-  String? _pairingDeviceId;
-  bool _pairingRequired = false;
-
-  /// 需要在 Gateway 上执行授权命令的设备 ID。
-  String? get pairingDeviceId => _pairingDeviceId;
-
-  bool get pairingRequired => _pairingRequired;
-
-  void clearPairingRequired() {
-    _pairingDeviceId = null;
-    _pairingRequired = false;
-    notifyListeners();
-  }
 
   /// 从网关错误中提取配对设备 ID。
   ///
@@ -152,13 +139,6 @@ class ConnViewModel extends ChangeNotifier {
     return null;
   }
 
-  /// 将外部连接测试得到的配对错误同步到 ViewModel。
-  void capturePairingDeviceId(Object error) {
-    final deviceId = resolvePairingDeviceId(error);
-    _pairingDeviceId = deviceId;
-    _pairingRequired = true;
-    notifyListeners();
-  }
 
   ConnViewModel({
     required SettingRepository settingRepository,
@@ -231,8 +211,6 @@ class ConnViewModel extends ChangeNotifier {
     _isConnecting = true;
     _connected = false;
     disconnectReason = null;
-    _pairingDeviceId = null;
-    _pairingRequired = false;
     _log.info('Switching to server: ${config.name}');
 
     _gatewaySub = GatewayConnection.shared.subscribe().listen((d) {
@@ -261,10 +239,27 @@ class ConnViewModel extends ChangeNotifier {
     };
     try {
       notifyListeners();
+      // 扫码配对（受限 operator）加入的网关：重连时复用配对时实际授权的
+      // scopes，避免按默认全量（含 admin/pairing）请求触发 scope-upgrade 审批。
+      final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
+      final GatewayConnectOptions? operatorOptions = (storedScopes != null)
+          ? GatewayConnectOptions(
+              role: 'operator',
+              scopes: storedScopes,
+              scopesAreExplicit: true,
+              caps: const <String>[],
+              commands: const <String>[],
+              permissions: const <String, bool>{},
+              clientId: canonicalMobileClientId(),
+              clientMode: 'ui',
+              clientDisplayName: 'parrotClaw',
+            )
+          : null;
       await GatewayConnection.shared.configure(
         url: config.wsUrl,
         token: config.token,
         password: config.password,
+        connectOptions: operatorOptions,
       );
       if (epoch != _connectionEpoch ||
           _serverRepository.selectedServer?.id != config.id) {

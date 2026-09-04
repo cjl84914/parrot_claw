@@ -2,17 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
+import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 
 class GatewayPairingScreen extends StatelessWidget {
-  final ConnViewModel viewModel;
-
-  const GatewayPairingScreen({super.key, required this.viewModel});
+  const GatewayPairingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final id = viewModel.pairingDeviceId;
+    final id = GatewayConnection.shared.pairingDeviceId;
     final command = id == null ? null : 'openclaw devices approve $id';
     return Scaffold(
       backgroundColor: Colors.black,
@@ -69,14 +67,7 @@ class GatewayPairingScreen extends StatelessWidget {
                 height: 48,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                  onPressed: () async {
-                    viewModel.clearPairingRequired();
-                    await viewModel.reconnect();
-                    if (!context.mounted) return;
-                    if (viewModel.connected) {
-                      context.go(Routes.index);
-                    }
-                  },
+                  onPressed: () => context.pop(true),
                   icon: const Icon(Icons.radar),
                   label: const Text('重试连接', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),

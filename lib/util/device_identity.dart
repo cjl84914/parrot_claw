@@ -48,8 +48,14 @@ class DeviceIdentity {
     return s + '=' * (4 - rem);
   }
   
-  /// 格式与 OpenClaw Gateway 一致:
-  /// version|deviceId|clientId|clientMode|role|scopes|signedAtMs|token[|nonce]
+  /// 与服务端 packages/gateway-client/src/device-auth.ts 的载荷构造保持一致。
+  ///
+  /// 传入 [platform]/[deviceFamily] 时生成 **v3**（v2 基础上追加两段，均做
+  /// ASCII A–Z→a–z 小写归一，服务端逐字节比对）：
+  ///   v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
+  /// 否则保留旧 v1/v2 布局：
+  ///   v1: …|token      （无 nonce）
+  ///   v2: …|token|nonce
   String buildAuthPayload({
     required String clientId,
     required String clientMode,
@@ -58,7 +64,24 @@ class DeviceIdentity {
     required int signedAtMs,
     required String? token,
     String? nonce,
+    String? platform,
+    String? deviceFamily,
   }) {
+    if (platform != null || deviceFamily != null) {
+      return [
+        'v3',
+        deviceId,
+        clientId,
+        clientMode,
+        role,
+        scopes.join(','),
+        signedAtMs.toString(),
+        token ?? '',
+        nonce ?? '',
+        _normalizeAuthMetadata(platform),
+        _normalizeAuthMetadata(deviceFamily),
+      ].join('|');
+    }
     final version = (nonce != null && nonce.isNotEmpty) ? 'v2' : 'v1';
     final base = [
       version,
@@ -74,6 +97,16 @@ class DeviceIdentity {
       base.add(nonce ?? '');
     }
     return base.join('|');
+  }
+
+  /// 与服务端 normalizeDeviceMetadataForAuth 等价：trim + ASCII 大写转小写。
+  static String _normalizeAuthMetadata(String? value) {
+    if (value == null) return '';
+    final buffer = StringBuffer();
+    for (final code in value.trim().codeUnits) {
+      buffer.writeCharCode(code >= 0x41 && code <= 0x5A ? code + 0x20 : code);
+    }
+    return buffer.toString();
   }
   
   /// Ed25519 签名，返回 base64url 编码的 64 字节签名

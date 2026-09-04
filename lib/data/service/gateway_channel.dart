@@ -63,6 +63,27 @@ class GatewayConnectOptions {
   });
 }
 
+/// 官方 openclaw 移动端 canonical client id（用于扫码 bootstrap 静默放行）。
+///
+/// 服务端 connect-device-metadata 仅对 id=openclaw-android/openclaw-ios 且
+/// platform/deviceFamily 匹配的客户端静默下发 node+operator 双令牌；
+/// node-host 只对 node-only profile 静默。桌面/非移动端回退 node-host。
+String canonicalMobileClientId() {
+  if (Platform.isAndroid) return 'openclaw-android';
+  if (Platform.isIOS) return 'openclaw-ios';
+  return 'node-host';
+}
+
+/// 与服务端 normalizeDeviceMetadataForAuth 的 deviceFamily 口径一致。
+String? deviceFamilyForPlatform() {
+  if (Platform.isAndroid) return 'android';
+  if (Platform.isIOS) return 'ios';
+  if (Platform.isMacOS) return 'macos';
+  if (Platform.isWindows) return 'windows';
+  if (Platform.isLinux) return 'linux';
+  return null;
+}
+
 // ─────────────────────────────────────────────
 // MARK: - GatewayPush  (≈ Swift GatewayPush enum)
 // ─────────────────────────────────────────────
@@ -115,7 +136,7 @@ class HelloOk {
       (json['snapshot'] as Map?)?.cast<String, dynamic>() ?? {},
     ),
     pluginsurfaceurls:
-        (json['pluginSurfaceUrls'] as Map?)?.cast<String, dynamic>(),
+    (json['pluginSurfaceUrls'] as Map?)?.cast<String, dynamic>(),
     auth: (json['auth'] as Map?)?.cast<String, dynamic>() ?? {},
     policy: (json['policy'] as Map?)?.cast<String, dynamic>() ?? {},
   );
@@ -146,11 +167,11 @@ class HelloSnapshot {
 
   factory HelloSnapshot.fromJson(Map<String, dynamic> json) => HelloSnapshot(
     presence:
-        (json['presence'] as List? ?? [])
-            .map(
-              (e) => PresenceEntry.fromJson((e as Map).cast<String, dynamic>()),
-            )
-            .toList(),
+    (json['presence'] as List? ?? [])
+        .map(
+          (e) => PresenceEntry.fromJson((e as Map).cast<String, dynamic>()),
+    )
+        .toList(),
     health: json['health'],
     stateversion: StateVersion.fromJson(
       (json['stateVersion'] as Map?)?.cast<String, dynamic>() ?? {},
@@ -251,14 +272,14 @@ class GatewayResponseError implements Exception {
     String? message,
     Map<String, dynamic>? details,
   }) : code = (code?.trim().isEmpty == false) ? code!.trim() : 'GATEWAY_ERROR',
-       message =
-           (message?.trim().isEmpty == false)
-               ? message!.trim()
-               : 'gateway error',
-       details = details ?? {},
-       requestId = details?['requestId']?.toString() ??
-           details?['requestID']?.toString() ??
-           details?['request_id']?.toString();
+        message =
+        (message?.trim().isEmpty == false)
+            ? message!.trim()
+            : 'gateway error',
+        details = details ?? {},
+        requestId = details?['requestId']?.toString() ??
+            details?['requestID']?.toString() ??
+            details?['request_id']?.toString();
 
   String? get detailsReason {
     final raw = details['reason'] as String?;
@@ -282,6 +303,277 @@ class GatewayDecodingError implements Exception {
   @override
   String toString() => 'GatewayDecodingError($method): $message';
 }
+
+/// Stable error categories exposed to UI and other application layers.
+enum GatewayErrorCode {
+  pairingRequired,
+  deviceNotPaired,
+  deviceNotApproved,
+  authRequired,
+  authUnauthorized,
+  authTokenMismatch,
+  authBootstrapTokenInvalid,
+  authDeviceTokenMismatch,
+  authScopeMismatch,
+  authRateLimited,
+  protocolMismatch,
+  deviceIdentityRequired,
+  deviceAuthInvalid,
+  networkUnavailable,
+  connectTimeout,
+  challengeTimeout,
+  requestTimeout,
+  connectionClosed,
+  cancelled,
+  serverError,
+  unknown,
+}
+
+enum GatewayConnectionPhase {
+  idle,
+  connecting,
+  connected,
+  requesting,
+  disconnected,
+}
+
+enum GatewayRecoveryAction {
+  showPairingPage,
+  retryWithDeviceToken,
+  updateCredentials,
+  retryAfterDelay,
+  upgradeClient,
+  scanAgain,
+  manualActionRequired,
+  none,
+}
+
+class GatewayErrorInfo {
+  final GatewayErrorCode code;
+  final String message;
+  final String? reason;
+  final String? requestId;
+  final String? deviceId;
+  final String? owner;
+  final String? title;
+  final String? userMessage;
+  final String? actionLabel;
+  final String? actionCommand;
+  final String? docsUrl;
+  final bool retryable;
+  final bool pauseReconnect;
+  final Map<String, dynamic> rawDetails;
+
+  const GatewayErrorInfo({
+    required this.code,
+    required this.message,
+    this.reason,
+    this.requestId,
+    this.deviceId,
+    this.owner,
+    this.title,
+    this.userMessage,
+    this.actionLabel,
+    this.actionCommand,
+    this.docsUrl,
+    required this.retryable,
+    required this.pauseReconnect,
+    this.rawDetails = const <String, dynamic>{},
+  });
+
+  GatewayRecoveryAction get recoveryAction {
+    switch (code) {
+      case GatewayErrorCode.pairingRequired:
+      case GatewayErrorCode.deviceNotPaired:
+      case GatewayErrorCode.deviceNotApproved:
+        return GatewayRecoveryAction.showPairingPage;
+      case GatewayErrorCode.authTokenMismatch:
+      case GatewayErrorCode.authDeviceTokenMismatch:
+        return GatewayRecoveryAction.retryWithDeviceToken;
+      case GatewayErrorCode.authUnauthorized:
+      case GatewayErrorCode.authRequired:
+      case GatewayErrorCode.authBootstrapTokenInvalid:
+      case GatewayErrorCode.authScopeMismatch:
+        return GatewayRecoveryAction.updateCredentials;
+      case GatewayErrorCode.protocolMismatch:
+        return GatewayRecoveryAction.upgradeClient;
+      case GatewayErrorCode.authRateLimited:
+        return GatewayRecoveryAction.retryAfterDelay;
+      case GatewayErrorCode.networkUnavailable:
+      case GatewayErrorCode.connectTimeout:
+      case GatewayErrorCode.challengeTimeout:
+      case GatewayErrorCode.requestTimeout:
+      case GatewayErrorCode.connectionClosed:
+        return GatewayRecoveryAction.scanAgain;
+      case GatewayErrorCode.deviceIdentityRequired:
+      case GatewayErrorCode.deviceAuthInvalid:
+      case GatewayErrorCode.serverError:
+      case GatewayErrorCode.cancelled:
+      case GatewayErrorCode.unknown:
+        return GatewayRecoveryAction.manualActionRequired;
+    }
+  }
+}
+
+class GatewayOperationResult<T> {
+  final bool ok;
+  final T? data;
+  final GatewayErrorInfo? error;
+  final String? requestId;
+  final GatewayConnectionPhase phase;
+  final bool retryable;
+  final GatewayRecoveryAction recoveryAction;
+
+  const GatewayOperationResult._({
+    required this.ok,
+    this.data,
+    this.error,
+    this.requestId,
+    required this.phase,
+    required this.retryable,
+    required this.recoveryAction,
+  });
+
+  factory GatewayOperationResult.success({
+    T? data,
+    String? requestId,
+    GatewayConnectionPhase phase = GatewayConnectionPhase.connected,
+  }) => GatewayOperationResult<T>._(
+    ok: true,
+    data: data,
+    requestId: requestId,
+    phase: phase,
+    retryable: false,
+    recoveryAction: GatewayRecoveryAction.none,
+  );
+
+  factory GatewayOperationResult.failure({
+    required GatewayErrorInfo error,
+    GatewayConnectionPhase phase = GatewayConnectionPhase.disconnected,
+  }) => GatewayOperationResult<T>._(
+    ok: false,
+    error: error,
+    requestId: error.requestId,
+    phase: phase,
+    retryable: error.retryable,
+    recoveryAction: error.recoveryAction,
+  );
+}
+
+GatewayErrorInfo gatewayErrorInfoFrom(Object error, {String? method}) {
+  if (error is GatewayResponseError) {
+    final details = Map<String, dynamic>.from(error.details);
+    final rawCode = error.code.toUpperCase();
+    final code = _gatewayErrorCodeFromRaw(rawCode, error.message, details);
+    return GatewayErrorInfo(
+      code: code,
+      message: error.message,
+      reason: error.detailsReason,
+      requestId: error.requestId,
+      deviceId: _firstString(details, const [
+        'deviceId',
+        'device_id',
+        'requestId',
+        'requestID',
+        'request_id',
+      ]),
+      owner: _firstString(details, const ['owner']),
+      title: _firstString(details, const ['title']),
+      userMessage: _firstString(details, const ['userMessage', 'user_message']),
+      actionLabel: _firstString(details, const ['actionLabel', 'action_label']),
+      actionCommand: _firstString(details, const ['actionCommand', 'action_command']),
+      docsUrl: _firstString(details, const ['docsUrl', 'docs_url']),
+      retryable: _retryableFor(code),
+      pauseReconnect: _pauseReconnectFor(code),
+      rawDetails: details,
+    );
+  }
+
+  final message = error.toString();
+  final code = error is TimeoutException
+      ? (method == 'connect'
+      ? GatewayErrorCode.connectTimeout
+      : GatewayErrorCode.requestTimeout)
+      : error is SocketException
+      ? GatewayErrorCode.networkUnavailable
+      : GatewayErrorCode.unknown;
+  return GatewayErrorInfo(
+    code: code,
+    message: message,
+    retryable: code != GatewayErrorCode.unknown,
+    pauseReconnect: false,
+  );
+}
+
+String? _firstString(Map<String, dynamic> details, List<String> keys) {
+  for (final key in keys) {
+    final value = details[key]?.toString().trim();
+    if (value != null && value.isNotEmpty) return value;
+  }
+  return null;
+}
+
+GatewayErrorCode _gatewayErrorCodeFromRaw(
+    String raw,
+    String message,
+    Map<String, dynamic> details,
+    ) {
+  final detailCode = _firstString(details, const ['code', 'detailCode']);
+  final normalized = '$raw ${detailCode ?? ''} ${message.toUpperCase()}'.toUpperCase();
+  if (normalized.contains('PAIRING_REQUIRED')) {
+    return GatewayErrorCode.pairingRequired;
+  }
+  if (normalized.contains('NOT_PAIRED')) return GatewayErrorCode.deviceNotPaired;
+  if (normalized.contains('NOT_APPROVED') ||
+      normalized.contains('NOT APPROVED')) {
+    return GatewayErrorCode.deviceNotApproved;
+  }
+  if (normalized.contains('PROTOCOL')) return GatewayErrorCode.protocolMismatch;
+  if (normalized.contains('RATE_LIMIT')) return GatewayErrorCode.authRateLimited;
+  if (normalized.contains('BOOTSTRAP')) return GatewayErrorCode.authBootstrapTokenInvalid;
+  if (normalized.contains('DEVICE_TOKEN')) return GatewayErrorCode.authDeviceTokenMismatch;
+  if (normalized.contains('TOKEN_MISMATCH')) return GatewayErrorCode.authTokenMismatch;
+  if (normalized.contains('SCOPE')) return GatewayErrorCode.authScopeMismatch;
+  if (normalized.contains('UNAUTHORIZED') || normalized.contains('AUTH_INVALID')) {
+    return GatewayErrorCode.authUnauthorized;
+  }
+  if (normalized.contains('AUTH_REQUIRED') || normalized.contains('TOKEN_MISSING')) {
+    return GatewayErrorCode.authRequired;
+  }
+  if (normalized.contains('DEVICE_IDENTITY')) {
+    return GatewayErrorCode.deviceIdentityRequired;
+  }
+  if (normalized.contains('DEVICE_AUTH')) {
+    return GatewayErrorCode.deviceAuthInvalid;
+  }
+  return GatewayErrorCode.serverError;
+}
+
+bool _retryableFor(GatewayErrorCode code) => switch (code) {
+  GatewayErrorCode.networkUnavailable ||
+  GatewayErrorCode.connectTimeout ||
+  GatewayErrorCode.challengeTimeout ||
+  GatewayErrorCode.requestTimeout ||
+  GatewayErrorCode.connectionClosed ||
+  GatewayErrorCode.serverError ||
+  GatewayErrorCode.authRateLimited => true,
+  _ => false,
+};
+
+bool _pauseReconnectFor(GatewayErrorCode code) => switch (code) {
+  GatewayErrorCode.pairingRequired ||
+  GatewayErrorCode.deviceNotPaired ||
+  GatewayErrorCode.deviceNotApproved ||
+  GatewayErrorCode.authUnauthorized ||
+  GatewayErrorCode.authTokenMismatch ||
+  GatewayErrorCode.authBootstrapTokenInvalid ||
+  GatewayErrorCode.authDeviceTokenMismatch ||
+  GatewayErrorCode.authScopeMismatch ||
+  GatewayErrorCode.protocolMismatch ||
+  GatewayErrorCode.deviceIdentityRequired ||
+  GatewayErrorCode.deviceAuthInvalid => true,
+  _ => false,
+};
 
 // ─────────────────────────────────────────────
 // MARK: - Internal RPC frame helpers
@@ -359,11 +651,11 @@ class GatewayChannelActor {
     this.connectOptions,
     void Function(String reason)? disconnectHandler,
   }) : _url = url,
-       _token = token,
-       _password = password,
-       _bootstrapToken = bootstrapToken,
-       _pushHandler = pushHandler,
-       _disconnectHandler = disconnectHandler {
+        _token = token,
+        _password = password,
+        _bootstrapToken = bootstrapToken,
+        _pushHandler = pushHandler,
+        _disconnectHandler = disconnectHandler {
     // Mirrors Swift: `Task { [weak self] in await self?.startWatchdog() }` in init.
     _startWatchdog();
   }
@@ -513,7 +805,7 @@ class GatewayChannelActor {
     _keepaliveTimer?.cancel();
     _keepaliveTimer = Timer.periodic(
       Duration(milliseconds: (_keepaliveIntervalSeconds * 1000).toInt()),
-      (_) {
+          (_) {
         if (!_shouldReconnect) return;
         if (!_connected || _task == null) return;
         // Best-effort ping: IOWebSocketChannel does not expose sendPing directly;
@@ -535,7 +827,7 @@ class GatewayChannelActor {
     if (channel == null) return;
     _listening = true;
     _taskSubscription = channel.stream.listen(
-      (raw) => _handleRawMessage(raw),
+          (raw) => _handleRawMessage(raw),
       onError: (e) => _handleReceiveFailure(e.toString()),
       onDone: () {
         _listening = false;
@@ -655,22 +947,22 @@ class GatewayChannelActor {
   Future<void> _sendConnect() async {
     final options =
         connectOptions ??
-        const GatewayConnectOptions(
-          role: 'operator',
-          scopes: [
-            'operator.admin',
-            'operator.read',
-            'operator.write',
-            'operator.approvals',
-            'operator.pairing',
-          ],
-          caps: [],
-          commands: [],
-          permissions: {},
-          clientId: 'gateway-client',
-          clientMode: 'ui',
-          clientDisplayName: 'parrotClaw'
-        );
+            const GatewayConnectOptions(
+                role: 'operator',
+                scopes: [
+                  'operator.admin',
+                  'operator.read',
+                  'operator.write',
+                  'operator.approvals',
+                  'operator.pairing',
+                ],
+                caps: [],
+                commands: [],
+                permissions: {},
+                clientId: 'gateway-client',
+                clientMode: 'ui',
+                clientDisplayName: 'parrotClaw'
+            );
 
     final clientId = options.clientId;
     final clientMode = options.clientMode;
@@ -678,6 +970,7 @@ class GatewayChannelActor {
     final role = options.role;
     final scopes = options.scopes;
     final platform = Platform.operatingSystem;
+    final deviceFamily = deviceFamilyForPlatform();
 
     // Step 1: wait for connect.challenge (nonce)
     final connectNonce = await _waitForConnectChallenge();
@@ -698,6 +991,9 @@ class GatewayChannelActor {
         // Setup-code pairing sends bootstrapToken when token is absent.
         token: _token ?? _bootstrapToken,
         nonce: connectNonce,
+        // v3 载荷：服务端先按 v3（含 platform/deviceFamily）验签，失败回落 v2。
+        platform: platform,
+        deviceFamily: deviceFamily,
       );
       signature = identity.signPayload(authPayload);
     }
@@ -711,6 +1007,8 @@ class GatewayChannelActor {
       'version': '1.0.0',
       'platform': platform,
       'mode': clientMode,
+      // 移动端 bootstrap 静默放行依赖 deviceFamily 与 canonical client id 匹配。
+      if (deviceFamily != null) 'deviceFamily': deviceFamily,
     };
 
     // Build params (mirrors Swift var params: [String: ProtoAnyCodable])
@@ -800,9 +1098,9 @@ class GatewayChannelActor {
     }
 
     final payloadMap =
-        rawPayload is String
-            ? (jsonDecode(rawPayload) as Map).cast<String, dynamic>()
-            : (rawPayload as Map).cast<String, dynamic>();
+    rawPayload is String
+        ? (jsonDecode(rawPayload) as Map).cast<String, dynamic>()
+        : (rawPayload as Map).cast<String, dynamic>();
 
     final ok = HelloOk.fromJson(payloadMap);
 
@@ -818,7 +1116,7 @@ class GatewayChannelActor {
     _tickTask?.cancel();
     _tickTask = Timer.periodic(
       Duration(milliseconds: (_tickIntervalMs * 2).toInt()),
-      (_) {
+          (_) {
         if (!_connected) return;
         final last = _lastTick;
         if (last == null) return;
