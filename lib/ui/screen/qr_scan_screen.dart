@@ -5,11 +5,12 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
 import 'package:parrot_app/data/model/server_config.dart';
-import 'package:parrot_app/data/service/gateway_channel.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/gateway_scope_store.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 
 /// 扫码导入网关配置页
 class QrScanScreen extends StatefulWidget {
@@ -269,16 +270,12 @@ class _QrScanScreenState extends State<QrScanScreen> {
   }
 
   void _showInvalidQr() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('无效的二维码，未识别到网关配置')));
+    MySnackBar.showError(context, '无效的二维码，未识别到网关配置');
     _handling = false;
   }
 
   Future<void> _showHandshakeError(String message) async {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    MySnackBar.showError(context, message);
     await _resetForRescan();
   }
 

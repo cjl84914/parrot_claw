@@ -10,6 +10,7 @@ import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
 import 'package:parrot_app/util/string_util.dart';
@@ -217,15 +218,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
       onTextResult: (String text) => _sendMessage(text),
       onError: (String error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                error,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          );
+          MySnackBar.showError(context, error);
         }
       },
       initCallback: () async {
@@ -418,9 +411,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
     try {
       await widget.viewModel.sendChatMessage(text);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      MySnackBar.showError(context, e.toString());
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:parrot_app/ui/widget/server_card.dart';
 
@@ -192,7 +193,6 @@ class _ServerListPageState extends State<ServerListScreen> {
 
   void _deleteServer(ServerConfig server) {
     // 在弹窗打开前捕获上层依赖，避免弹窗关闭后 dialogContext 失效
-    final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
     showDialog(
       context: context,
@@ -219,9 +219,7 @@ class _ServerListPageState extends State<ServerListScreen> {
                   if (servers.isEmpty) {
                     router.go(Routes.home);
                   } else {
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('网关已删除')),
-                    );
+                    MySnackBar.showSuccess(context, '网关已删除');
                   }
                 },
                 child: Text(

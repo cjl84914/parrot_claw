@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
-import 'package:parrot_app/data/service/gateway_channel.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -438,9 +439,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     if (_testSuccess) {
       await _saveConfig(config);
       context.go(Routes.index);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_isEditing ? '网关已更新' : '网关已添加')));
+      MySnackBar.showSuccess(context, _isEditing ? '网关已更新' : '网关已添加');
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 import 'package:uuid/uuid.dart';
@@ -276,9 +277,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   void _openQrCode(BuildContext context) {
     final config = context.read<ServerRepository>().selectedServer;
     if (config == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无可分享的网关配置')));
+      MySnackBar.showWarning(context, '暂无可分享的网关配置');
       return;
     }
     _closeDrawer(context);
@@ -288,9 +287,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   Future<void> _createSession(BuildContext context) async {
     if (_isCreatingSession || !widget.viewModel.connected) {
       if (!widget.viewModel.connected && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('网关尚未连接')));
+        MySnackBar.showWarning(context, '网关尚未连接');
       }
       return;
     }
@@ -311,9 +308,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       _closeDrawer(context);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('创建会话失败：$error')));
+        MySnackBar.showError(context, '创建会话失败：$error');
       }
     } finally {
       if (mounted) setState(() => _isCreatingSession = false);
@@ -394,9 +389,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('删除会话失败：$error')));
+        MySnackBar.showError(context, '删除会话失败：$error');
       }
     } finally {
       if (mounted) setState(() => _deletingSessionKey = null);

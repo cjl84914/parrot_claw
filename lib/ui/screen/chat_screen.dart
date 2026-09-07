@@ -19,6 +19,7 @@ import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/ui/widget/voice_input_button.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
@@ -96,15 +97,7 @@ class _ChatScreenState extends State<ChatScreen>
       // 录音/初始化失败不再静默：直接在聊天页提示原因（如 Windows 麦克风权限）
       onError: (String error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                error,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          );
+          MySnackBar.showError(context, error);
         }
       },
       initCallback: () {
@@ -640,9 +633,7 @@ class _ChatScreenState extends State<ChatScreen>
   void _copyMessage(TextMessage message) async {
     await Clipboard.setData(ClipboardData(text: message.text));
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Copied: ${message.text}')));
+    MySnackBar.showInfo(context, 'Copied: ${message.text}');
   }
 
   void _sendMessage(String? text) async {
@@ -654,9 +645,7 @@ class _ChatScreenState extends State<ChatScreen>
       _addTyping();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      MySnackBar.showError(context, e.toString());
     }
   }
 
@@ -904,9 +893,7 @@ class _ChatScreenState extends State<ChatScreen>
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      MySnackBar.showError(context, error.toString());
     }
   }
 }

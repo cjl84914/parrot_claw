@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:logging/logging.dart';
-import 'package:parrot_app/data/service/gateway_channel.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:uuid/uuid.dart';
 import 'package:parrot_app/util/device_identity.dart';
 
@@ -385,7 +385,7 @@ class GatewayConnection {
   // ── config provider / client ───────────────
   // Mirrors Swift: `private let configProvider`, `private var client`
   // Future<GatewayEndpoint> Function()? _configProvider;
-  GatewayChannelActor? _client;
+  GatewaySession? _client;
   String? _configuredURL;
   String? _configuredToken;
   String? _configuredPassword;
@@ -516,7 +516,13 @@ class GatewayConnection {
     if (client == null) {
       throw StateError('gateway not configured');
     }
-    return client.request(method: method, params: params, timeoutMs: timeoutMs);
+    return client.request(
+      method: method,
+      params: params,
+      timeout: timeoutMs == null
+          ? null
+          : Duration(milliseconds: timeoutMs.toInt()),
+    );
   }
 
   /// Mirrors Swift `func requestRaw(method: Method, ...)`.
@@ -665,7 +671,7 @@ class GatewayConnection {
     }
     _lastSnapshot = null;
     final generation = _clientGeneration;
-    _client = GatewayChannelActor(
+    _client = GatewaySession(
       url: url,
       token: normalizedToken,
       password: normalizedPassword,

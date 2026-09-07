@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
-import 'package:parrot_app/data/service/gateway_channel.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:uuid/uuid.dart';
 

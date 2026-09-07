@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 
 class _LocalSetupColors {
   static const background = Color(0xFF101114);
@@ -324,9 +325,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (result != null) {
         context.push(result.hasModel ? Routes.index : Routes.setupModel);
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('连接失败，请重试')));
+        MySnackBar.showWarning(context, '连接失败，请重试');
       }
     } finally {
       if (mounted) setState(() => _connecting = false);

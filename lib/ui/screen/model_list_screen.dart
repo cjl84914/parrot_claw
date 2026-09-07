@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/openclaw_model.dart';
 import 'package:parrot_app/data/service/openclaw_model_service.dart';
+import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 
 class ModelListScreen extends StatefulWidget {
   final OpenClawModelService service;
@@ -43,14 +44,10 @@ class _ModelListScreenState extends State<ModelListScreen> {
       );
       if (!mounted) return;
       setState(_reload);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('模型已保存')));
+      MySnackBar.showSuccess(context, '模型已保存');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      MySnackBar.showError(context, '保存失败：$error');
     }
   }
 
@@ -79,14 +76,10 @@ class _ModelListScreenState extends State<ModelListScreen> {
       await widget.service.deleteModel(model);
       if (!mounted) return;
       setState(_reload);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('模型已删除')));
+      MySnackBar.showSuccess(context, '模型已删除');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('删除失败：$error')));
+      MySnackBar.showError(context, '删除失败：$error');
     }
   }
 
@@ -313,9 +306,7 @@ class _AddModelDialogState extends State<_AddModelDialog> {
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedProvider == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请选择提供商')));
+      MySnackBar.showWarning(context, '请选择提供商');
       return;
     }
     Navigator.of(context).pop(
