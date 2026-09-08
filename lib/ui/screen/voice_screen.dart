@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -317,26 +318,13 @@ class _VoiceScreenState extends State<VoiceScreen> {
                         if (_isRecording) {
                           await ASRUtil().stop();
                           _isRecording = false;
+                          if (kIsMobile) {
+                            context.go(Routes.index);
+                          }
+                        } else {
+                          await ASRUtil().start();
+                          _isRecording = true;
                         }
-
-                        context.go(Routes.index);
-
-                        // else {
-                        //   widget.viewModel.subscribeSessionMessage();
-                        //   // 按实际启动结果更新状态，失败时给出原因提示
-                        //   _isRecording = await ASRUtil().start();
-                        //   if (!_isRecording && context.mounted) {
-                        //     ScaffoldMessenger.of(context).showSnackBar(
-                        //       const SnackBar(
-                        //         content: Text('录音启动失败，请检查麦克风权限/设备'),
-                        //       ),
-                        //     );
-                        //   }
-                        // }
-                        //
-                        // if (mounted) {
-                        //   setState(() {});
-                        // }
                       },
                     ),
                   ],

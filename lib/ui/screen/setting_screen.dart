@@ -87,7 +87,7 @@ class _SettingScreenState extends State<SettingScreen> {
         leading: IconButton(
           icon: const Icon(Icons.menu),
           tooltip: '打开侧边栏',
-          onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+          onPressed: () => indexController.switchSideBarVisible(),
         ),
         title: const Text('设置'),
       ),

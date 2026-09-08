@@ -16,6 +16,7 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/message.dart' hide ChatMessage;
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
+import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
@@ -24,6 +25,7 @@ import 'package:parrot_app/ui/widget/voice_input_button.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
 import 'package:parrot_app/util/string_util.dart';
+import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -67,6 +69,7 @@ class _ChatScreenState extends State<ChatScreen>
   final GlobalKey _modelButtonKey = GlobalKey();
 
   final _textEditingController = TextEditingController();
+  bool isLive2dShow = false;
 
   @override
   void initState() {
@@ -200,384 +203,418 @@ class _ChatScreenState extends State<ChatScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return ListenableBuilder(
-      listenable: widget.viewModel,
-      builder: (context, child) {
-        if (widget.viewModel.isHistoryLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return Scaffold(
-          appBar: AppBar(
-            leading: IconButton(
-              icon: const Icon(Icons.menu),
-              tooltip: '打开侧边栏',
-              onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
-            ),
-            centerTitle: false,
-            title: const Text('ParrotClaw'),
-            actions: [
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white.withOpacity(0.5)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  onPressed: () => context.go(Routes.voice),
-                  icon: const Icon(Icons.phone_outlined, size: 24),
-                  visualDensity: VisualDensity.compact,
-                ),
+    return Row(
+      children: [
+        Expanded(
+          child: Scaffold(
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.menu),
+                tooltip: '打开侧边栏',
+                onPressed: () {
+                  indexController.switchSideBarVisible();
+                },
               ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              Chat(
-                // key: ValueKey(widget.server.id),
-                backgroundColor: Colors.transparent,
-                builders: Builders(
-                  emptyChatListBuilder: (c) {
-                    return const Center(child: Text("没有数据呢～"));
-                  },
-                  chatAnimatedListBuilder: (context, itemBuilder) {
-                    return ChatAnimatedList(
-                      itemBuilder: itemBuilder,
-                      // initialScrollToEndMode: InitialScrollToEndMode.none,
-                      insertAnimationDurationResolver: (message) {
-                        if (message is SystemMessage) {
-                          return Duration.zero;
-                        }
-                        return null;
-                      },
-                    );
-                  },
-                  customMessageBuilder:
-                      (
-                        context,
-                        message,
-                        index, {
-                        required bool isSentByMe,
-                        MessageGroupStatus? groupStatus,
-                      }) => Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color:
-                              theme.brightness == Brightness.dark
-                                  ? ChatColors.dark().surfaceContainer
-                                  : ChatColors.light().surfaceContainer,
-                          borderRadius: const BorderRadius.all(
-                            Radius.circular(12),
-                          ),
-                        ),
-                        child: IsTypingIndicator(),
-                      ),
-                  imageMessageBuilder:
-                      (
-                        context,
-                        message,
-                        index, {
-                        required bool isSentByMe,
-                        MessageGroupStatus? groupStatus,
-                      }) => GestureDetector(
-                        onTap: () {
-                          launchUrl(Uri.parse(message.source));
-                        },
-                        child: FlyerChatImageMessage(
-                          message: message,
-                          index: index,
-                          errorBuilder: (
-                            BuildContext context,
-                            Object error,
-                            StackTrace? stackTrace,
-                          ) {
-                            return Text(error.toString());
-                          },
-                        ),
-                      ),
-                  // audioMessageBuilder:
-                  //     (
-                  //     context,
-                  //     message,
-                  //     index, {
-                  //   required bool isSentByMe,
-                  //   MessageGroupStatus? groupStatus,
-                  // }) => FlyerChatAudioMessage(
-                  //   message: message,
-                  //   index: index,
-                  // ),
-                  // videoMessageBuilder: (
-                  //   context,
-                  //   message,
-                  //   index, {
-                  //   required bool isSentByMe,
-                  //   MessageGroupStatus? groupStatus,
-                  // }) {
-                  //   return VideoMessageWidget(url: message.source);
-                  // },
-                  systemMessageBuilder:
-                      (
-                        context,
-                        message,
-                        index, {
-                        required bool isSentByMe,
-                        MessageGroupStatus? groupStatus,
-                      }) => FlyerChatSystemMessage(
-                        message: message,
-                        index: index,
-                      ),
-                  composerBuilder:
-                      (context) => Composer(
-                        key: _composerKey,
-                        textEditingController: _textEditingController,
-                        padding: const EdgeInsets.only(
-                          left: 12,
-                          top: 8,
-                          bottom: 4,
-                          right: 12,
-                        ),
-                        backgroundColor: ChatColors.dark().surface,
-                        topWidget: ComposerActionBar(
-                          buttons: [
-                            ComposerActionButton(
-                              visible: true,
-                              icon: Icons.delete_sweep,
-                              title: 'Clear',
-                              onPressed: () {
-                                _chatController.setMessages([]);
-                                widget.viewModel.sendChatMessage('/reset');
-                              },
-                            ),
-                            ComposerActionButton(
-                              visible: true,
-                              icon: Icons.stop_circle_rounded,
-                              title: 'Abort ',
-                              onPressed: () => _abortMessage(),
-                              color:
-                                  widget.viewModel.runId != ''
-                                      ? AppColors.secondary
-                                      : Colors.grey,
-                            ),
-                            ComposerActionButton(
-                              key: _modelButtonKey,
-                              visible: true,
-                              icon: Icons.psychology_outlined,
-                              title: widget.viewModel.model ?? '模型',
-                              onPressed: () => _showModelOptions(context),
-                              color: Colors.grey,
-                            ),
-                            ComposerActionButton(
-                              visible: true,
-                              icon:  _inputMode == InputMode.Voice
-                                  ? Icons.keyboard_alt_outlined
-                                  : Icons.mic_outlined,
-                              title: 'MIC',
-                              onPressed: () {
-                                if (_inputMode == InputMode.Voice) {
-                                  _inputMode = InputMode.Text;
-                                } else if (_inputMode == InputMode.Text) {
-                                  _textEditingController.clear();
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                  _inputMode = InputMode.Voice;
-                                }
-                                setState(() {});
-                              },
-                              color: Colors.grey,
-                            ),
-                          ],
-                        ),
-                        sendOnEnter: true,
-                        // sendButtonHidden: true,
-                      ),
-                  // linkPreviewBuilder: (context, message, isSentByMe) {
-                  //   // It's up to you to (optionally) implement the logic to avoid every
-                  //   // message to refetch the preview data
-                  //   //
-                  //   // For example, you can use a metadata to indicate if the preview
-                  //   // was already fetched (or null).
-                  //   //
-                  //   // Additionally, you can cache the data to avoid re-fetching across app restarts.
-                  //   return LinkPreview(
-                  //     text: message.text,
-                  //     linkPreviewData: message.linkPreviewData,
-                  //     onLinkPreviewDataFetched: (linkPreviewData) {
-                  //       _chatController.updateMessage(
-                  //         message,
-                  //         message.copyWith(linkPreviewData: linkPreviewData),
-                  //       );
-                  //     },
-                  //     // parentContent: message.text,
-                  //   );
-                  // },
-                  textMessageBuilder:
-                      (
-                        context,
-                        message,
-                        index, {
-                        required bool isSentByMe,
-                        MessageGroupStatus? groupStatus,
-                      }) => FlyerChatTextMessage(
-                        message: message,
-                        index: index,
-                        showStatus: false,
-                        sentBackgroundColor: AppColors.primary,
-                      ),
-                  fileMessageBuilder:
-                      (
-                        context,
-                        message,
-                        index, {
-                        required bool isSentByMe,
-                        MessageGroupStatus? groupStatus,
-                      }) => GestureDetector(
-                        onTap: () {
-                          launchUrl(Uri.parse(message.source));
-                        },
-                        child: FlyerChatFileMessage(
-                          message: message,
-                          index: index,
-                        ),
-                      ),
-                  chatMessageBuilder: (
-                    context,
-                    message,
-                    index,
-                    animation,
-                    child, {
-                    bool? isRemoved,
-                    required bool isSentByMe,
-                    MessageGroupStatus? groupStatus,
-                  }) {
-                    final isSystemMessage = message.authorId == 'system';
-                    final isFirstInGroup = groupStatus?.isFirst ?? true;
-                    final isLastInGroup = groupStatus?.isLast ?? true;
-                    final shouldShowAvatar =
-                        !isSystemMessage && isLastInGroup && isRemoved != true;
-                    final isCurrentUser = message.authorId == _currentUser.id;
-                    final shouldShowUsername =
-                        !isSystemMessage && isFirstInGroup && isRemoved != true;
-
-                    Widget? avatar;
-                    if (shouldShowAvatar) {
-                      avatar = Padding(
-                        padding: EdgeInsets.only(
-                          left: isCurrentUser ? 8 : 0,
-                          right: isCurrentUser ? 0 : 8,
-                        ),
-                        child: Avatar(userId: message.authorId),
-                      );
-                    } else if (!isSystemMessage) {
-                      avatar = const SizedBox(width: 40);
-                    }
-
-                    return ChatMessage(
-                      message: message,
-                      index: index,
-                      animation: animation,
-                      isRemoved: isRemoved,
-                      groupStatus: groupStatus,
-                      topWidget:
-                          shouldShowUsername
-                              ? Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: 4,
-                                  left: isCurrentUser ? 0 : 48,
-                                  right: isCurrentUser ? 48 : 0,
-                                ),
-                                child: Username(userId: message.authorId),
-                              )
-                              : null,
-                      leadingWidget:
-                          !isCurrentUser
-                              ? avatar
-                              : isSystemMessage
-                              ? null
-                              : const SizedBox(width: 40),
-                      trailingWidget:
-                          isCurrentUser
-                              ? avatar
-                              : isSystemMessage
-                              ? null
-                              : const SizedBox(width: 40),
-                      receivedMessageScaleAnimationAlignment:
-                          (message is SystemMessage)
-                              ? Alignment.center
-                              : Alignment.centerLeft,
-                      receivedMessageAlignment:
-                          (message is SystemMessage)
-                              ? AlignmentDirectional.center
-                              : AlignmentDirectional.centerStart,
-                      horizontalPadding: (message is SystemMessage) ? 0 : 8,
-                      child: child,
-                    );
-                  },
-                ),
-                chatController: _chatController,
-                currentUserId: _currentUser.id,
-                decoration: BoxDecoration(
-                  color:
-                      theme.brightness == Brightness.dark
-                          ? ChatColors.dark().surface
-                          : ChatColors.light().surface,
-                  // image: DecorationImage(
-                  //   image: AssetImage('assets/pattern.png'),
-                  //   repeat: ImageRepeat.repeat,
-                  //   colorFilter: ColorFilter.mode(
-                  //     theme.brightness == Brightness.dark
-                  //         ? ChatColors.dark().surfaceContainerLow
-                  //         : ChatColors.light().surfaceContainerLow,
-                  //     BlendMode.srcIn,
-                  //   ),
-                  // ),
-                ),
-                onAttachmentTap: _handleAttachmentTap,
-                onMessageLongPress: _handleMessageLongPress,
-                onMessageSend: _sendMessage,
-                resolveUser:
-                    (id) => Future.value(switch (id) {
-                      'me' => _currentUser,
-                      'recipient' => _recipient,
-                      'system' => _systemUser,
-                      _ => null,
-                    }),
-                theme:
-                    theme.brightness == Brightness.dark
-                        ? ChatTheme.dark()
-                        : ChatTheme.light(),
-              ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 12,
-                child: Container(
-                  width: MediaQuery.of(context).size.width,
-                  height: 60,
-                  padding: EdgeInsets.only(left: 48),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Visibility(
-                          visible: _inputMode == InputMode.Voice,
-                          child: VoiceInputButton(
-                            startRecording: () {
-                              ASRUtil().start();
-                            },
-                            stopRecording: () {
-                              ASRUtil().stop();
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
+              centerTitle: false,
+              title: const Text('ParrotClaw'),
+              actions: [
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    onPressed: () {
+                      if (kIsMobile) {
+                        context.go(Routes.voice);
+                      }
+                      if (kIsDesktop) {
+                        setState(() {
+                          isLive2dShow = !isLive2dShow;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.phone_outlined, size: 24),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            body: Stack(
+              children: [
+                ListenableBuilder(
+                  listenable: widget.viewModel,
+                  builder: (context, child) {
+                    if (widget.viewModel.isHistoryLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return Chat(
+                      // key: ValueKey(widget.server.id),
+                      backgroundColor: Colors.transparent,
+                      builders: Builders(
+                        emptyChatListBuilder: (c) {
+                          return const Center(child: Text("没有数据呢～"));
+                        },
+                        chatAnimatedListBuilder: (context, itemBuilder) {
+                          return ChatAnimatedList(
+                            itemBuilder: itemBuilder,
+                            // initialScrollToEndMode: InitialScrollToEndMode.none,
+                            insertAnimationDurationResolver: (message) {
+                              if (message is SystemMessage) {
+                                return Duration.zero;
+                              }
+                              return null;
+                            },
+                          );
+                        },
+                        customMessageBuilder:
+                            (
+                              context,
+                              message,
+                              index, {
+                              required bool isSentByMe,
+                              MessageGroupStatus? groupStatus,
+                            }) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.brightness == Brightness.dark
+                                        ? ChatColors.dark().surfaceContainer
+                                        : ChatColors.light().surfaceContainer,
+                                borderRadius: const BorderRadius.all(
+                                  Radius.circular(12),
+                                ),
+                              ),
+                              child: IsTypingIndicator(),
+                            ),
+                        imageMessageBuilder:
+                            (
+                              context,
+                              message,
+                              index, {
+                              required bool isSentByMe,
+                              MessageGroupStatus? groupStatus,
+                            }) => GestureDetector(
+                              onTap: () {
+                                launchUrl(Uri.parse(message.source));
+                              },
+                              child: FlyerChatImageMessage(
+                                message: message,
+                                index: index,
+                                errorBuilder: (
+                                  BuildContext context,
+                                  Object error,
+                                  StackTrace? stackTrace,
+                                ) {
+                                  return Text(error.toString());
+                                },
+                              ),
+                            ),
+                        // audioMessageBuilder:
+                        //     (
+                        //     context,
+                        //     message,
+                        //     index, {
+                        //   required bool isSentByMe,
+                        //   MessageGroupStatus? groupStatus,
+                        // }) => FlyerChatAudioMessage(
+                        //   message: message,
+                        //   index: index,
+                        // ),
+                        // videoMessageBuilder: (
+                        //   context,
+                        //   message,
+                        //   index, {
+                        //   required bool isSentByMe,
+                        //   MessageGroupStatus? groupStatus,
+                        // }) {
+                        //   return VideoMessageWidget(url: message.source);
+                        // },
+                        systemMessageBuilder:
+                            (
+                              context,
+                              message,
+                              index, {
+                              required bool isSentByMe,
+                              MessageGroupStatus? groupStatus,
+                            }) => FlyerChatSystemMessage(
+                              message: message,
+                              index: index,
+                            ),
+                        composerBuilder:
+                            (context) => Composer(
+                              key: _composerKey,
+                              textEditingController: _textEditingController,
+                              padding: const EdgeInsets.only(
+                                left: 12,
+                                top: 8,
+                                bottom: 4,
+                                right: 12,
+                              ),
+                              backgroundColor: ChatColors.dark().surface,
+                              topWidget: ComposerActionBar(
+                                buttons: [
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon: Icons.delete_sweep,
+                                    title: 'Clear',
+                                    onPressed: () {
+                                      _chatController.setMessages([]);
+                                      widget.viewModel.sendChatMessage(
+                                        '/reset',
+                                      );
+                                    },
+                                  ),
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon: Icons.stop_circle_rounded,
+                                    title: 'Abort ',
+                                    onPressed: () => _abortMessage(),
+                                    color:
+                                        widget.viewModel.runId != ''
+                                            ? AppColors.secondary
+                                            : Colors.grey,
+                                  ),
+                                  ComposerActionButton(
+                                    key: _modelButtonKey,
+                                    visible: true,
+                                    icon: Icons.psychology_outlined,
+                                    title: widget.viewModel.model ?? '模型',
+                                    onPressed: () => _showModelOptions(context),
+                                    color: Colors.grey,
+                                  ),
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon:
+                                        _inputMode == InputMode.Voice
+                                            ? Icons.keyboard_alt_outlined
+                                            : Icons.mic_outlined,
+                                    title: 'MIC',
+                                    onPressed: () {
+                                      if (_inputMode == InputMode.Voice) {
+                                        _inputMode = InputMode.Text;
+                                      } else if (_inputMode == InputMode.Text) {
+                                        _textEditingController.clear();
+                                        FocusManager.instance.primaryFocus
+                                            ?.unfocus();
+                                        _inputMode = InputMode.Voice;
+                                      }
+                                      setState(() {});
+                                    },
+                                    color: Colors.grey,
+                                  ),
+                                ],
+                              ),
+                              sendOnEnter: true,
+                              // sendButtonHidden: true,
+                            ),
+                        // linkPreviewBuilder: (context, message, isSentByMe) {
+                        //   // It's up to you to (optionally) implement the logic to avoid every
+                        //   // message to refetch the preview data
+                        //   //
+                        //   // For example, you can use a metadata to indicate if the preview
+                        //   // was already fetched (or null).
+                        //   //
+                        //   // Additionally, you can cache the data to avoid re-fetching across app restarts.
+                        //   return LinkPreview(
+                        //     text: message.text,
+                        //     linkPreviewData: message.linkPreviewData,
+                        //     onLinkPreviewDataFetched: (linkPreviewData) {
+                        //       _chatController.updateMessage(
+                        //         message,
+                        //         message.copyWith(linkPreviewData: linkPreviewData),
+                        //       );
+                        //     },
+                        //     // parentContent: message.text,
+                        //   );
+                        // },
+                        textMessageBuilder:
+                            (
+                              context,
+                              message,
+                              index, {
+                              required bool isSentByMe,
+                              MessageGroupStatus? groupStatus,
+                            }) => FlyerChatTextMessage(
+                              message: message,
+                              index: index,
+                              showStatus: false,
+                              sentBackgroundColor: AppColors.primary,
+                            ),
+                        fileMessageBuilder:
+                            (
+                              context,
+                              message,
+                              index, {
+                              required bool isSentByMe,
+                              MessageGroupStatus? groupStatus,
+                            }) => GestureDetector(
+                              onTap: () {
+                                launchUrl(Uri.parse(message.source));
+                              },
+                              child: FlyerChatFileMessage(
+                                message: message,
+                                index: index,
+                              ),
+                            ),
+                        chatMessageBuilder: (
+                          context,
+                          message,
+                          index,
+                          animation,
+                          child, {
+                          bool? isRemoved,
+                          required bool isSentByMe,
+                          MessageGroupStatus? groupStatus,
+                        }) {
+                          final isSystemMessage = message.authorId == 'system';
+                          final isFirstInGroup = groupStatus?.isFirst ?? true;
+                          final isLastInGroup = groupStatus?.isLast ?? true;
+                          final shouldShowAvatar =
+                              !isSystemMessage &&
+                              isLastInGroup &&
+                              isRemoved != true;
+                          final isCurrentUser =
+                              message.authorId == _currentUser.id;
+                          final shouldShowUsername =
+                              !isSystemMessage &&
+                              isFirstInGroup &&
+                              isRemoved != true;
+
+                          Widget? avatar;
+                          if (shouldShowAvatar) {
+                            avatar = Padding(
+                              padding: EdgeInsets.only(
+                                left: isCurrentUser ? 8 : 0,
+                                right: isCurrentUser ? 0 : 8,
+                              ),
+                              child: Avatar(userId: message.authorId),
+                            );
+                          } else if (!isSystemMessage) {
+                            avatar = const SizedBox(width: 40);
+                          }
+
+                          return ChatMessage(
+                            message: message,
+                            index: index,
+                            animation: animation,
+                            isRemoved: isRemoved,
+                            groupStatus: groupStatus,
+                            topWidget:
+                                shouldShowUsername
+                                    ? Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: 4,
+                                        left: isCurrentUser ? 0 : 48,
+                                        right: isCurrentUser ? 48 : 0,
+                                      ),
+                                      child: Username(userId: message.authorId),
+                                    )
+                                    : null,
+                            leadingWidget:
+                                !isCurrentUser
+                                    ? avatar
+                                    : isSystemMessage
+                                    ? null
+                                    : const SizedBox(width: 40),
+                            trailingWidget:
+                                isCurrentUser
+                                    ? avatar
+                                    : isSystemMessage
+                                    ? null
+                                    : const SizedBox(width: 40),
+                            receivedMessageScaleAnimationAlignment:
+                                (message is SystemMessage)
+                                    ? Alignment.center
+                                    : Alignment.centerLeft,
+                            receivedMessageAlignment:
+                                (message is SystemMessage)
+                                    ? AlignmentDirectional.center
+                                    : AlignmentDirectional.centerStart,
+                            horizontalPadding:
+                                (message is SystemMessage) ? 0 : 8,
+                            child: child,
+                          );
+                        },
+                      ),
+                      chatController: _chatController,
+                      currentUserId: _currentUser.id,
+                      decoration: BoxDecoration(
+                        color:
+                            theme.brightness == Brightness.dark
+                                ? ChatColors.dark().surface
+                                : ChatColors.light().surface,
+                        // image: DecorationImage(
+                        //   image: AssetImage('assets/pattern.png'),
+                        //   repeat: ImageRepeat.repeat,
+                        //   colorFilter: ColorFilter.mode(
+                        //     theme.brightness == Brightness.dark
+                        //         ? ChatColors.dark().surfaceContainerLow
+                        //         : ChatColors.light().surfaceContainerLow,
+                        //     BlendMode.srcIn,
+                        //   ),
+                        // ),
+                      ),
+                      onAttachmentTap: _handleAttachmentTap,
+                      onMessageLongPress: _handleMessageLongPress,
+                      onMessageSend: _sendMessage,
+                      resolveUser:
+                          (id) => Future.value(switch (id) {
+                            'me' => _currentUser,
+                            'recipient' => _recipient,
+                            'system' => _systemUser,
+                            _ => null,
+                          }),
+                      theme:
+                          theme.brightness == Brightness.dark
+                              ? ChatTheme.dark()
+                              : ChatTheme.light(),
+                    );
+                  },
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 12,
+                  child: Container(
+                    width: MediaQuery.of(context).size.width,
+                    height: 60,
+                    padding: EdgeInsets.only(left: 48),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Visibility(
+                            visible: _inputMode == InputMode.Voice,
+                            child: VoiceInputButton(
+                              startRecording: () {
+                                ASRUtil().start();
+                              },
+                              stopRecording: () {
+                                ASRUtil().stop();
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+        Visibility(
+          visible: isLive2dShow,
+          child: SizedBox(
+            width: 400,
+            child: VoiceScreen(viewModel: context.read()),
+          ),
+        ),
+      ],
     );
   }
 

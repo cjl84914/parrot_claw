@@ -48,6 +48,7 @@ import 'package:parrot_app/ui/screen/launch_screen.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'ui/screen/help_screen.dart';
 
+
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
 
@@ -67,7 +68,8 @@ void main() async {
     // Windows 使用系统标题栏（原生支持拖动/最小化/关闭）；
     // macOS 保持隐藏标题栏的无边框体验（其标题栏区域本身可拖动）。
     const WindowOptions windowOptions = WindowOptions(
-      size: Size(390, 844),
+      size: Size(1280, 800),
+      minimumSize: Size(390, 800),
       center: false,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
@@ -159,10 +161,11 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
-    final MediaQueryData mediaQuery = MediaQuery.of(context);
-    final statusBarHeight = Platform.isIOS ? 128 : 48;
     return ScreenUtilInit(
-      designSize: const Size(390, 844),
+      designSize:
+          Platform.isAndroid || Platform.isIOS
+              ? const Size(390, 844)
+              : ScreenUtil.defaultSize,
       minTextAdapt: true,
       splitScreenMode: true,
       // Use builder only if you need to use library outside ScreenUtilInit context
@@ -180,23 +183,13 @@ class _MyAppState extends State<MyApp> {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
-            snackBarTheme: SnackBarThemeData(
-              behavior: SnackBarBehavior.floating,
-              insetPadding: EdgeInsets.fromLTRB(
-                16,
-                0,
-                16,
-                mediaQuery.size.height - 128,
-              ),
-              showCloseIcon: true,
-            ),
           ),
           themeMode: ThemeMode.dark,
           builder: (context, widget) {
             return MediaQuery(
               data: MediaQuery.of(
                 context,
-              ).copyWith(textScaler: TextScaler.linear(1.0.sp)),
+              ).copyWith(textScaler: TextScaler.linear(Platform.isAndroid || Platform.isIOS? 1.0.sp : 1.0)),
               child: FlutterEasyLoading(child: widget),
             );
           },

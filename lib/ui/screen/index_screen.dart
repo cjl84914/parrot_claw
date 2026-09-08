@@ -1,12 +1,34 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/ui/widget/sidebar_widget.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
-import 'package:parrot_app/util/asr_util.dart';
-import 'package:parrot_app/util/tts_util.dart';
 import 'package:provider/provider.dart';
 
-final GlobalKey<ScaffoldState> indexScaffoldKey = GlobalKey<ScaffoldState>();
+final bool kIsDesktop =
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+final bool kIsMobile = Platform.isIOS || Platform.isAndroid;
+
+class IndexController extends ChangeNotifier {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isSidebarShow = false;
+
+  GlobalKey<ScaffoldState> get scaffoldKey => _scaffoldKey;
+
+  bool get isSidebarShow => _isSidebarShow;
+
+  void switchSideBarVisible() {
+    if (kIsMobile) {
+      _scaffoldKey.currentState?.openDrawer();
+    } else {
+      _isSidebarShow = !_isSidebarShow;
+      notifyListeners();
+    }
+  }
+}
+
+final indexController = IndexController();
 
 class IndexScreen extends StatefulWidget {
   final ConnViewModel viewModel;
@@ -22,44 +44,69 @@ class _IndexScreenState extends State<IndexScreen> {
   @override
   void initState() {
     super.initState();
+    indexController.addListener(_onIndexControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.viewModel.connect();
     });
   }
 
   @override
+  void dispose() {
+    indexController.removeListener(_onIndexControllerChanged);
+    super.dispose();
+  }
+
+  void _onIndexControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: ListenableBuilder(
-        listenable: Listenable.merge([widget.viewModel]),
-        builder: (context, child) {
-          return Scaffold(
-            key: indexScaffoldKey,
-            drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
-            onDrawerChanged: (isOpened) {
-              if (!isOpened) {
-                // 确保在路由切换和焦点恢复逻辑完成后，强制收起键盘
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                });
-              }
-            },
-            body: Column(
-              children: [
-                if (widget.viewModel.disconnectReason != null &&
-                    !widget.viewModel.connected)
-                  _buildResultBanner(
-                    icon: Icons.error_outline,
-                    color: AppColors.error,
-                    title: '连接失败',
-                    detail: widget.viewModel.disconnectReason!,
-                  ),
-                Expanded(child: widget.child),
-                const SizedBox(height: 12),
-              ],
-            ),
-          );
+      child: Scaffold(
+        key: indexController.scaffoldKey,
+        drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
+        onDrawerChanged: (isOpened) {
+          // indexController.switchSideBarVisible();
+          if (!isOpened) {
+            // 确保在路由切换和焦点恢复逻辑完成后，强制收起键盘
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              FocusManager.instance.primaryFocus?.unfocus();
+            });
+          }
         },
+        body: Row(
+          children: [
+            Visibility(
+              visible: indexController.isSidebarShow && kIsDesktop,
+              child: SizedBox(
+                width: 200,
+                child: SidebarWidget(viewModel: context.read()),
+              ),
+            ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: Listenable.merge([widget.viewModel]),
+                builder: (context, child) {
+                  return Column(
+                    children: [
+                      if (widget.viewModel.disconnectReason != null &&
+                          !widget.viewModel.connected)
+                        _buildResultBanner(
+                          icon: Icons.error_outline,
+                          color: AppColors.error,
+                          title: '连接失败',
+                          detail: widget.viewModel.disconnectReason!,
+                        ),
+                      Expanded(child: widget.child),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

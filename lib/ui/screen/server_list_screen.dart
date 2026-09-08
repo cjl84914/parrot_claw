@@ -35,7 +35,7 @@ class _ServerListPageState extends State<ServerListScreen> {
             leading: IconButton(
               icon: const Icon(Icons.menu),
               tooltip: '打开侧边栏',
-              onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+              onPressed: () => indexController.switchSideBarVisible(),
             ),
             title: const Text('网关管理', style: AppTextStyles.headlineMedium),
             elevation: 0,

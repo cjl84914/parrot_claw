@@ -48,7 +48,7 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
         leading: IconButton(
           icon: const Icon(Icons.menu),
           tooltip: '打开侧边栏',
-          onPressed: () => indexScaffoldKey.currentState?.openDrawer(),
+          onPressed: () =>   indexController.switchSideBarVisible(),
         ),
         title: const Text('分享网关配置'),
         elevation: 0,
