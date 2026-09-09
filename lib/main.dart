@@ -304,7 +304,7 @@ final GoRouter router = GoRouter(
     ),
     GoRoute(
       path: Routes.gatewayPairing,
-      builder: (context, state) => const GatewayPairingScreen(),
+      builder: (context, state) => GatewayPairingScreen(requestId: state.extra as String),
     ),
     GoRoute(
       path: Routes.serverEdit,

@@ -140,6 +140,76 @@ class OpenClawStateVersion {
   }
 }
 
+class OpenClawDevicePairSetupCodeResponse {
+  final String setupCode;
+  final String gatewayUrl;
+  final String auth;
+  final String urlSource;
+  final String? setupId;
+  final String? joinUrl;
+  final String? qrDataUrl;
+  final List<String>? gatewayUrls;
+  final String? access;
+  final bool? accessDowngraded;
+  final int? expiresAtMs;
+
+  const OpenClawDevicePairSetupCodeResponse({
+    required this.setupCode,
+    required this.gatewayUrl,
+    required this.auth,
+    required this.urlSource,
+    this.setupId,
+    this.joinUrl,
+    this.qrDataUrl,
+    this.gatewayUrls,
+    this.access,
+    this.accessDowngraded,
+    this.expiresAtMs,
+  });
+
+  factory OpenClawDevicePairSetupCodeResponse.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final setupCode = json['setupCode'] as String?;
+    final gatewayUrl = json['gatewayUrl'] as String?;
+    final auth = json['auth'] as String?;
+    final urlSource = json['urlSource'] as String?;
+    if (setupCode == null || setupCode.trim().isEmpty) {
+      throw const FormatException(
+        'device.pair.setupCode response missing setupCode',
+      );
+    }
+    if (gatewayUrl == null || gatewayUrl.trim().isEmpty) {
+      throw const FormatException(
+        'device.pair.setupCode response missing gatewayUrl',
+      );
+    }
+    if (auth == null || auth.trim().isEmpty) {
+      throw const FormatException(
+        'device.pair.setupCode response missing auth',
+      );
+    }
+    if (urlSource == null || urlSource.trim().isEmpty) {
+      throw const FormatException(
+        'device.pair.setupCode response missing urlSource',
+      );
+    }
+    return OpenClawDevicePairSetupCodeResponse(
+      setupCode: setupCode,
+      gatewayUrl: gatewayUrl,
+      auth: auth,
+      urlSource: urlSource,
+      setupId: json['setupId'] as String?,
+      joinUrl: json['joinUrl'] as String?,
+      qrDataUrl: json['qrDataUrl'] as String?,
+      gatewayUrls: (json['gatewayUrls'] as List?)?.whereType<String>().toList(),
+      access: json['access'] as String?,
+      accessDowngraded: json['accessDowngraded'] as bool?,
+      expiresAtMs: (json['expiresAtMs'] as num?)?.toInt(),
+    );
+  }
+}
+
 class OpenClawNodeInvokeRequest {
   final String id;
   final String nodeId;

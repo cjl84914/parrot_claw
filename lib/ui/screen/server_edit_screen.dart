@@ -4,6 +4,7 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -388,12 +389,32 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     GatewayOperationResult<dynamic>? result;
 
     try {
-      result = await GatewayConnection.shared.configureResult(
+      final runtimeConfig = OpenClawRuntimeConfig(
         url: config.wsUrl,
-        token: config.token,
-        password: config.password,
+        token: config.isTokenAuth ? config.token : null,
+        password: config.isPasswordAuth ? config.password : null,
       );
+      result = await OpenClawRuntime().configureResult(runtimeConfig);
       print('[ParrotClaw] Testing connection to ${config.wsUrl}');
+
+      if (result != null) {
+        if (result.error != null) {
+          final error = result.error;
+          final isPairingRequired =
+              gatewayErrorCodeFromRaw(result.error!.code) ==
+                  GatewayErrorCode.deviceNotPaired;
+          openPairingPage = isPairingRequired;
+          setState(() {
+            _testError = error?.message;
+          });
+        }
+
+        if (mounted) {
+          setState(() {
+            _testSuccess = result!.ok;
+          });
+        }
+      }
     } catch (e) {
       // 这里只处理非网关流程本身的意外异常，GatewayFailure 由 result 统一处理。
       if (mounted) {
@@ -404,27 +425,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       }
     }
 
-    if (result != null) {
-      final error = result.error;
-      final isPairingRequired =
-          result.recoveryAction == GatewayRecoveryAction.showPairingPage;
-      openPairingPage = isPairingRequired;
 
-      if (mounted) {
-        setState(() {
-          _testSuccess = result!.ok;
-          _testError = error?.userMessage ?? error?.message;
-        });
-      }
-    }
-
-    // if (!shouldEnterIndex) {
-    //   try {
-    //     await GatewayConnection.shared.shutdown();
-    //   } catch (e) {
-    //     print('[ParrotClaw] Failed to close test connection: $e');
-    //   }
-    // }
     if (mounted) {
       setState(() {
         _isTesting = false;
@@ -432,7 +433,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     }
 
     if (openPairingPage) {
-      context.push(Routes.gatewayPairing);
+      final details = GatewayErrorDetails.fromJson(result!.error!.details);
+      context.push(Routes.gatewayPairing, extra: details.requestId);
       return;
     }
 

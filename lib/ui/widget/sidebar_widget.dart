@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';

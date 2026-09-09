@@ -108,7 +108,7 @@ class HelloOk {
       (json['snapshot'] as Map?)?.cast<String, dynamic>() ?? {},
     ),
     pluginsurfaceurls:
-    (json['pluginSurfaceUrls'] as Map?)?.cast<String, dynamic>(),
+        (json['pluginSurfaceUrls'] as Map?)?.cast<String, dynamic>(),
     auth: (json['auth'] as Map?)?.cast<String, dynamic>() ?? {},
     policy: (json['policy'] as Map?)?.cast<String, dynamic>() ?? {},
   );
@@ -139,11 +139,11 @@ class HelloSnapshot {
 
   factory HelloSnapshot.fromJson(Map<String, dynamic> json) => HelloSnapshot(
     presence:
-    (json['presence'] as List? ?? [])
-        .map(
-          (e) => PresenceEntry.fromJson((e as Map).cast<String, dynamic>()),
-    )
-        .toList(),
+        (json['presence'] as List? ?? [])
+            .map(
+              (e) => PresenceEntry.fromJson((e as Map).cast<String, dynamic>()),
+            )
+            .toList(),
     health: json['health'],
     stateversion: StateVersion.fromJson(
       (json['stateVersion'] as Map?)?.cast<String, dynamic>() ?? {},
@@ -229,7 +229,102 @@ class GatewayPushSeqGap extends GatewayPush {
   const GatewayPushSeqGap({required this.expected, required this.received});
 }
 
+/// Structured error details returned by the gateway.
+///
+/// This mirrors Android's `GatewayErrorDetails` and intentionally keeps raw
+/// protocol values instead of mapping them to the UI recovery enum.
+class GatewayErrorDetails {
+  final String? code;
+  final bool canRetryWithDeviceToken;
+  final String? recommendedNextStep;
+  final bool? pauseReconnect;
+  final String? reason;
+  final String? requestId;
+  final bool retryable;
+  final int? clientMinProtocol;
+  final int? clientMaxProtocol;
+  final int? expectedProtocol;
+  final int? minimumProbeProtocol;
+  final String? clawhubWarning;
+  final String? missingScope;
+  final List<String> requiredScopes;
 
+  const GatewayErrorDetails({
+    required this.code,
+    required this.canRetryWithDeviceToken,
+    required this.recommendedNextStep,
+    this.pauseReconnect,
+    this.reason,
+    this.requestId,
+    this.retryable = false,
+    this.clientMinProtocol,
+    this.clientMaxProtocol,
+    this.expectedProtocol,
+    this.minimumProbeProtocol,
+    this.clawhubWarning,
+    this.missingScope,
+    this.requiredScopes = const <String>[],
+  });
+
+  factory GatewayErrorDetails.fromJson(Map<String, dynamic> json) {
+    return GatewayErrorDetails(
+      code: _optionalString(json['code']),
+      canRetryWithDeviceToken:
+          _boolValue(json['canRetryWithDeviceToken']) ??
+          _boolValue(json['can_retry_with_device_token']) ??
+          false,
+      recommendedNextStep: _optionalString(
+        json['recommendedNextStep'] ?? json['recommended_next_step'],
+      ),
+      pauseReconnect: _boolValue(
+        json['pauseReconnect'] ?? json['pause_reconnect'],
+      ),
+      reason: _optionalString(json['reason']),
+      requestId: _optionalString(
+        json['requestId'] ?? json['requestID'] ?? json['request_id'],
+      ),
+      retryable: _boolValue(json['retryable']) ?? false,
+      clientMinProtocol: _intValue(
+        json['clientMinProtocol'] ?? json['client_min_protocol'],
+      ),
+      clientMaxProtocol: _intValue(
+        json['clientMaxProtocol'] ?? json['client_max_protocol'],
+      ),
+      expectedProtocol: _intValue(
+        json['expectedProtocol'] ?? json['expected_protocol'],
+      ),
+      minimumProbeProtocol: _intValue(
+        json['minimumProbeProtocol'] ?? json['minimum_probe_protocol'],
+      ),
+      clawhubWarning: _optionalString(
+        json['clawhubWarning'] ?? json['clawhub_warning'] ?? json['warning'],
+      ),
+      missingScope: _optionalString(
+        json['missingScope'] ?? json['missing_scope'],
+      ),
+      requiredScopes: _stringList(
+        json['requiredScopes'] ?? json['required_scopes'],
+      ),
+    );
+  }
+
+  GatewayMissingScopeErrorDetails? missingScopeDetails() {
+    final scope = missingScope?.trim() ?? '';
+    final scopes = requiredScopes
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (code != 'MISSING_SCOPE' || scope.isEmpty || scopes.isEmpty) {
+      return null;
+    }
+    return GatewayMissingScopeErrorDetails(
+      missingScope: scope,
+      requiredScopes: scopes,
+    );
+  }
+}
+
+/// Backwards-compatible alias for callers using the Android name.
 class GatewayResponseError implements Exception {
   final String method;
   final String code;
@@ -242,15 +337,10 @@ class GatewayResponseError implements Exception {
     String? code,
     String? message,
     Map<String, dynamic>? details,
-  }) : code = (code?.trim().isEmpty == false) ? code!.trim() : 'GATEWAY_ERROR',
-        message =
-        (message?.trim().isEmpty == false)
-            ? message!.trim()
-            : 'gateway error',
-        details = details ?? {},
-        requestId = details?['requestId']?.toString() ??
-            details?['requestID']?.toString() ??
-            details?['request_id']?.toString();
+  }) : code = code!,
+       message = message!,
+       details = details ?? {},
+       requestId = details?['requestId']?.toString();
 
   String? get detailsReason {
     final raw = details['reason'] as String?;
@@ -259,10 +349,7 @@ class GatewayResponseError implements Exception {
   }
 
   @override
-  String toString() =>
-      code == 'GATEWAY_ERROR'
-          ? 'GatewayResponseError($method): $message'
-          : 'GatewayResponseError($method): [$code] $message';
+  String toString() => message;
 }
 
 class GatewayDecodingError implements Exception {
@@ -272,7 +359,7 @@ class GatewayDecodingError implements Exception {
   const GatewayDecodingError({required this.method, required this.message});
 
   @override
-  String toString() => 'GatewayDecodingError($method): $message';
+  String toString() => message;
 }
 
 enum GatewayErrorCode {
@@ -307,243 +394,83 @@ enum GatewayConnectionPhase {
   disconnected,
 }
 
-enum GatewayRecoveryAction {
-  showPairingPage,
-  retryWithDeviceToken,
-  updateCredentials,
-  retryAfterDelay,
-  upgradeClient,
-  scanAgain,
-  manualActionRequired,
-  none,
-}
+class GatewayMissingScopeErrorDetails {
+  final String missingScope;
+  final List<String> requiredScopes;
 
-class GatewayErrorInfo {
-  final GatewayErrorCode code;
-  final String message;
-  final String? reason;
-  final String? requestId;
-  final String? deviceId;
-  final String? owner;
-  final String? title;
-  final String? userMessage;
-  final String? actionLabel;
-  final String? actionCommand;
-  final String? docsUrl;
-  final bool retryable;
-  final bool pauseReconnect;
-  final Map<String, dynamic> rawDetails;
-
-  const GatewayErrorInfo({
-    required this.code,
-    required this.message,
-    this.reason,
-    this.requestId,
-    this.deviceId,
-    this.owner,
-    this.title,
-    this.userMessage,
-    this.actionLabel,
-    this.actionCommand,
-    this.docsUrl,
-    required this.retryable,
-    required this.pauseReconnect,
-    this.rawDetails = const <String, dynamic>{},
+  const GatewayMissingScopeErrorDetails({
+    required this.missingScope,
+    required this.requiredScopes,
   });
 
-  GatewayRecoveryAction get recoveryAction {
-    switch (code) {
-      case GatewayErrorCode.pairingRequired:
-      case GatewayErrorCode.deviceNotPaired:
-      case GatewayErrorCode.deviceNotApproved:
-        return GatewayRecoveryAction.showPairingPage;
-      case GatewayErrorCode.authTokenMismatch:
-      case GatewayErrorCode.authDeviceTokenMismatch:
-        return GatewayRecoveryAction.retryWithDeviceToken;
-      case GatewayErrorCode.authUnauthorized:
-      case GatewayErrorCode.authRequired:
-      case GatewayErrorCode.authBootstrapTokenInvalid:
-      case GatewayErrorCode.authScopeMismatch:
-        return GatewayRecoveryAction.updateCredentials;
-      case GatewayErrorCode.protocolMismatch:
-        return GatewayRecoveryAction.upgradeClient;
-      case GatewayErrorCode.authRateLimited:
-        return GatewayRecoveryAction.retryAfterDelay;
-      case GatewayErrorCode.networkUnavailable:
-      case GatewayErrorCode.connectTimeout:
-      case GatewayErrorCode.challengeTimeout:
-      case GatewayErrorCode.requestTimeout:
-      case GatewayErrorCode.connectionClosed:
-        return GatewayRecoveryAction.scanAgain;
-      case GatewayErrorCode.deviceIdentityRequired:
-      case GatewayErrorCode.deviceAuthInvalid:
-      case GatewayErrorCode.serverError:
-      case GatewayErrorCode.cancelled:
-      case GatewayErrorCode.unknown:
-        return GatewayRecoveryAction.manualActionRequired;
-    }
+  @override
+  bool operator ==(Object other) =>
+      other is GatewayMissingScopeErrorDetails &&
+      other.missingScope == missingScope &&
+      _listEquals(other.requiredScopes, requiredScopes);
+
+  @override
+  int get hashCode => Object.hash(missingScope, Object.hashAll(requiredScopes));
+}
+
+bool _listEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
   }
+  return true;
 }
 
 class GatewayOperationResult<T> {
   final bool ok;
   final T? data;
-  final GatewayErrorInfo? error;
-  final String? requestId;
-  final GatewayConnectionPhase phase;
-  final bool retryable;
-  final GatewayRecoveryAction recoveryAction;
+  final GatewayResponseError? error;
 
-  const GatewayOperationResult._({
-    required this.ok,
-    this.data,
-    this.error,
-    this.requestId,
-    required this.phase,
-    required this.retryable,
-    required this.recoveryAction,
-  });
+  const GatewayOperationResult._({required this.ok, this.data, this.error});
 
   factory GatewayOperationResult.success({
     T? data,
     String? requestId,
     GatewayConnectionPhase phase = GatewayConnectionPhase.connected,
-  }) => GatewayOperationResult<T>._(
-    ok: true,
-    data: data,
-    requestId: requestId,
-    phase: phase,
-    retryable: false,
-    recoveryAction: GatewayRecoveryAction.none,
-  );
+  }) => GatewayOperationResult<T>._(ok: true, data: data);
 
   factory GatewayOperationResult.failure({
-    required GatewayErrorInfo error,
+    required GatewayResponseError error,
     GatewayConnectionPhase phase = GatewayConnectionPhase.disconnected,
-  }) => GatewayOperationResult<T>._(
-    ok: false,
-    error: error,
-    requestId: error.requestId,
-    phase: phase,
-    retryable: error.retryable,
-    recoveryAction: error.recoveryAction,
-  );
+  }) => GatewayOperationResult<T>._(ok: false, error: error);
 }
 
-GatewayErrorInfo gatewayErrorInfoFrom(Object error, {String? method}) {
-  if (error is GatewayResponseError) {
-    final details = Map<String, dynamic>.from(error.details);
-    final rawCode = error.code.toUpperCase();
-    final code = _gatewayErrorCodeFromRaw(rawCode, error.message, details);
-    return GatewayErrorInfo(
-      code: code,
-      message: error.message,
-      reason: error.detailsReason,
-      requestId: error.requestId,
-      deviceId: _firstString(details, const [
-        'deviceId',
-        'device_id',
-        'requestId',
-        'requestID',
-        'request_id',
-      ]),
-      owner: _firstString(details, const ['owner']),
-      title: _firstString(details, const ['title']),
-      userMessage: _firstString(details, const ['userMessage', 'user_message']),
-      actionLabel: _firstString(details, const ['actionLabel', 'action_label']),
-      actionCommand: _firstString(details, const ['actionCommand', 'action_command']),
-      docsUrl: _firstString(details, const ['docsUrl', 'docs_url']),
-      retryable: _retryableFor(code),
-      pauseReconnect: _pauseReconnectFor(code),
-      rawDetails: details,
-    );
-  }
-
-  final message = error.toString();
-  final code = error is TimeoutException
-      ? (method == 'connect'
-      ? GatewayErrorCode.connectTimeout
-      : GatewayErrorCode.requestTimeout)
-      : error is SocketException
-      ? GatewayErrorCode.networkUnavailable
-      : GatewayErrorCode.unknown;
-  return GatewayErrorInfo(
-    code: code,
-    message: message,
-    retryable: code != GatewayErrorCode.unknown,
-    pauseReconnect: false,
-  );
+String? _optionalString(Object? value) {
+  final string = value?.toString().trim() ?? '';
+  return string.isEmpty ? null : string;
 }
 
-String? _firstString(Map<String, dynamic> details, List<String> keys) {
-  for (final key in keys) {
-    final value = details[key]?.toString().trim();
-    if (value != null && value.isNotEmpty) return value;
+bool? _boolValue(Object? value) {
+  if (value is bool) return value;
+  if (value is String) {
+    switch (value.trim().toLowerCase()) {
+      case 'true':
+        return true;
+      case 'false':
+        return false;
+    }
   }
   return null;
 }
 
-GatewayErrorCode _gatewayErrorCodeFromRaw(
-    String raw,
-    String message,
-    Map<String, dynamic> details,
-    ) {
-  final detailCode = _firstString(details, const ['code', 'detailCode']);
-  final normalized = '$raw ${detailCode ?? ''} ${message.toUpperCase()}'.toUpperCase();
-  if (normalized.contains('PAIRING_REQUIRED')) {
-    return GatewayErrorCode.pairingRequired;
-  }
-  if (normalized.contains('NOT_PAIRED')) return GatewayErrorCode.deviceNotPaired;
-  if (normalized.contains('NOT_APPROVED') ||
-      normalized.contains('NOT APPROVED')) {
-    return GatewayErrorCode.deviceNotApproved;
-  }
-  if (normalized.contains('PROTOCOL')) return GatewayErrorCode.protocolMismatch;
-  if (normalized.contains('RATE_LIMIT')) return GatewayErrorCode.authRateLimited;
-  if (normalized.contains('BOOTSTRAP')) return GatewayErrorCode.authBootstrapTokenInvalid;
-  if (normalized.contains('DEVICE_TOKEN')) return GatewayErrorCode.authDeviceTokenMismatch;
-  if (normalized.contains('TOKEN_MISMATCH')) return GatewayErrorCode.authTokenMismatch;
-  if (normalized.contains('SCOPE')) return GatewayErrorCode.authScopeMismatch;
-  if (normalized.contains('UNAUTHORIZED') || normalized.contains('AUTH_INVALID')) {
-    return GatewayErrorCode.authUnauthorized;
-  }
-  if (normalized.contains('AUTH_REQUIRED') || normalized.contains('TOKEN_MISSING')) {
-    return GatewayErrorCode.authRequired;
-  }
-  if (normalized.contains('DEVICE_IDENTITY')) {
-    return GatewayErrorCode.deviceIdentityRequired;
-  }
-  if (normalized.contains('DEVICE_AUTH')) {
-    return GatewayErrorCode.deviceAuthInvalid;
-  }
-  return GatewayErrorCode.serverError;
+int? _intValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString().trim() ?? '');
 }
 
-bool _retryableFor(GatewayErrorCode code) => switch (code) {
-  GatewayErrorCode.networkUnavailable ||
-  GatewayErrorCode.connectTimeout ||
-  GatewayErrorCode.challengeTimeout ||
-  GatewayErrorCode.requestTimeout ||
-  GatewayErrorCode.connectionClosed ||
-  GatewayErrorCode.serverError ||
-  GatewayErrorCode.authRateLimited => true,
-  _ => false,
-};
-
-bool _pauseReconnectFor(GatewayErrorCode code) => switch (code) {
-  GatewayErrorCode.pairingRequired ||
-  GatewayErrorCode.deviceNotPaired ||
-  GatewayErrorCode.deviceNotApproved ||
-  GatewayErrorCode.authUnauthorized ||
-  GatewayErrorCode.authTokenMismatch ||
-  GatewayErrorCode.authBootstrapTokenInvalid ||
-  GatewayErrorCode.authDeviceTokenMismatch ||
-  GatewayErrorCode.authScopeMismatch ||
-  GatewayErrorCode.protocolMismatch ||
-  GatewayErrorCode.deviceIdentityRequired ||
-  GatewayErrorCode.deviceAuthInvalid => true,
-  _ => false,
-};
+List<String> _stringList(Object? value) {
+  if (value is! List) return const <String>[];
+  return value
+      .map((item) => item?.toString().trim() ?? '')
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}
 
 final _sessionLog = Logger('GatewaySession');
 
@@ -569,8 +496,11 @@ class RawJson {
 
 abstract interface class GatewaySocket {
   Stream<dynamic> get stream;
+
   Future<void> get ready;
+
   void send(String data);
+
   Future<void> close();
 }
 
@@ -625,9 +555,9 @@ class GatewayRetryPolicy {
   final Duration maxDelay;
 
   const GatewayRetryPolicy({
-    this.initialDelay = const Duration(milliseconds: 350),
-    this.multiplier = 1.7,
-    this.maxDelay = const Duration(seconds: 8),
+    this.initialDelay = const Duration(seconds: 2),
+    this.multiplier = 2,
+    this.maxDelay = const Duration(seconds: 30),
   });
 }
 
@@ -664,6 +594,8 @@ class GatewaySession {
   bool _listening = false;
   double _tickIntervalMs = 30000;
 
+  final Logger _log = Logger('GatewaySession');
+
   GatewaySession({
     required this.url,
     required this.token,
@@ -685,7 +617,9 @@ class GatewaySession {
        _backoff = retryPolicy.initialDelay;
 
   GatewaySessionState get state => _state;
+
   bool get connected => _state == GatewaySessionState.ready;
+
   /// Whether a connection attempt is actively in progress.
   ///
   /// `reconnecting` is only a scheduled state, not an active attempt. It must
@@ -695,8 +629,11 @@ class GatewaySession {
   bool get isConnecting =>
       _state == GatewaySessionState.connecting ||
       _state == GatewaySessionState.authenticating;
+
   int get generation => _generation;
+
   int get pendingCount => _pending.length;
+
   GatewayAuthSource authSource() => _lastAuthSource;
 
   Future<void> connect() async {
@@ -708,10 +645,11 @@ class GatewaySession {
     }
 
     final generation = ++_generation;
-    _state = _state == GatewaySessionState.disconnected ||
-            _state == GatewaySessionState.reconnecting
-        ? GatewaySessionState.reconnecting
-        : GatewaySessionState.connecting;
+    _state =
+        _state == GatewaySessionState.disconnected ||
+                _state == GatewaySessionState.reconnecting
+            ? GatewaySessionState.reconnecting
+            : GatewaySessionState.connecting;
     _shouldReconnect = true;
     _cancelReconnect();
     await _disposeSocket(failPending: true);
@@ -719,7 +657,10 @@ class GatewaySession {
 
     try {
       await () async {
-        final socket = socketFactory.connect(Uri.parse(url), timeout: connectTimeout);
+        final socket = socketFactory.connect(
+          Uri.parse(url),
+          timeout: connectTimeout,
+        );
         _socket = socket;
         _listen(socket, generation);
         await socket.ready;
@@ -735,18 +676,10 @@ class GatewaySession {
       _completeConnectWaiters();
     } catch (error, stack) {
       if (_isCurrent(generation)) {
-        final errorInfo = gatewayErrorInfoFrom(error, method: 'connect');
-        if (errorInfo.pauseReconnect) {
-          _state = GatewaySessionState.paused;
-        } else {
-          _state = GatewaySessionState.disconnected;
-        }
         await _disposeSocket(failPending: true);
         _completeConnectWaiters(error, stack);
         disconnectHandler?.call(error.toString());
-        if (_state != GatewaySessionState.paused) {
-          _scheduleReconnect();
-        }
+        _scheduleReconnect();
       }
       Error.throwWithStackTrace(error, stack);
     }
@@ -822,7 +755,9 @@ class GatewaySession {
       if (identical(_pending[id], pending)) {
         _pending.remove(id);
         if (!completer.isCompleted) {
-          completer.completeError(TimeoutException('gateway request timed out', timeout));
+          completer.completeError(
+            TimeoutException('gateway request timed out', timeout),
+          );
         }
       }
     });
@@ -834,7 +769,9 @@ class GatewaySession {
       Error.throwWithStackTrace(error, stack);
     }
     final response = await completer.future;
-    return finishResponse ? _finishResponse(method, Future.value(response)) : response;
+    return finishResponse
+        ? _finishResponse(method, Future.value(response))
+        : response;
   }
 
   Future<Map<String, dynamic>> _finishResponse(
@@ -856,10 +793,16 @@ class GatewaySession {
     if (payload is String) {
       final decoded = jsonDecode(payload);
       if (decoded is Map) return decoded.cast<String, dynamic>();
-      throw GatewayDecodingError(method: method, message: 'payload is not an object');
+      throw GatewayDecodingError(
+        method: method,
+        message: 'payload is not an object',
+      );
     }
     if (payload is Map) return payload.cast<String, dynamic>();
-    throw GatewayDecodingError(method: method, message: 'payload is not an object');
+    throw GatewayDecodingError(
+      method: method,
+      message: 'payload is not an object',
+    );
   }
 
   Future<Map<String, dynamic>> requestRawJson({
@@ -874,26 +817,34 @@ class GatewaySession {
     Duration? timeout,
   }) => requestRawJson(method: method, params: params, timeout: timeout);
 
-  Future<void> send({required String method, Map<String, dynamic>? params}) async {
+  Future<void> send({
+    required String method,
+    Map<String, dynamic>? params,
+  }) async {
     await connect();
     final socket = _socket;
     if (socket == null) throw StateError('gateway socket unavailable');
     socket.send(_encodeRequest(idGenerator(), method, params));
   }
 
-  String _encodeRequest(String id, String method, Map<String, dynamic>? params) =>
-      jsonEncode({
-        'type': 'req',
-        'id': id,
-        'method': method,
-        if (params != null) 'params': params,
-      });
+  String _encodeRequest(
+    String id,
+    String method,
+    Map<String, dynamic>? params,
+  ) => jsonEncode({
+    'type': 'req',
+    'id': id,
+    'method': method,
+    if (params != null) 'params': params,
+  });
 
   void _listen(GatewaySocket socket, int generation) {
     _listening = true;
     _subscription = socket.stream.listen(
       (raw) => _handleRaw(raw, generation),
-      onError: (Object error, StackTrace stack) => _handleDisconnect(error.toString(), generation),
+      onError:
+          (Object error, StackTrace stack) =>
+              _handleDisconnect(error.toString(), generation),
       onDone: () => _handleDisconnect('closed', generation),
       cancelOnError: false,
     );
@@ -917,7 +868,8 @@ class GatewaySession {
         final event = map['event'] as String?;
         if (event == 'connect.challenge') {
           final nonce = (map['payload'] as Map?)?['nonce'] as String?;
-          if (nonce != null && !(_challenge?.isCompleted ?? true)) _challenge!.complete(nonce);
+          if (nonce != null && !(_challenge?.isCompleted ?? true))
+            _challenge!.complete(nonce);
           return;
         }
         final seq = (map['seq'] as num?)?.toInt();
@@ -929,17 +881,33 @@ class GatewaySession {
           _lastSeq = seq;
         }
         if (event == 'tick') _lastTick = clock();
-        if (event != null) pushHandler(GatewayPushEvent(event, map['payload'], seq: seq));
+        if (event != null)
+          pushHandler(GatewayPushEvent(event, map['payload'], seq: seq));
     }
   }
 
   Future<void> _sendConnect(int generation) async {
-    final options = connectOptions ?? const GatewayConnectOptions(
-      role: 'operator',
-      scopes: ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'],
-      caps: [], commands: [], permissions: {}, clientId: 'gateway-client', clientMode: 'ui', clientDisplayName: 'parrotClaw',
-    );
-    final nonce = await (_challenge?.future ?? Future.error('challenge unavailable')).timeout(challengeTimeout);
+    final options =
+        connectOptions ??
+        const GatewayConnectOptions(
+          role: 'operator',
+          scopes: [
+            'operator.admin',
+            'operator.read',
+            'operator.write',
+            'operator.approvals',
+            'operator.pairing',
+          ],
+          caps: [],
+          commands: [],
+          permissions: {},
+          clientId: 'gateway-client',
+          clientMode: 'ui',
+          clientDisplayName: 'parrotClaw',
+        );
+    final nonce = await (_challenge?.future ??
+            Future.error('challenge unavailable'))
+        .timeout(challengeTimeout);
     if (!_isCurrent(generation)) throw StateError('stale gateway generation');
 
     DeviceIdentity? identity;
@@ -970,7 +938,8 @@ class GatewaySession {
         'version': '1.0.0',
         'platform': Platform.operatingSystem,
         'mode': options.clientMode,
-        if (deviceFamilyForPlatform() != null) 'deviceFamily': deviceFamilyForPlatform(),
+        if (deviceFamilyForPlatform() != null)
+          'deviceFamily': deviceFamilyForPlatform(),
       },
       'caps': options.caps,
       'locale': Platform.localeName,
@@ -981,22 +950,25 @@ class GatewaySession {
       if (options.permissions.isNotEmpty) 'permissions': options.permissions,
       if (token != null) 'auth': {'token': token},
       if (password != null) 'auth': {'password': password},
-      if (bootstrapToken != null && token == null && password == null) 'auth': {'bootstrapToken': bootstrapToken},
-      if (identity != null) 'device': {
-        'id': identity.deviceId,
-        'publicKey': identity.publicKey,
-        'signature': signature,
-        'signedAt': signedAtMs,
-        'nonce': nonce,
-      },
+      if (bootstrapToken != null && token == null && password == null)
+        'auth': {'bootstrapToken': bootstrapToken},
+      if (identity != null)
+        'device': {
+          'id': identity.deviceId,
+          'publicKey': identity.publicKey,
+          'signature': signature,
+          'signedAt': signedAtMs,
+          'nonce': nonce,
+        },
     };
-    _lastAuthSource = token != null
-        ? GatewayAuthSource.sharedToken
-        : password != null
+    _lastAuthSource =
+        token != null
+            ? GatewayAuthSource.sharedToken
+            : password != null
             ? GatewayAuthSource.password
             : bootstrapToken != null
-                ? GatewayAuthSource.bootstrapToken
-                : GatewayAuthSource.none;
+            ? GatewayAuthSource.bootstrapToken
+            : GatewayAuthSource.none;
 
     final response = await _requestFrame(
       method: 'connect',
@@ -1021,8 +993,11 @@ class GatewaySession {
         response['payload'] = decoded;
       }
     }
-    if (response['payload'] is! Map) throw StateError('connect failed (missing payload)');
-    final hello = HelloOk.fromJson((response['payload'] as Map).cast<String, dynamic>());
+    if (response['payload'] is! Map)
+      throw StateError('connect failed (missing payload)');
+    final hello = HelloOk.fromJson(
+      (response['payload'] as Map).cast<String, dynamic>(),
+    );
     final tick = hello.policy['tickIntervalMs'];
     if (tick is num) _tickIntervalMs = tick.toDouble();
     _lastTick = clock();
@@ -1031,16 +1006,23 @@ class GatewaySession {
 
   void _startTickWatchdog(int generation) {
     _tickTimer?.cancel();
-    _tickTimer = Timer.periodic(Duration(milliseconds: (_tickIntervalMs * 2).toInt()), (_) {
-      if (!_isCurrent(generation) || !connected || _lastTick == null) return;
-      if (clock().difference(_lastTick!).inMilliseconds > _tickIntervalMs * 2) {
-        _handleDisconnect('gateway tick missed', generation);
-      }
-    });
+    _tickTimer = Timer.periodic(
+      Duration(milliseconds: (_tickIntervalMs * 2).toInt()),
+      (_) {
+        if (!_isCurrent(generation) || !connected || _lastTick == null) return;
+        if (clock().difference(_lastTick!).inMilliseconds >
+            _tickIntervalMs * 2) {
+          _handleDisconnect('gateway tick missed', generation);
+        }
+      },
+    );
   }
 
   void _handleDisconnect(String reason, int generation) {
-    if (!_isCurrent(generation) || _state == GatewaySessionState.shuttingDown || _state == GatewaySessionState.idle) return;
+    if (!_isCurrent(generation) ||
+        _state == GatewaySessionState.shuttingDown ||
+        _state == GatewaySessionState.idle)
+      return;
     _generation++;
     _state = GatewaySessionState.disconnected;
     _listening = false;
@@ -1052,11 +1034,17 @@ class GatewaySession {
   }
 
   void _scheduleReconnect() {
-    if (!_shouldReconnect || _state == GatewaySessionState.paused || (_reconnectTimer?.isActive ?? false)) return;
+    if (!_shouldReconnect ||
+        _state == GatewaySessionState.paused ||
+        (_reconnectTimer?.isActive ?? false))
+      return;
     final delay = _backoff;
-    _backoff = Duration(milliseconds: (_backoff.inMilliseconds * retryPolicy.multiplier).round()).compareTo(retryPolicy.maxDelay) > 0
+    final nextDelay = Duration(
+      milliseconds: (_backoff.inMilliseconds * retryPolicy.multiplier).round(),
+    );
+    _backoff = nextDelay.compareTo(retryPolicy.maxDelay) > 0
         ? retryPolicy.maxDelay
-        : Duration(milliseconds: (_backoff.inMilliseconds * retryPolicy.multiplier).round());
+        : nextDelay;
     _state = GatewaySessionState.reconnecting;
     _reconnectTimer = Timer(delay, () async {
       _reconnectTimer = null;
@@ -1069,11 +1057,18 @@ class GatewaySession {
     });
   }
 
-  Future<void> _disposeSocket({required bool failPending, bool shutdown = false}) async {
+  Future<void> _disposeSocket({
+    required bool failPending,
+    bool shutdown = false,
+  }) async {
     await _subscription?.cancel();
     _subscription = null;
     _listening = false;
-    if (failPending) _failPending(StateError(shutdown ? 'gateway session shutdown' : 'gateway socket replaced'));
+    _failPending(
+      StateError(
+        shutdown ? 'gateway session shutdown' : 'gateway socket replaced',
+      ),
+    );
     final socket = _socket;
     _socket = null;
     if (socket != null) await socket.close();
@@ -1084,10 +1079,12 @@ class GatewaySession {
     _pending.clear();
     for (final pending in entries) {
       pending.timer?.cancel();
-      if (!pending.completer.isCompleted) pending.completer.completeError(error);
+      if (!pending.completer.isCompleted)
+        pending.completer.completeError(error);
     }
     final challenge = _challenge;
-    if (challenge != null && !challenge.isCompleted) challenge.completeError(error);
+    if (challenge != null && !challenge.isCompleted)
+      challenge.completeError(error);
   }
 
   bool _isCurrent(int generation) => generation == _generation;

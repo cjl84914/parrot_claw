@@ -6,9 +6,9 @@ import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/model/session_message.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
-import 'package:parrot_app/data/service/gateway_session.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/gateway_scope_store.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/util/parse.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:uuid/uuid.dart';
@@ -106,45 +106,20 @@ class ConnViewModel extends ChangeNotifier {
   bool get talkMode => _talkMode;
 
   final ServerRepository _serverRepository;
-  StreamSubscription? _gatewaySub;
+  final OpenClawRuntime _runtime;
+  StreamSubscription? _runtimeSub;
+  StreamSubscription? _runtimeStateSub;
   String? disconnectReason;
-
-  /// 从网关错误中提取配对设备 ID。
-  ///
-  /// 设备 ID 必须是 UUID 格式，例如：
-  /// `d501e7a8-2367-42d3-b44c-83bdd8c175a7`。
-  /// 连接握手阶段可能抛出 GatewayConnectAuthError，也可能抛出
-  /// GatewayResponseError，因此两种异常都要保留并解析 requestId/details。
-  String? resolvePairingDeviceId(Object error) {
-    final uuidPattern = RegExp(
-      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
-    );
-    final candidates = <String>[];
-    if (error is GatewayResponseError) {
-      candidates.add(error.details['requestId']);
-      final requestId = error.requestId?.trim();
-      if (requestId != null && requestId.isNotEmpty) candidates.add(requestId);
-      candidates.add(error.message);
-    } else if (error is GatewayConnectAuthError) {
-      final requestId = error.requestId?.trim();
-      if (requestId != null && requestId.isNotEmpty) candidates.add(requestId);
-      candidates.add(error.message);
-    }
-
-    candidates.add(error.toString());
-    for (final candidate in candidates) {
-      final match = uuidPattern.firstMatch(candidate);
-      if (match != null) return match.group(0);
-    }
-    return null;
-  }
-
 
   ConnViewModel({
     required SettingRepository settingRepository,
     required ServerRepository serverRepository,
+    OpenClawRuntime? runtime,
   }) : _settingRepository = settingRepository,
-       _serverRepository = serverRepository {
+       _serverRepository = serverRepository,
+       _runtime = runtime ?? OpenClawRuntime() {
+    _runtimeSub = _runtime.pushes.listen(_handleRuntimePush);
+    _runtimeStateSub = _runtime.states.listen(_handleRuntimeState);
     _serverRepository.addListener(_onServerChanged);
   }
 
@@ -206,64 +181,29 @@ class ConnViewModel extends ChangeNotifier {
       return;
     }
     _manualDisconnect = false;
-    _gatewaySub?.cancel();
+    await _runtime.shutdown();
     _config = config;
     _isConnecting = true;
     _connected = false;
     disconnectReason = null;
+    _runId = '';
     _log.info('Switching to server: ${config.name}');
 
-    _gatewaySub = GatewayConnection.shared.subscribe().listen((d) {
-      if (d is GatewayPushSnapshot) {
-        _markConnected(d.snapshot.snapshot.health);
-      } else if (d is GatewayPushEvent) {
-        // _log.info('${d.event}\n ${d.payload}');
-        _handleGatewayEvent(d.event, d.payload);
-      }
-    });
-
-    GatewayConnection.shared.onDisconnect = (reason) {
-      if (_manualDisconnect) {
-        // 主动断开（切换服务器/退出页面）不当作故障上报，避免
-        // 与新连接的竞态把 UI 错误拉回"已断开连接"。
-        _manualDisconnect = false;
-        return;
-      }
-      _sessionKey = null; //断连时清空残留 sessionKey
-      _sessions = [];
-      _isConnecting = false;
-      _connected = false;
-      // _log.warning('onDisconnect: $reason');
-      disconnectReason = reason;
-      notifyListeners();
-    };
     try {
       notifyListeners();
       // 扫码配对（受限 operator）加入的网关：重连时复用配对时实际授权的
       // scopes，避免按默认全量（含 admin/pairing）请求触发 scope-upgrade 审批。
       final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
-      final GatewayConnectOptions? operatorOptions = (storedScopes != null)
-          ? GatewayConnectOptions(
-              role: 'operator',
-              scopes: storedScopes,
-              scopesAreExplicit: true,
-              caps: const <String>[],
-              commands: const <String>[],
-              permissions: const <String, bool>{},
-              clientId: canonicalMobileClientId(),
-              clientMode: 'ui',
-              clientDisplayName: 'parrotClaw',
-            )
-          : null;
-      await GatewayConnection.shared.configure(
+      final runtimeConfig = OpenClawRuntimeConfig(
         url: config.wsUrl,
-        token: config.token,
-        password: config.password,
-        connectOptions: operatorOptions,
+        token: config.isTokenAuth ? config.token : null,
+        password: config.isPasswordAuth ? config.password : null,
+        scopes: storedScopes ?? openClawOperatorScopes,
       );
+      await _runtime.configure(runtimeConfig);
       if (epoch != _connectionEpoch ||
           _serverRepository.selectedServer?.id != config.id) {
-        await GatewayConnection.shared.shutdown();
+        await _runtime.shutdown();
         return;
       }
       // configure() returns only after the authenticated WebSocket handshake.
@@ -285,11 +225,12 @@ class ConnViewModel extends ChangeNotifier {
   }
 
   void _markConnected(dynamic health) {
+    if (_runtime.state != OpenClawRuntimeState.ready) return;
     if (_connected && !_isConnecting) return;
     _isConnecting = false;
     _connected = true;
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
-    _sessionKey = GatewayConnection.shared.cachedMainSessionKey();
+    _sessionKey = _runtime.hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
     _isHistoryLoading = false;
     notifyListeners();
     unawaited(_initializeSessionData());
@@ -298,7 +239,7 @@ class ConnViewModel extends ChangeNotifier {
 
   Future<void> _initializeSessionData() async {
     try {
-      _sessionKey ??= await GatewayConnection.shared.mainSessionKey();
+      _sessionKey ??= await _runtime.mainSessionKey();
       await beginHistoryLoad();
     } catch (error) {
       _log.warning('Failed to initialize main session: $error');
@@ -307,6 +248,24 @@ class ConnViewModel extends ChangeNotifier {
 
   String buildMediaUrl(String srcUrl) {
     return _config!.buildMediaUrl(srcUrl);
+  }
+
+  void _handleRuntimePush(GatewayPush push) {
+    if (push is GatewayPushSnapshot) {
+      _markConnected(push.snapshot.snapshot.health);
+    } else if (push is GatewayPushEvent) {
+      _handleGatewayEvent(push.event, push.payload);
+    }
+  }
+
+  void _handleRuntimeState(OpenClawRuntimeState state) {
+    if (state != OpenClawRuntimeState.disconnected || _manualDisconnect) return;
+    _sessionKey = null;
+    _sessions = [];
+    _isConnecting = false;
+    _connected = false;
+    disconnectReason = 'Gateway disconnected';
+    notifyListeners();
   }
 
   void _handleGatewayEvent(String event, dynamic payload) {
@@ -367,21 +326,9 @@ class ConnViewModel extends ChangeNotifier {
     }
   }
 
-  void subscribeSessionMessage() async {
-    // await GatewayConnection.shared.request(
-    //   method: 'sessions.messages.subscribe',
-    //   params: {'key': _sessionKey},
-    //   timeoutMs: 10000,
-    // );
-  }
+  void subscribeSessionMessage() {}
 
-  void unsubscribeSessionMessage() async {
-    // await GatewayConnection.shared.request(
-    //   method: 'sessions.messages.unsubscribe',
-    //   params: {'key': _sessionKey},
-    //   timeoutMs: 10000,
-    // );
-  }
+  void unsubscribeSessionMessage() {}
 
   Future<void> beginHistoryLoad() async {
     if (!_connected || _isHistoryLoading || sessionKey == null) {
@@ -389,12 +336,16 @@ class ConnViewModel extends ChangeNotifier {
     }
     _isHistoryLoading = true;
     notifyListeners();
-    final Map<String, dynamic> json = await GatewayConnection.shared
-        .chatHistory(sessionKey!);
+    final Map<String, dynamic> json = await _runtime.chatHistory(
+      sessionKey: sessionKey!,
+    );
 
     final sessionInfo = json['sessionInfo'];
-    _thinkingOptions = sessionInfo['thinkingOptions'];
-    _modelDefault = sessionInfo['model'];
+    final sessionInfoMap = sessionInfo is Map
+        ? sessionInfo.cast<String, dynamic>()
+        : const <String, dynamic>{};
+    _thinkingOptions = sessionInfoMap['thinkingOptions'] as List? ?? const [];
+    _modelDefault = sessionInfoMap['model'] as String?;
     _log.info(json);
 
     final messagesList = json['messages'] as List<dynamic>? ?? [];
@@ -443,7 +394,7 @@ class ConnViewModel extends ChangeNotifier {
     _config = null;
     disconnectReason = null;
     notifyListeners();
-    await GatewayConnection.shared.shutdown();
+    await _runtime.shutdown();
   }
 
   Future<void> reconnect() async {
@@ -496,25 +447,23 @@ class ConnViewModel extends ChangeNotifier {
       }
     }
 
-    final resolvedSessionKey =
-        sessionKey ?? await GatewayConnection.shared.mainSessionKey();
+    final resolvedSessionKey = sessionKey ?? await _runtime.mainSessionKey();
     _sessionKey = resolvedSessionKey;
     try {
-      await GatewayConnection.shared.chatSend(
+      await _runtime.chatSend(
         sessionKey: resolvedSessionKey,
         message: message,
         idempotencyKey: _runId,
-        attachments:
-            attachments
-                .map(
-                  (a) => {
-                    'type': a.type,
-                    'content': a.base64,
-                    'mimeType': a.mimeType,
-                    'fileName': a.fileName,
-                  },
-                )
-                .toList(),
+        attachments: attachments
+            .map(
+              (a) => {
+                'type': a.type,
+                'content': a.base64,
+                'mimeType': a.mimeType,
+                'fileName': a.fileName,
+              },
+            )
+            .toList(),
       );
     } catch (error) {
       if (_runId.isNotEmpty) {
@@ -526,16 +475,14 @@ class ConnViewModel extends ChangeNotifier {
     }
   }
 
-  void switchTalkMode(bool talModel) {
-    GatewayConnection.shared.talkMode(enabled: talModel);
-  }
+  Future<void> switchTalkMode(bool talkMode) =>
+      _runtime.talkMode(enabled: talkMode);
 
   Future<void> sendTalkSpeak(String text) async {
     if (text.isEmpty) {
       return;
     }
-    final Map<String, dynamic> payload = await GatewayConnection.shared
-        .requestRaw(Method.talkSpeak, params: {'text': text});
+    final Map<String, dynamic> payload = await _runtime.talkSpeak(text);
     if (payload.containsKey('audioBase64')) {
       voiceController.add(payload['audioBase64']);
     }
@@ -543,7 +490,7 @@ class ConnViewModel extends ChangeNotifier {
 
   Future<void> abortMessage() async {
     if (_runId != '') {
-      GatewayConnection.shared.chatAbort(sessionKey!, _runId);
+      await _runtime.chatAbort(sessionKey: sessionKey!, runId: _runId);
       _runId = '';
       notifyListeners();
     }
@@ -567,17 +514,19 @@ class ConnViewModel extends ChangeNotifier {
     int? offset,
     bool? configuredAgentsOnly,
   }) async {
-    final response = await GatewayConnection.shared.sessionsList(
-      limit: limit,
-      search: search,
-      archived: archived,
-      agentId: agentId,
-      includeGlobal: includeGlobal,
-      includeUnknown: includeUnknown,
-      activeMinutes: activeMinutes,
-      spawnedBy: spawnedBy,
-      offset: offset,
-      configuredAgentsOnly: configuredAgentsOnly,
+    final response = GatewaySessionsListResponse.fromJson(
+      await _runtime.sessionsList(
+        limit: limit,
+        search: search,
+        archived: archived,
+        agentId: agentId,
+        includeGlobal: includeGlobal,
+        includeUnknown: includeUnknown,
+        activeMinutes: activeMinutes,
+        spawnedBy: spawnedBy,
+        offset: offset,
+        configuredAgentsOnly: configuredAgentsOnly,
+      ),
     );
     _sessions = response.sessions;
     notifyListeners();
@@ -593,13 +542,15 @@ class ConnViewModel extends ChangeNotifier {
     bool? worktree,
     String? worktreeBaseRef,
   }) async {
-    final response = await GatewayConnection.shared.sessionsCreate(
-      key: key,
-      agentId: agentId,
-      label: label,
-      parentSessionKey: parentSessionKey,
-      worktree: worktree,
-      worktreeBaseRef: worktreeBaseRef,
+    final response = GatewayCreateSessionResponse.fromJson(
+      await _runtime.sessionsCreate(
+        key: key,
+        agentId: agentId,
+        label: label,
+        parentSessionKey: parentSessionKey,
+        worktree: worktree,
+        worktreeBaseRef: worktreeBaseRef,
+      ),
     );
     try {
       await listSessions();
@@ -614,7 +565,7 @@ class ConnViewModel extends ChangeNotifier {
     required String sessionKey,
     String? agentId,
   }) async {
-    await GatewayConnection.shared.sessionsDelete(
+    await _runtime.sessionsDelete(
       sessionKey: sessionKey,
       agentId: agentId,
     );
@@ -626,16 +577,8 @@ class ConnViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // List<GatewaySessionEntry> _decodeSessionEntries(dynamic value) {
-  //   if (value is! List) return [];
-  //   return value
-  //       .whereType<Map>()
-  //       .map((item) => GatewaySessionEntry.fromJson(item.cast<String, dynamic>()))
-  //       .toList();
-  // }
-
   Future<void> refresh() async {
-    GatewayConnection.shared.refresh();
+    if (_connected) await listSessions();
   }
 
   bool isOpenclawTTS() {
@@ -883,7 +826,7 @@ class ConnViewModel extends ChangeNotifier {
   Future listModels() async {
     if (!_connected) return; // 防止未连接时的无效底请求
     try {
-      final rawModels = await GatewayConnection.shared.listModels();
+      final rawModels = await _runtime.listModels();
       _rawModels = rawModels;
       notifyListeners();
     } catch (e) {
@@ -902,18 +845,15 @@ class ConnViewModel extends ChangeNotifier {
     }
 
     try {
-      final Map<String, dynamic> params = {'key': _sessionKey};
-      if (model != null) {
-        params['model'] = model;
-      }
-      if (thinkingLevel != null) {
-        params['thinkingLevel'] = thinkingLevel;
-      }
-
-      final Map<String, dynamic> json = await GatewayConnection.shared.request(
-        method: Method.sessionsPatch.rawValue,
-        params: params,
-        timeoutMs: 15000,
+      if (_sessionKey == null) return;
+      final patch = <String, dynamic>{
+        if (model != null) 'model': model,
+        if (thinkingLevel != null) 'thinkingLevel': thinkingLevel,
+      };
+      final Map<String, dynamic> json = await _runtime.sessionsPatch(
+        sessionKey: _sessionKey!,
+        patch: patch,
+        timeout: const Duration(seconds: 15),
       );
       _log.info(json);
 
@@ -938,7 +878,9 @@ class ConnViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _serverRepository.removeListener(_onServerChanged); // 🌟 修复点 6：反注册监听器
-    _gatewaySub?.cancel();
+    _runtimeSub?.cancel();
+    _runtimeStateSub?.cancel();
+    unawaited(_runtime.dispose());
     messageController.close();
     sessionUpdateController.close();
     messageFinalController.close();
