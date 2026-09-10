@@ -786,7 +786,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   void _init() async {
     widget.viewModel.beginHistoryLoad();
-    widget.viewModel.listModels();
+    // widget.viewModel.listModels();
     // widget.viewModel.subscribeSessionMessage();
     _eventSubscription = widget.viewModel.messageEvents?.listen((
       chatMsg,

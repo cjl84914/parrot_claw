@@ -129,9 +129,6 @@ class ConnViewModel extends ChangeNotifier {
     connect(); // 自动调用连接
   }
 
-  // Actions
-  Future<void>? _pendingConnect;
-
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
   bool _manualDisconnect = false;
 
@@ -147,14 +144,6 @@ class ConnViewModel extends ChangeNotifier {
   /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
   /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
   Future<void> connect() async {
-    // 等待上一次连接请求完成，避免并发竞态
-    while (_pendingConnect != null) {
-      try {
-        await _pendingConnect;
-      } catch (_) {
-        // 上一次失败不影响本次重新连接
-      }
-    }
     final config = _serverRepository.selectedServer;
     if (config == null) {
       _isConnecting = false;
@@ -165,22 +154,10 @@ class ConnViewModel extends ChangeNotifier {
     if (_connected && _config == config) {
       return;
     }
-    final epoch = _connectionEpoch;
-    final completer = Completer<void>();
-    _pendingConnect = completer.future;
-    try {
-      await _doConnect(config, epoch);
-    } finally {
-      _pendingConnect = null;
-      completer.complete();
-    }
+    await _doConnect(config);
   }
 
-  Future<void> _doConnect(ServerConfig config, int epoch) async {
-    if (epoch != _connectionEpoch ||
-        _serverRepository.selectedServer?.id != config.id) {
-      return;
-    }
+  Future<void> _doConnect(ServerConfig config) async {
     _manualDisconnect = false;
     await _runtime.shutdown();
     _config = config;
@@ -202,11 +179,6 @@ class ConnViewModel extends ChangeNotifier {
         scopes: storedScopes ?? openClawOperatorScopes,
       );
       await _runtime.configure(runtimeConfig);
-      if (epoch != _connectionEpoch ||
-          _serverRepository.selectedServer?.id != config.id) {
-        await _runtime.shutdown();
-        return;
-      }
       // configure() returns only after the authenticated WebSocket handshake.
       // Use it as a fallback when a snapshot was emitted before this listener
       // was attached or when the snapshot health payload has another shape.
@@ -214,10 +186,6 @@ class ConnViewModel extends ChangeNotifier {
         _markConnected(null);
       }
     } catch (e) {
-      if (epoch != _connectionEpoch ||
-          _serverRepository.selectedServer?.id != config.id) {
-        return;
-      }
       _isConnecting = false;
       _connected = false;
       notifyListeners();
@@ -231,12 +199,11 @@ class ConnViewModel extends ChangeNotifier {
     _isConnecting = false;
     _connected = true;
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
-    _sessionKey =
-        _runtime.hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
     _isHistoryLoading = false;
     notifyListeners();
     unawaited(_initializeSessionData());
-    unawaited(listModels());
+    unawaited(listSessions());
+    // unawaited(listModels());
   }
 
   Future<void> _initializeSessionData() async {

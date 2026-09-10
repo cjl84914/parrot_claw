@@ -17,7 +17,6 @@ import 'package:uuid/uuid.dart';
 /// 会话数据目前使用静态列表，后续可以通过 [sessions] 和 [onSessionSelected]
 /// 接入真实的会话仓库。
 int _selectedNavIndex = 0;
-int _selectedSessionIndex = 0;
 
 class SidebarWidget extends StatefulWidget {
   final ConnViewModel viewModel;
@@ -29,7 +28,6 @@ class SidebarWidget extends StatefulWidget {
 }
 
 class _SidebarWidgetState extends State<SidebarWidget> {
-  List<GatewaySessionEntry> _sessions = const [];
   bool _isCreatingSession = false;
   String? _deletingSessionKey;
 
@@ -37,19 +35,6 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   void initState() {
     super.initState();
     widget.viewModel.addListener(_onViewModelChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadSessions();
-    });
-  }
-
-  Future<void> _loadSessions() async {
-    try {
-      await widget.viewModel.listSessions();
-    } catch (error) {
-      // Session loading is best-effort. A temporary gateway disconnect should
-      // not escape from a post-frame callback as an unhandled exception.
-      debugPrint('[ParrotClaw] Failed to load sessions: $error');
-    }
   }
 
   @override
@@ -59,17 +44,9 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   }
 
   void _onViewModelChanged() {
-    if (!mounted) return;
-    setState(_refreshSessions);
-  }
+    setState(() {
 
-  void _refreshSessions() {
-    _sessions = widget.viewModel.sessions;
-    if (_sessions.isEmpty) {
-      _selectedSessionIndex = 0;
-    } else if (_selectedSessionIndex >= _sessions.length) {
-      _selectedSessionIndex = _sessions.length - 1;
-    }
+    });
   }
 
   @override
@@ -78,7 +55,6 @@ class _SidebarWidgetState extends State<SidebarWidget> {
     if (oldWidget.viewModel != widget.viewModel) {
       oldWidget.viewModel.removeListener(_onViewModelChanged);
       widget.viewModel.addListener(_onViewModelChanged);
-      _refreshSessions();
     }
   }
 
@@ -135,7 +111,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
               const SizedBox(height: 8),
               Expanded(
                 child:
-                    _sessions.isEmpty
+                    widget.viewModel.sessions.isEmpty
                         ? Center(
                           child: Text(
                             '暂无会话',
@@ -146,13 +122,13 @@ class _SidebarWidgetState extends State<SidebarWidget> {
                         )
                         : ListView.separated(
                           padding: EdgeInsets.zero,
-                          itemCount: _sessions.length,
+                          itemCount: widget.viewModel.sessions.length,
                           separatorBuilder:
                               (_, __) => const SizedBox(height: 2),
                           itemBuilder: (context, index) {
                             return _buildSessionItem(
                               context,
-                              session: _sessions[index],
+                              session: widget.viewModel.sessions[index],
                               index: index,
                               selectedColor: selectedColor,
                             );
@@ -300,10 +276,10 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       await widget.viewModel.switchSession(response.key);
       setState(() {
         _selectedNavIndex = -1;
-        _selectedSessionIndex = widget.viewModel.sessions.indexWhere(
-          (session) => session.key == response.key,
-        );
-        if (_selectedSessionIndex < 0) _selectedSessionIndex = 0;
+        // _selectedSessionIndex = widget.viewModel.sessions.indexWhere(
+        //   (session) => session.key == response.key,
+        // );
+        // if (_selectedSessionIndex < 0) _selectedSessionIndex = 0;
       });
       _closeDrawer(context);
     } catch (error) {
@@ -321,13 +297,12 @@ class _SidebarWidgetState extends State<SidebarWidget> {
     required int index,
     required Color selectedColor,
   }) {
-    final selected = _selectedSessionIndex == index;
+    final selected = widget.viewModel.sessionKey == session.key;
     return GestureDetector(
       onTap: () async {
         await widget.viewModel.switchSession(session.key);
         if (!mounted) return;
         setState(() {
-          _selectedSessionIndex = index;
           _selectedNavIndex = -1;
         });
         _closeDrawer(context);
