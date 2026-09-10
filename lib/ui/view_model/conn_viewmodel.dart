@@ -8,6 +8,7 @@ import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/data/service/gateway_scope_store.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
+import 'package:parrot_app/data/service/openclaw_protocol.dart';
 import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/util/parse.dart';
 import 'package:parrot_app/util/string_util.dart';
@@ -230,7 +231,8 @@ class ConnViewModel extends ChangeNotifier {
     _isConnecting = false;
     _connected = true;
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
-    _sessionKey = _runtime.hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
+    _sessionKey =
+        _runtime.hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
     _isHistoryLoading = false;
     notifyListeners();
     unawaited(_initializeSessionData());
@@ -341,9 +343,10 @@ class ConnViewModel extends ChangeNotifier {
     );
 
     final sessionInfo = json['sessionInfo'];
-    final sessionInfoMap = sessionInfo is Map
-        ? sessionInfo.cast<String, dynamic>()
-        : const <String, dynamic>{};
+    final sessionInfoMap =
+        sessionInfo is Map
+            ? sessionInfo.cast<String, dynamic>()
+            : const <String, dynamic>{};
     _thinkingOptions = sessionInfoMap['thinkingOptions'] as List? ?? const [];
     _modelDefault = sessionInfoMap['model'] as String?;
     _log.info(json);
@@ -454,16 +457,17 @@ class ConnViewModel extends ChangeNotifier {
         sessionKey: resolvedSessionKey,
         message: message,
         idempotencyKey: _runId,
-        attachments: attachments
-            .map(
-              (a) => {
-                'type': a.type,
-                'content': a.base64,
-                'mimeType': a.mimeType,
-                'fileName': a.fileName,
-              },
-            )
-            .toList(),
+        attachments:
+            attachments
+                .map(
+                  (a) => {
+                    'type': a.type,
+                    'content': a.base64,
+                    'mimeType': a.mimeType,
+                    'fileName': a.fileName,
+                  },
+                )
+                .toList(),
       );
     } catch (error) {
       if (_runId.isNotEmpty) {
@@ -565,10 +569,7 @@ class ConnViewModel extends ChangeNotifier {
     required String sessionKey,
     String? agentId,
   }) async {
-    await _runtime.sessionsDelete(
-      sessionKey: sessionKey,
-      agentId: agentId,
-    );
+    await _runtime.sessionsDelete(sessionKey: sessionKey, agentId: agentId);
     _sessions =
         _sessions.where((session) => session.key != sessionKey).toList();
     if (_sessionKey == sessionKey) {
@@ -873,6 +874,12 @@ class ConnViewModel extends ChangeNotifier {
       _log.warning('setSessionConfig failed: $e');
       rethrow;
     }
+  }
+
+  Future<OpenClawDevicePairSetupCodeResponse> devicePairSetupCode({
+    String? publicUrl,
+  }) async {
+    return _runtime.devicePairSetupCode();
   }
 
   @override

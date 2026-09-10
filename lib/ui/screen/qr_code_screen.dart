@@ -3,32 +3,36 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:parrot_app/config/app_theme.dart';
-import 'package:parrot_app/data/model/server_config.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/openclaw_protocol.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
+import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 
 /// 网关设备配对二维码展示页。
 class QrCodeScreen extends StatefulWidget {
-  final ServerConfig config;
+  final ConnViewModel viewModel;
 
-  const QrCodeScreen({super.key, required this.config});
+  const QrCodeScreen({super.key, required this.viewModel});
 
   @override
   State<QrCodeScreen> createState() => _QrCodeScreenState();
 }
 
 class _QrCodeScreenState extends State<QrCodeScreen> {
-  late Future<DevicePairSetupCodeResponse> _pairSetupFuture;
+  late Future<OpenClawDevicePairSetupCodeResponse> _pairSetupFuture;
 
   @override
   void initState() {
     super.initState();
-    _pairSetupFuture = GatewayConnection.shared.devicePairSetupCode();
+    _pairSetupFuture = _loadPairSetupCode();
+  }
+
+  Future<OpenClawDevicePairSetupCodeResponse> _loadPairSetupCode() async {
+    return widget.viewModel.devicePairSetupCode();
   }
 
   void _refreshPairSetup() {
     setState(() {
-      _pairSetupFuture = GatewayConnection.shared.devicePairSetupCode();
+      _pairSetupFuture = _loadPairSetupCode();
     });
   }
 
@@ -42,13 +46,12 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final config = widget.config;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.menu),
           tooltip: '打开侧边栏',
-          onPressed: () =>   indexController.switchSideBarVisible(),
+          onPressed: () => indexController.switchSideBarVisible(),
         ),
         title: const Text('分享网关配置'),
         elevation: 0,
@@ -65,7 +68,7 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(AppRadius.xlarge),
               ),
-              child: FutureBuilder<DevicePairSetupCodeResponse>(
+              child: FutureBuilder<OpenClawDevicePairSetupCodeResponse>(
                 future: _pairSetupFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -107,7 +110,7 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            FutureBuilder<DevicePairSetupCodeResponse>(
+            FutureBuilder<OpenClawDevicePairSetupCodeResponse>(
               future: _pairSetupFuture,
               builder: (context, snapshot) {
                 final isRefreshing =
@@ -129,14 +132,14 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
             const SizedBox(height: 24),
 
             // 服务器信息
-            Text(config.name, style: AppTextStyles.titleLarge),
-            const SizedBox(height: 6),
-            Text(config.displayAddress, style: AppTextStyles.caption),
-            const SizedBox(height: 6),
-            Text(
-              config.isPasswordAuth ? '密码认证' : 'Token 认证',
-              style: AppTextStyles.captionSmall,
-            ),
+            // Text(config.name, style: AppTextStyles.titleLarge),
+            // const SizedBox(height: 6),
+            // Text(config.displayAddress, style: AppTextStyles.caption),
+            // const SizedBox(height: 6),
+            // Text(
+            //   config.isPasswordAuth ? '密码认证' : 'Token 认证',
+            //   style: AppTextStyles.captionSmall,
+            // ),
 
             // localhost 替换提示
             // if (hostReplaced) ...[

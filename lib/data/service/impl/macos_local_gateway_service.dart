@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +6,7 @@ import 'package:logging/logging.dart';
 import 'package:parrot_app/data/service/impl/macos_openclaw_environment.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/local_gateway_service.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 
 /// 本机 OpenClaw 网关检测服务（无状态，纯本机操作）
 ///
@@ -34,20 +36,46 @@ class MacOSLocalGatewayService implements LocalGatewayService {
   Process? _isolatedGatewayProcess;
   String? _isolatedGatewayToken;
 
+  /// 隔离网关 `gateway run` 控制台输出的就绪/失败信号。
+  ///
+  /// 与 [_isolatedGatewayProcess] 一一对应：进程启动时创建、退出时置空。
+  _IsolatedGatewayConsoleSignal? _isolatedGatewaySignal;
+
   /// OpenClaw 默认网关端口
   static const int defaultGatewayPort = 18789;
 
   /// 常用网关端口（用户可能自定义端口）
-  static const List<int> commonGatewayPorts = [
-    18789, // 默认
-    // 18889, // 常见变体
-    // 18788, // 变体
-    // 8080, // 常见自定义
-    // 3000, // 常见开发端口
-  ];
+  static const List<int> commonGatewayPorts = [18789];
 
   /// 单端口探测超时
   static const Duration _probeTimeout = Duration(seconds: 4);
+
+  /// 等待隔离网关自报就绪的最长时间。
+  static const Duration _isolatedGatewayReadyTimeout = Duration(seconds: 30);
+
+  /// 控制台的优先窗口：这段时间内没打印就绪行就先做端口兜底探测。
+  static const Duration _isolatedGatewayConsoleGrace = Duration(seconds: 6);
+
+  /// `openclaw gateway run` 就绪时在控制台输出的标志行。
+  ///
+  /// 依据 openclaw 启动收尾日志 `log.info("gateway ready")`
+  /// （`dist/server-startup-post-attach-*.mjs` 与 `dist/server-start-*.mjs`
+  /// 两条启动路径都会输出）。用子串匹配而不是整行匹配，
+  /// 这样时间戳、日志级别前缀、ANSI 着色都不会影响判定。
+  static final RegExp _gatewayReadyLine = RegExp(
+    r'gateway ready',
+    caseSensitive: false,
+  );
+
+  /// 启动失败标志，必须先于 [_gatewayReadyLine] 判断：
+  /// `refusing to report the gateway ready` 同样包含 `gateway ready`。
+  static final RegExp _gatewayStartupFailureLine = RegExp(
+    r'refusing to report the gateway ready'
+    r'|already listening on'
+    r'|multiple gateway processes are listening'
+    r'|EADDRINUSE',
+    caseSensitive: false,
+  );
 
   /// 判断本机是否安装了 openclaw CLI
   ///
@@ -110,39 +138,32 @@ class MacOSLocalGatewayService implements LocalGatewayService {
             ? _isolatedGatewayToken
             : token;
     try {
-      await GatewayConnection.shared
-          .configure(
-            url: 'ws://$host:$port',
-            token: effectiveToken,
-            password: password,
-          )
-          .timeout(_probeTimeout);
-
-      final result = await GatewayConnection.shared.status().timeout(
-        _probeTimeout,
+      final config = OpenClawRuntimeConfig(
+        url: 'ws://$host:$port',
+        token: effectiveToken,
+        password: password,
       );
-
+      final result = await OpenClawRuntime().configureResult(config);
       await _shutdownProbeConnection();
-
       final ok = result.ok;
       _log.fine('Gateway at $host:$port: ${ok ? 'online' : 'unreachable'}');
       return ok;
     } catch (e) {
-      final isAuthChallenge =
-          e is GatewayConnectAuthError ||
-          e.toString().contains('gateway token missing') ||
-          e.toString().contains('unauthorized');
-      _log.fine(
-        'Gateway at $host:$port ${isAuthChallenge ? 'requires auth' : 'not reachable'}: $e',
-      );
+      // final isAuthChallenge =
+      //     e is GatewayConnectAuthError ||
+      //     e.toString().contains('gateway token missing') ||
+      //     e.toString().contains('unauthorized');
+      // _log.fine(
+      //   'Gateway at $host:$port ${isAuthChallenge ? 'requires auth' : 'not reachable'}: $e',
+      // );
       await _shutdownProbeConnection();
-      return isAuthChallenge;
+      return false;
     }
   }
 
   Future<void> _shutdownProbeConnection() async {
     try {
-      await GatewayConnection.shared.shutdown();
+      await OpenClawRuntime().shutdown();
     } catch (e) {
       _log.fine('Gateway probe shutdown ignored: $e');
     }
@@ -151,8 +172,8 @@ class MacOSLocalGatewayService implements LocalGatewayService {
   /// 查询本机 Gateway 服务状态，不要求 WebSocket 鉴权成功。
   @override
   Future<LocalGatewayServiceStatus> queryGatewayStatus() async {
-    final cliStatus = await _queryGatewayStatusFromCli();
-    if (cliStatus?.running == true) return cliStatus!;
+    // final cliStatus = await _queryGatewayStatusFromCli();
+    // if (cliStatus?.running == true) return cliStatus!;
 
     // LaunchAgent 未加载不等于 Gateway 没有进程。CLI 可能报告 stopped，
     // 但已有手动启动的 openclaw-gateway 正在监听端口，此时应以端口为准。
@@ -165,64 +186,19 @@ class MacOSLocalGatewayService implements LocalGatewayService {
         );
       }
     }
-    return cliStatus ??
-        const LocalGatewayServiceStatus(state: LocalGatewayProcessState.stopped);
-  }
-
-  Future<LocalGatewayServiceStatus?> _queryGatewayStatusFromCli() async {
-    try {
-      final result = await Process.run(
-        'openclaw',
-        ['gateway', 'status', '--json'],
-        environment: MacOSOpenClawEnvironment.openClawProcessEnvironment,
-        runInShell: true,
-      );
-      if (result.exitCode != 0) return null;
-      return _parseGatewayStatusJson(result.stdout as String);
-    } catch (e) {
-      _log.fine('gateway status CLI failed: $e');
-      return null;
-    }
-  }
-
-  LocalGatewayServiceStatus? _parseGatewayStatusJson(String output) {
-    try {
-      final decoded = jsonDecode(output);
-      if (decoded is! Map) return null;
-      final json = Map<String, dynamic>.from(decoded);
-      final nested = json['service'] is Map
-          ? Map<String, dynamic>.from(json['service'] as Map)
-          : <String, dynamic>{};
-      final rawState = (json['status'] ?? json['state'] ?? nested['status'] ?? nested['state'])
-          ?.toString().toLowerCase();
-      final running = json['running'] == true || nested['running'] == true ||
-          rawState == 'running' || rawState == 'active' || rawState == 'online';
-      final stopped = json['running'] == false || nested['running'] == false ||
-          rawState == 'stopped' || rawState == 'inactive' || rawState == 'offline';
-      if (!running && !stopped) return null;
-      final port = _portFromStatus(json, nested);
-      return LocalGatewayServiceStatus(
-        state: running ? LocalGatewayProcessState.running : LocalGatewayProcessState.stopped,
-        port: port,
-        address: port == null ? null : '127.0.0.1:$port',
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  int? _portFromStatus(Map<String, dynamic> json, Map<String, dynamic> nested) {
-    final raw = json['port'] ?? nested['port'] ?? json['address'] ?? nested['address'] ??
-        json['url'] ?? nested['url'];
-    if (raw is num) return raw.toInt();
-    final match = RegExp(r':(\d{1,5})(?:[/\s]|$)').firstMatch(raw?.toString() ?? '');
-    return match == null ? null : int.tryParse(match.group(1)!);
+    return const LocalGatewayServiceStatus(
+      state: LocalGatewayProcessState.stopped,
+    );
   }
 
   Future<bool> _isTcpPortOpen(int port) async {
     Socket? socket;
     try {
-      socket = await Socket.connect('127.0.0.1', port, timeout: const Duration(seconds: 1));
+      socket = await Socket.connect(
+        '127.0.0.1',
+        port,
+        timeout: const Duration(seconds: 1),
+      );
       return true;
     } catch (_) {
       return false;
@@ -299,6 +275,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
         _isolatedGatewayProcess = null;
         _isolatedGatewayStarted = false;
         _isolatedGatewayToken = null;
+        _isolatedGatewaySignal = null;
         onOutput?.call('隔离 OpenClaw 网关已关闭');
         return 0;
       }
@@ -329,6 +306,9 @@ class MacOSLocalGatewayService implements LocalGatewayService {
 
     final token = await MacOSOpenClawEnvironment.ensureIsolatedGatewayToken();
     _isolatedGatewayToken = token;
+    final signal = _IsolatedGatewayConsoleSignal();
+    _isolatedGatewaySignal = signal;
+
     final process = await Process.start(
       'openclaw',
       [
@@ -348,44 +328,128 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     );
     _isolatedGatewayProcess = process;
     _isolatedGatewayStarted = true;
-    _listenProcessOutput(process, onOutput);
+    _listenProcessOutput(
+      process,
+      onOutput,
+      onLine: (line) => _handleIsolatedGatewayLine(signal, line),
+    );
     process.exitCode.then((exitCode) {
       if (identical(_isolatedGatewayProcess, process)) {
         _isolatedGatewayProcess = null;
         _isolatedGatewayStarted = false;
         _isolatedGatewayToken = null;
+        _isolatedGatewaySignal = null;
       }
+      // 进程提前退出时唤醒等待方，否则只能白等到超时。
+      signal.failed('进程已退出，exitCode=$exitCode');
       _log.info('isolated gateway process exited: $exitCode');
     });
     return _waitForIsolatedGateway(onOutput: onOutput);
   }
 
+  /// 把 `gateway run` 的控制台输出翻译成就绪/失败信号。
+  ///
+  /// 就绪判定只依赖 gateway 自己打印的 `gateway ready`，
+  /// 不再用 WebSocket 握手轮询：握手探测每次都要建连接 + 走鉴权，
+  /// 在启动窗口期既昂贵又只会得到无意义的失败结果。
+  void _handleIsolatedGatewayLine(
+    _IsolatedGatewayConsoleSignal signal,
+    String line,
+  ) {
+    if (signal.isCompleted) return;
+    if (_gatewayStartupFailureLine.hasMatch(line)) {
+      signal.failed(line.trim());
+      return;
+    }
+    if (_gatewayReadyLine.hasMatch(line)) {
+      signal.ready();
+    }
+  }
+
   Future<int> _waitForIsolatedGateway({
     void Function(String line)? onOutput,
   }) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 30));
-    while (DateTime.now().isBefore(deadline)) {
-      if (_isolatedGatewayProcess == null) return 1;
-      if (await isGatewayAt(defaultGatewayPort, token: _isolatedGatewayToken)) {
-        onOutput?.call('隔离 OpenClaw 网关已完成鉴权并就绪');
-        return 0;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
+    if (_isolatedGatewayProcess == null) return 1;
+
+    final signal = _isolatedGatewaySignal ??= _IsolatedGatewayConsoleSignal();
+
+    // 判定顺序：控制台优先窗口 → 端口探测兜底 → 剩余时间继续等控制台 → 再兜底一次。
+    // 兜底只做两次最便宜的 TCP 探测（不握手、不轮询），
+    // 目的是"那一行 gateway ready 没打印出来"时不要白等到总超时。
+    final early = await _awaitIsolatedGatewaySignal(
+      signal,
+      _isolatedGatewayConsoleGrace,
+    );
+    if (early != null) return _reportIsolatedGatewayOutcome(early, onOutput);
+
+    final probe = await _confirmIsolatedGatewayPort(onOutput);
+    if (probe != null) return probe;
+
+    final late = await _awaitIsolatedGatewaySignal(
+      signal,
+      _isolatedGatewayReadyTimeout - _isolatedGatewayConsoleGrace,
+    );
+    if (late != null) return _reportIsolatedGatewayOutcome(late, onOutput);
+
+    final finalProbe = await _confirmIsolatedGatewayPort(onOutput);
+    if (finalProbe != null) return finalProbe;
+
     onOutput?.call('隔离 OpenClaw 网关启动超时');
     return 1;
   }
 
-  void _listenProcessOutput(
-    Process process,
+  Future<_IsolatedGatewayOutcome?> _awaitIsolatedGatewaySignal(
+    _IsolatedGatewayConsoleSignal signal,
+    Duration timeout,
+  ) async {
+    if (timeout <= Duration.zero) return null;
+    try {
+      return await signal.future.timeout(timeout);
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  int _reportIsolatedGatewayOutcome(
+    _IsolatedGatewayOutcome outcome,
     void Function(String line)? onOutput,
   ) {
+    switch (outcome.status) {
+      case _IsolatedGatewayStatus.ready:
+        onOutput?.call('隔离 OpenClaw 网关已就绪');
+        return 0;
+      case _IsolatedGatewayStatus.failed:
+        onOutput?.call('隔离 OpenClaw 网关启动失败：${outcome.reason}');
+        return 1;
+    }
+  }
+
+  /// 控制台没给出就绪信号时的兜底：确认端口已在监听即视为就绪。
+  ///
+  /// 只做一次 TCP 连接（毫秒级、无鉴权），不做 WebSocket 握手也不轮询。
+  Future<int?> _confirmIsolatedGatewayPort(
+    void Function(String line)? onOutput,
+  ) async {
+    final status = await queryGatewayStatus();
+    if (!status.running) return null;
+    onOutput?.call(
+      '未捕获到 "gateway ready" 控制台输出，但端口 ${status.port} 已在监听，按已就绪处理',
+    );
+    return 0;
+  }
+
+  void _listenProcessOutput(
+    Process process,
+    void Function(String line)? onOutput, {
+    void Function(String line)? onLine,
+  }) {
     process.stdout
         .transform(const SystemEncoding().decoder)
         .transform(const LineSplitter())
         .listen((line) {
           _log.fine('[gateway:start] $line');
           onOutput?.call(line);
+          onLine?.call(line);
         });
     process.stderr
         .transform(const SystemEncoding().decoder)
@@ -393,6 +457,7 @@ class MacOSLocalGatewayService implements LocalGatewayService {
         .listen((line) {
           _log.fine('[gateway:start:err] $line');
           onOutput?.call(line);
+          onLine?.call(line);
         });
   }
 
@@ -473,5 +538,42 @@ class MacOSLocalGatewayService implements LocalGatewayService {
     if (value is! String) return null;
     final trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
+  }
+}
+
+/// 隔离网关等待结果。
+enum _IsolatedGatewayStatus { ready, failed }
+
+class _IsolatedGatewayOutcome {
+  final _IsolatedGatewayStatus status;
+  final String? reason;
+
+  const _IsolatedGatewayOutcome.ready()
+    : status = _IsolatedGatewayStatus.ready,
+      reason = null;
+
+  const _IsolatedGatewayOutcome.failed(this.reason)
+    : status = _IsolatedGatewayStatus.failed;
+}
+
+/// 单向信号：就绪或失败，先到者生效，重复上报被忽略。
+class _IsolatedGatewayConsoleSignal {
+  final Completer<_IsolatedGatewayOutcome> _completer =
+      Completer<_IsolatedGatewayOutcome>();
+
+  Future<_IsolatedGatewayOutcome> get future => _completer.future;
+
+  bool get isCompleted => _completer.isCompleted;
+
+  void ready() {
+    if (!_completer.isCompleted) {
+      _completer.complete(const _IsolatedGatewayOutcome.ready());
+    }
+  }
+
+  void failed(String reason) {
+    if (!_completer.isCompleted) {
+      _completer.complete(_IsolatedGatewayOutcome.failed(reason));
+    }
   }
 }

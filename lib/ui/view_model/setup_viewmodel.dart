@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/local_gateway_repository.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/openclaw_model_service.dart';
 import 'package:parrot_app/util/result.dart';
 
@@ -31,6 +30,52 @@ enum LocalSetupPhase {
 
   /// 出错
   error,
+}
+
+/// [SetupViewModel.connectLocal] 的结果状态。
+enum LocalConnectStatus {
+  /// 本机服务器已加入列表并设为默认，可以进门了
+  saved,
+
+  /// 网关未在线，服务器没有加入列表（需要先启动/安装）
+  gatewayOffline,
+
+  /// 服务器已加入列表，但模型配置读取失败
+  failed,
+}
+
+/// 保存本机服务器的结果。
+///
+/// 取代原来的可空记录：失败时 [errorMessage] 一定非空且可直接展示，
+/// 调用方不必再靠 null 去猜是哪一步出的问题。
+class LocalConnectResult {
+  final LocalConnectStatus status;
+
+  /// 加入/更新的本机服务器；[LocalConnectStatus.gatewayOffline] 时为 null。
+  final ServerConfig? server;
+
+  /// 是否已有可用模型；仅 [LocalConnectStatus.saved] 时有意义。
+  final bool hasModel;
+
+  /// 失败原因，可直接展示给用户。
+  final String? errorMessage;
+
+  const LocalConnectResult({
+    required this.status,
+    this.server,
+    this.hasModel = false,
+    this.errorMessage,
+  });
+
+  bool get isSaved => status == LocalConnectStatus.saved;
+
+  /// 网关没在线：服务器没被加入列表，需要先启动。
+  bool get needsGatewayStart => status == LocalConnectStatus.gatewayOffline;
+
+  @override
+  String toString() =>
+      'LocalConnectResult(${status.name}'
+      '${errorMessage == null ? '' : ', $errorMessage'})';
 }
 
 /// 本地 OpenClaw 引导 ViewModel
@@ -126,41 +171,84 @@ class SetupViewModel extends ChangeNotifier {
     }
   }
 
-  /// 把本地服务器加入列表并选中。
+  /// 保存本机服务器并设为默认，**不在这里建立连接**。
   ///
-  /// 返回添加的服务器及是否已经配置模型；失败返回 null。
-  Future<({ServerConfig server, bool hasModel})?> connectLocal() async {
+  /// 连接由首页（index）的连接流程负责；这里只做三件事：
+  /// 写进服务器列表（`ensureLocalServerAdded` 内部会 setDefault）、
+  /// 读一次本地模型配置决定下一步去哪、
+  /// 把结果和原因返回给界面。
+  ///
+  /// 返回值永远非空：调用方用 [LocalConnectResult.isSaved] 判断成功，
+  /// 用 [LocalConnectResult.errorMessage] 拿到可直接展示的失败原因。
+  Future<LocalConnectResult> connectLocal() async {
     _errorMessage = null;
-    final result = await _repository.ensureLocalServerAdded();
-    if (result is Error<ServerConfig?>) {
-      _errorMessage = result.error.toString();
-      _setPhase(LocalSetupPhase.error);
-      return null;
-    }
-    final server = (result as Ok<ServerConfig?>).value;
-    if (server == null) return null;
 
+    final Result<ServerConfig?> addResult;
     try {
-      await _configureGateway(server);
-      final models = await _modelService.loadModels();
-      _addLog('已添加本机网关: ${server.name} (${server.displayAddress})');
-      _addLog(
-        models.isEmpty ? '未检测到已配置模型，需要完成模型配置' : '检测到已配置模型 ${models.length} 个',
-      );
-      return (server: server, hasModel: models.isNotEmpty);
+      addResult = await _repository.ensureLocalServerAdded();
     } catch (error) {
-      _errorMessage = error.toString();
-      _setPhase(LocalSetupPhase.error);
-      return null;
+      _log.warning('connectLocal: ensureLocalServerAdded threw: $error');
+      return _failed('添加本机服务器失败：$error');
     }
+
+    if (addResult is Error<ServerConfig?>) {
+      return _failed(addResult.error.toString());
+    }
+
+    final server = (addResult as Ok<ServerConfig?>).value;
+    if (server == null) {
+      // 仓库只在 gateway 未在线（或端口未知）时返回 null。
+      _errorMessage = _describeGatewayOffline();
+      _setPhase(LocalSetupPhase.needsStart);
+      return LocalConnectResult(
+        status: LocalConnectStatus.gatewayOffline,
+        errorMessage: _errorMessage,
+      );
+    }
+
+    _addLog('已添加本机网关: ${server.name} (${server.displayAddress})');
+
+    final bool hasModel;
+    try {
+      final models = await _modelService.loadModels();
+      hasModel = models.isNotEmpty;
+      _addLog(
+        hasModel ? '检测到已配置模型 ${models.length} 个' : '未检测到已配置模型，需要完成模型配置',
+      );
+    } catch (error) {
+      _log.warning('connectLocal: loadModels failed: $error');
+      return _failed('已保存本机网关，但读取模型配置失败：$error', server: server);
+    }
+
+    _setPhase(LocalSetupPhase.ready);
+    return LocalConnectResult(
+      status: LocalConnectStatus.saved,
+      server: server,
+      hasModel: hasModel,
+    );
   }
 
-  Future<void> _configureGateway(ServerConfig server) {
-    return GatewayConnection.shared.configure(
-      url: server.wsUrl,
-      token: server.isTokenAuth ? server.token : null,
-      password: server.isPasswordAuth ? server.password : null,
+  LocalConnectResult _failed(String message, {ServerConfig? server}) {
+    _errorMessage = message;
+    _setPhase(LocalSetupPhase.error);
+    return LocalConnectResult(
+      status: LocalConnectStatus.failed,
+      server: server,
+      errorMessage: message,
     );
+  }
+
+  /// 拼出"网关未在线"的具体原因，避免只给一句无从下手的提示。
+  ///
+  /// 三种情况要区分开：CLI 没装上 / 装上了但端口没探测到 / 探测到了却没在跑。
+  String _describeGatewayOffline() {
+    final status = _repository.lastStatus;
+    if (status == null) return '本机网关未在线（尚无检测结果），请先启动网关再连接';
+
+    final detail = status.installed
+        ? '已安装 OpenClaw，端口探测结果：${status.port ?? '未发现在监听的网关端口'}'
+        : '未检测到 OpenClaw CLI（openclaw --version 执行失败）';
+    return '本机网关未在线：$detail';
   }
 
   /// 启动本机 gateway

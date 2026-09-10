@@ -267,7 +267,7 @@ final GoRouter router = GoRouter(
           path: Routes.qrCode,
           pageBuilder:
               (context, state) => NoTransitionPage(
-                child: QrCodeScreen(config: state.extra as ServerConfig),
+                child: QrCodeScreen(viewModel: context.read()),
               ),
         ),
       ],

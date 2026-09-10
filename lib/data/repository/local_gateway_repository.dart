@@ -73,6 +73,15 @@ class LocalGatewayRepository extends ChangeNotifier {
 
   LocalGatewayStatus? get lastStatus => _lastStatus;
 
+  /// 写入最新检测结果，唯一入口。
+  ///
+  /// [ensureLocalServerAdded] 依赖 [_lastStatus] 判断网关是否在线，
+  /// 任何“探测到网关在跑”的分支漏写缓存，都会让下一次连接误报“网关未在线”。
+  void _applyStatus(LocalGatewayStatus status) {
+    _lastStatus = status;
+    notifyListeners();
+  }
+
   /// 检测本机 OpenClaw 状态
   ///
   /// 流程：
@@ -88,8 +97,7 @@ class LocalGatewayRepository extends ChangeNotifier {
           nodeAvailable: false,
           gatewayRunning: false,
         );
-        _lastStatus = status;
-        notifyListeners();
+        _applyStatus(status);
         return Result.ok(status);
       }
 
@@ -101,12 +109,11 @@ class LocalGatewayRepository extends ChangeNotifier {
         port: serviceStatus.port,
         address: serviceStatus.address,
       );
-      _lastStatus = status;
       _log.info(
         'detectLocal: installed=$installed gatewayRunning=${status.gatewayRunning} '
         'port=${status.port} address=${status.address}',
       );
-      notifyListeners();
+      _applyStatus(status);
       return Result.ok(status);
     } on Exception catch (e) {
       _log.warning('detectLocal failed: $e');
@@ -122,9 +129,12 @@ class LocalGatewayRepository extends ChangeNotifier {
   /// 返回添加/更新的服务器；未在线返回 null。
   Future<Result<ServerConfig?>> ensureLocalServerAdded() async {
     try {
-      // 先确保有最新状态
+      // 缓存里的"未在线"随时可能过期：用户可能在终端里刚启动网关，
+      // 也可能上一次 startGateway 走的是"端口上已有实例"分支。
+      // 所以下"未在线"结论之前必须重新探测一次；只有缓存已经是在线时
+      // 才走快路径，避免每次连接都重跑 `openclaw --version`。
       var status = _lastStatus;
-      if (status == null) {
+      if (status == null || !status.online) {
         final result = await detectLocal();
         if (result is Error<LocalGatewayStatus>) {
           return Result.error(result.error);
@@ -206,35 +216,40 @@ class LocalGatewayRepository extends ChangeNotifier {
         _log.info(
           'startGateway command returned $exitCode, but Gateway is already running',
         );
-        return Result.ok(
-          LocalGatewayStatus(
-            installed: true,
-            nodeAvailable: true,
-            gatewayRunning: true,
-            port: existingStatus.port,
-            address: existingStatus.address,
-          ),
+        // 这条分支必须回写缓存：它返回的 Status 是"在线"，
+        // 而 ensureLocalServerAdded 读的是 _lastStatus。漏写会让紧随其后的
+        // connectLocal 拿着旧的"未在线"缓存误报"网关未启动"。
+        final runningStatus = LocalGatewayStatus(
+          installed: true,
+          nodeAvailable: true,
+          gatewayRunning: true,
+          port: existingStatus.port,
+          address: existingStatus.address,
         );
+        _applyStatus(runningStatus);
+        return Result.ok(runningStatus);
       }
 
       // gateway start 返回时进程可能刚拉起，端口和握手还没 ready。
-      // final deadline = DateTime.now().add(const Duration(seconds: 20));
-      // LocalGatewayStatus? lastStatus;
-      // while (DateTime.now().isBefore(deadline)) {
-      //   await Future.delayed(const Duration(seconds: 1));
-      //   final result = await detectLocal();
-      //   if (result is Error<LocalGatewayStatus>) {
-      //     return result;
-      //   }
-      //   lastStatus = (result as Ok<LocalGatewayStatus>).value;
-      //   if (lastStatus.online) {
-      //     return Result.ok(lastStatus);
-      //   }
-      // }
+      final deadline = DateTime.now().add(const Duration(seconds: 12));
+      LocalGatewayStatus? lastStatus;
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(seconds: 4));
+        final result = await detectLocal();
+        if (result is Error<LocalGatewayStatus>) {
+          return result;
+        }
+        lastStatus = (result as Ok<LocalGatewayStatus>).value;
+        if (lastStatus.online) {
+          return Result.ok(lastStatus);
+        }
+      }
 
-      return Result.ok(
-        lastStatus ?? const LocalGatewayStatus(installed: true, gatewayRunning: false),
-      );
+      final resolved =
+          lastStatus ??
+          const LocalGatewayStatus(installed: true, gatewayRunning: false);
+      _applyStatus(resolved);
+      return Result.ok(resolved);
     } on Exception catch (e) {
       _log.warning('startGateway failed: $e');
       return Result.error(e);

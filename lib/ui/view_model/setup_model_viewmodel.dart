@@ -6,7 +6,7 @@ import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:uuid/uuid.dart';
 
 class SetupModelOption {
@@ -49,8 +49,10 @@ enum SetupModelPhase { idle, saving, validating, success, error }
 class SetupModelViewModel extends ChangeNotifier {
   SetupModelViewModel({
     required ServerRepository serverRepository,
+    OpenClawRuntime? runtime,
     Logger? logger,
   }) : _serverRepository = serverRepository,
+       _runtime = runtime ?? OpenClawRuntime(),
        _log = logger ?? Logger('SetupModelViewModel');
 
   static const List<SetupProviderOption> providerOptions = [
@@ -92,21 +94,28 @@ class SetupModelViewModel extends ChangeNotifier {
   ];
 
   final ServerRepository _serverRepository;
+  final OpenClawRuntime _runtime;
   final Logger _log;
 
   SetupModelPhase _phase = SetupModelPhase.idle;
+
   SetupModelPhase get phase => _phase;
+
   bool get busy =>
       _phase == SetupModelPhase.saving || _phase == SetupModelPhase.validating;
+
   bool get configured => _phase == SetupModelPhase.success;
 
   String? _errorMessage;
+
   String? get errorMessage => _errorMessage;
 
   SetupProviderOption _selectedProvider = providerOptions.first;
+
   SetupProviderOption get selectedProvider => _selectedProvider;
 
   SetupModelOption _selectedModel = providerOptions.first.models.first;
+
   SetupModelOption get selectedModel => _selectedModel;
 
   ServerConfig? get selectedServer => _serverRepository.selectedServer;
@@ -130,16 +139,16 @@ class SetupModelViewModel extends ChangeNotifier {
     final apiKey = config.apiKey.trim();
 
     if (server == null) return _fail('未找到当前服务器，请先手动配置服务器');
-    if (provider.isEmpty) return _fail('请选择供应商');
-    if (baseUrl.isEmpty) return _fail('请输入 Base URL');
+    if (provider.isEmpty) return _fail('请选择供应�?');
+    if (baseUrl.isEmpty) return _fail('请输�? Base URL');
     final uri = Uri.tryParse(baseUrl);
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      return _fail('Base URL 格式不正确');
+      return _fail('Base URL 格式不正�?');
     }
     if (model.isEmpty) return _fail('请选择模型');
-    if (apiKey.isEmpty) return _fail('请输入 API Key');
+    if (apiKey.isEmpty) return _fail('请输�? API Key');
 
     _phase = SetupModelPhase.saving;
     _errorMessage = null;
@@ -150,9 +159,7 @@ class SetupModelViewModel extends ChangeNotifier {
       final patch = {
         'agents': {
           'defaults': {
-            'model': {
-              'primary': '$provider/$model',
-            },
+            'model': {'primary': '$provider/$model'},
           },
         },
         'models': {
@@ -200,10 +207,7 @@ class SetupModelViewModel extends ChangeNotifier {
   }
 
   Future<String> _readConfigBaseHash() async {
-    final response = await GatewayConnection.shared.requestRaw(
-      Method.configGet,
-      timeoutMs: 15000,
-    );
+    final response = await _runtime.configGet();
     final config = response['config'];
     final configMap = config is Map ? config : null;
     final value =
@@ -218,16 +222,15 @@ class SetupModelViewModel extends ChangeNotifier {
     final baseHash = value?.toString().trim() ?? '';
     _log.fine('config.get returned keys: ${response.keys.toList()}');
     if (baseHash.isEmpty) {
-      throw Exception('OpenClaw config.get 未返回 base hash');
+      throw Exception('OpenClaw config.get 未返�? base hash');
     }
     return baseHash;
   }
 
   Future<void> _sendConfigPatch(Map<String, dynamic> patch, String baseHash) {
-    return GatewayConnection.shared.requestRaw(
-      Method.configPatch,
+    return _runtime.requestKnown(
+      'config.patch',
       params: {'raw': jsonEncode(patch), 'baseHash': baseHash},
-      timeoutMs: 15000,
     );
   }
 
@@ -239,12 +242,12 @@ class SetupModelViewModel extends ChangeNotifier {
   }
 
   Future<void> _validateConversation() async {
-    final sessionKey = await GatewayConnection.shared.mainSessionKey();
+    final sessionKey = await _runtime.mainSessionKey();
     final idempotencyKey = 'setup_${const Uuid().v4()}';
     final completer = Completer<void>();
     late final StreamSubscription<GatewayPush> subscription;
 
-    subscription = GatewayConnection.shared.subscribe().listen((push) {
+    subscription = _runtime.pushes.listen((push) {
       if (push is! GatewayPushEvent || push.event != 'chat') return;
       final payload = push.payload;
       if (payload is! Map || payload['runId'] != idempotencyKey) return;
@@ -266,18 +269,17 @@ class SetupModelViewModel extends ChangeNotifier {
           break;
         case 'aborted':
           if (!completer.isCompleted) {
-            completer.completeError(Exception('模型对话验证已中止'));
+            completer.completeError(Exception('模型对话验证已中�?'));
           }
           break;
       }
     });
 
     try {
-      await GatewayConnection.shared.chatSend(
+      await _runtime.chatSend(
         sessionKey: sessionKey,
-        message: '请仅回复：配置测试成功',
+        message: '请仅回复：配置测试成�?',
         idempotencyKey: idempotencyKey,
-        timeoutMs: 30000,
       );
       await completer.future.timeout(
         const Duration(seconds: 30),
@@ -316,10 +318,10 @@ class SetupModelViewModel extends ChangeNotifier {
       return 'Base URL 或模型名称不正确';
     }
     if (message.contains('429') || message.contains('rate limit')) {
-      return '请求受限或账户额度不足，请稍后重试';
+      return '请求受限或账户额度不足，请稍后重�?';
     }
     if (error is TimeoutException || message.contains('timeout')) {
-      return '模型响应超时，请检查 Base URL 和网络';
+      return '模型响应超时，请检�? Base URL 和网�?';
     }
     return '模型配置验证失败，请检查填写内容后重试';
   }
@@ -337,11 +339,12 @@ class SetupModelViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _configureGateway(ServerConfig server) {
-    return GatewayConnection.shared.configure(
+  Future<void> _configureGateway(ServerConfig server) async{
+    final config = OpenClawRuntimeConfig(
       url: server.wsUrl,
       token: server.isTokenAuth ? server.token : null,
       password: server.isPasswordAuth ? server.password : null,
     );
+    return _runtime.configure(config);
   }
 }

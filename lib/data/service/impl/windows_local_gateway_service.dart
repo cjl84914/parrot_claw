@@ -5,6 +5,7 @@ import 'package:logging/logging.dart';
 import 'package:parrot_app/data/service/impl/windows_openclaw_environment.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/local_gateway_service.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 
 /// 本机 OpenClaw 网关检测服务（无状态，纯本机操作）
 ///
@@ -41,6 +42,36 @@ class WindowsLocalGatewayService implements LocalGatewayService {
 
   /// 单端口探测超时
   static const Duration _probeTimeout = Duration(seconds: 4);
+
+  /// `openclaw gateway run` 在前台跑到就绪时会打印的标志行。
+  ///
+  /// 与 macOS 侧同一份判定：openclaw 启动收尾日志 `log.info("gateway ready")`。
+  /// Windows 正常流程由托管服务负责，这一行通常不会出现在 CLI 输出里；
+  /// 保留它是为了 `gateway run` 前台模式（以及日志格式变化）时行为一致。
+  static final RegExp _gatewayReadyLine = RegExp(
+    r'gateway ready',
+    caseSensitive: false,
+  );
+
+  /// 启动失败标志，必须先于 [_gatewayReadyLine] 判断：
+  /// `refusing to report the gateway ready` 同样包含 `gateway ready`。
+  ///
+  /// 后几条是 Windows 上 `gateway restart` 失败时 CLI 的真实输出
+  /// （见 openclaw dist 的 lifecycle / schtasks 模块），命中就能给出确定原因，
+  /// 而不是只把一个 exit code 抛给调用方。
+  static final RegExp _gatewayStartupFailureLine = RegExp(
+    r'refusing to report the gateway ready'
+    r'|Gateway restart timed out after'
+    r'|No verified gateway process is listening'
+    r'|multiple gateway processes are listening'
+    r'|is not a verified gateway process'
+    r'|already listening on'
+    r'|EADDRINUSE',
+    caseSensitive: false,
+  );
+
+  /// 最近一次 CLI 调用中识别到的失败原因（只由启动流程消费）。
+  String? _lastCliFailure;
 
   /// 判断本机是否安装了 openclaw CLI
   ///
@@ -97,35 +128,25 @@ class WindowsLocalGatewayService implements LocalGatewayService {
     String? password,
   }) async {
     try {
-      await GatewayConnection.shared
-          .configure(url: 'ws://$host:$port', token: token, password: password)
-          .timeout(_probeTimeout);
-
-      final result = await GatewayConnection.shared.status().timeout(
-        _probeTimeout,
+      final config = OpenClawRuntimeConfig(
+        url: 'ws://$host:$port',
+        token: token,
+        password: password,
       );
-
+      final result = await OpenClawRuntime().configureResult(config);
       await _shutdownProbeConnection();
-
       final ok = result.ok;
       _log.fine('Gateway at $host:$port: ${ok ? 'online' : 'unreachable'}');
       return ok;
     } catch (e) {
-      final isAuthChallenge =
-          e is GatewayConnectAuthError ||
-          e.toString().contains('gateway token missing') ||
-          e.toString().contains('unauthorized');
-      _log.fine(
-        'Gateway at $host:$port ${isAuthChallenge ? 'requires auth' : 'not reachable'}: $e',
-      );
       await _shutdownProbeConnection();
-      return isAuthChallenge;
+      return false;
     }
   }
 
   Future<void> _shutdownProbeConnection() async {
     try {
-      await GatewayConnection.shared.shutdown();
+      await OpenClawRuntime().shutdown();
     } catch (e) {
       _log.fine('Gateway probe shutdown ignored: $e');
     }
@@ -151,7 +172,9 @@ class WindowsLocalGatewayService implements LocalGatewayService {
       }
     }
     return cliStatus ??
-        const LocalGatewayServiceStatus(state: LocalGatewayProcessState.stopped);
+        const LocalGatewayServiceStatus(
+          state: LocalGatewayProcessState.stopped,
+        );
   }
 
   Future<LocalGatewayServiceStatus?> _queryGatewayStatusFromCli() async {
@@ -176,19 +199,36 @@ class WindowsLocalGatewayService implements LocalGatewayService {
       final decoded = jsonDecode(output);
       if (decoded is! Map) return null;
       final json = Map<String, dynamic>.from(decoded);
-      final nested = json['service'] is Map
-          ? Map<String, dynamic>.from(json['service'] as Map)
-          : <String, dynamic>{};
-      final rawState = (json['status'] ?? json['state'] ?? nested['status'] ?? nested['state'])
-          ?.toString().toLowerCase();
-      final running = json['running'] == true || nested['running'] == true ||
-          rawState == 'running' || rawState == 'active' || rawState == 'online';
-      final stopped = json['running'] == false || nested['running'] == false ||
-          rawState == 'stopped' || rawState == 'inactive' || rawState == 'offline';
+      final nested =
+          json['service'] is Map
+              ? Map<String, dynamic>.from(json['service'] as Map)
+              : <String, dynamic>{};
+      final rawState =
+          (json['status'] ??
+                  json['state'] ??
+                  nested['status'] ??
+                  nested['state'])
+              ?.toString()
+              .toLowerCase();
+      final running =
+          json['running'] == true ||
+          nested['running'] == true ||
+          rawState == 'running' ||
+          rawState == 'active' ||
+          rawState == 'online';
+      final stopped =
+          json['running'] == false ||
+          nested['running'] == false ||
+          rawState == 'stopped' ||
+          rawState == 'inactive' ||
+          rawState == 'offline';
       if (!running && !stopped) return null;
       final port = _portFromStatus(json, nested);
       return LocalGatewayServiceStatus(
-        state: running ? LocalGatewayProcessState.running : LocalGatewayProcessState.stopped,
+        state:
+            running
+                ? LocalGatewayProcessState.running
+                : LocalGatewayProcessState.stopped,
         port: port,
         address: port == null ? null : '127.0.0.1:$port',
       );
@@ -198,17 +238,28 @@ class WindowsLocalGatewayService implements LocalGatewayService {
   }
 
   int? _portFromStatus(Map<String, dynamic> json, Map<String, dynamic> nested) {
-    final raw = json['port'] ?? nested['port'] ?? json['address'] ?? nested['address'] ??
-        json['url'] ?? nested['url'];
+    final raw =
+        json['port'] ??
+        nested['port'] ??
+        json['address'] ??
+        nested['address'] ??
+        json['url'] ??
+        nested['url'];
     if (raw is num) return raw.toInt();
-    final match = RegExp(r':(\d{1,5})(?:[/\s]|$)').firstMatch(raw?.toString() ?? '');
+    final match = RegExp(
+      r':(\d{1,5})(?:[/\s]|$)',
+    ).firstMatch(raw?.toString() ?? '');
     return match == null ? null : int.tryParse(match.group(1)!);
   }
 
   Future<bool> _isTcpPortOpen(int port) async {
     Socket? socket;
     try {
-      socket = await Socket.connect('127.0.0.1', port, timeout: const Duration(seconds: 1));
+      socket = await Socket.connect(
+        '127.0.0.1',
+        port,
+        timeout: const Duration(seconds: 1),
+      );
       return true;
     } catch (_) {
       return false;
@@ -245,6 +296,7 @@ class WindowsLocalGatewayService implements LocalGatewayService {
   Future<int> startGateway({void Function(String line)? onOutput}) async {
     try {
       onOutput?.call('正在启动 OpenClaw 网关...');
+      _lastCliFailure = null;
       await WindowsOpenClawEnvironment.ensureGatewayTokenForLan();
       final executable = await _requireOpenClaw();
       final environment = WindowsOpenClawEnvironment.openClawProcessEnvironment;
@@ -259,9 +311,8 @@ class WindowsLocalGatewayService implements LocalGatewayService {
         onOutput: onOutput,
       );
       if (installExitCode != 0) {
-        _log.warning(
-          'gateway install failed, exitCode=$installExitCode',
-        );
+        _log.warning('gateway install failed, exitCode=$installExitCode');
+        _reportGatewayStartFailure(installExitCode, onOutput);
         return installExitCode;
       }
 
@@ -272,11 +323,46 @@ class WindowsLocalGatewayService implements LocalGatewayService {
         onOutput: onOutput,
       );
       _log.info('gateway start finished, exitCode=$restartExitCode');
+      if (restartExitCode != 0) {
+        _reportGatewayStartFailure(restartExitCode, onOutput);
+      }
       return restartExitCode;
     } catch (e) {
       _log.warning('startGateway error: $e');
       rethrow;
     }
+  }
+
+  /// 把 CLI 控制台的行分类为就绪/失败信号，与 macOS 侧共用同一套判定。
+  ///
+  /// Windows 的就绪等待由 `gateway restart` 自己完成（CLI 会在退出前
+  /// 校验网关监听健康度，失败时打印 `Gateway restart timed out after ...`），
+  /// 所以这里不做等待，只负责把原因提取出来。
+  void _classifyGatewayStartupLine(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return;
+    if (_gatewayStartupFailureLine.hasMatch(trimmed)) {
+      _lastCliFailure ??= trimmed;
+      return;
+    }
+    if (_gatewayReadyLine.hasMatch(trimmed)) {
+      _log.info('gateway reported ready through console output');
+    }
+  }
+
+  /// 启动失败时把 CLI 给出的具体原因补进 UI 日志。
+  ///
+  /// 否则调用方只拿到一个退出码，界面上只能显示"启动失败"而无从解释。
+  void _reportGatewayStartFailure(
+    int exitCode,
+    void Function(String line)? onOutput,
+  ) {
+    final reason = _lastCliFailure;
+    onOutput?.call(
+      reason == null
+          ? '网关启动失败（exit code $exitCode），CLI 输出中未识别到具体原因'
+          : '网关启动失败：$reason',
+    );
   }
 
   Future<int> _runGatewayCommand(
@@ -291,20 +377,26 @@ class WindowsLocalGatewayService implements LocalGatewayService {
       environment: environment,
       runInShell: true,
     );
-    _listenProcessOutput(process, onOutput);
+    _listenProcessOutput(
+      process,
+      onOutput,
+      onLine: _classifyGatewayStartupLine,
+    );
     return process.exitCode;
   }
 
   void _listenProcessOutput(
     Process process,
-    void Function(String line)? onOutput,
-  ) {
+    void Function(String line)? onOutput, {
+    void Function(String line)? onLine,
+  }) {
     process.stdout
         .transform(const SystemEncoding().decoder)
         .transform(const LineSplitter())
         .listen((line) {
           _log.fine('[gateway:start] $line');
           onOutput?.call(line);
+          onLine?.call(line);
         });
     process.stderr
         .transform(const SystemEncoding().decoder)
@@ -312,6 +404,7 @@ class WindowsLocalGatewayService implements LocalGatewayService {
         .listen((line) {
           _log.fine('[gateway:start:err] $line');
           onOutput?.call(line);
+          onLine?.call(line);
         });
   }
 

@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
 import 'openclaw_protocol.dart';
@@ -91,7 +89,7 @@ class OpenClawRuntimeConfig {
   }
 
   @override
-  bool operator ==(Object other) =>
+  bool operator == (Object other) =>
       other is OpenClawRuntimeConfig &&
       other.url == url &&
       other.token == token &&
@@ -230,7 +228,7 @@ class OpenClawRuntime {
         error: GatewayResponseError(
           code: 'UNAVAILABLE',
           message: 'request failed',
-          method: "connect",
+          method: 'Connect',
         ),
       );
     }
@@ -505,22 +503,8 @@ class OpenClawRuntime {
     String? publicUrl,
     bool? preferRemoteUrl,
     bool includeQr = true,
-    String? bootstrapProfile,
-    bool joinUrl = false,
     Duration timeout = const Duration(seconds: 15),
   }) async {
-    if (bootstrapProfile != null &&
-        bootstrapProfile != 'limited' &&
-        bootstrapProfile != 'node') {
-      throw ArgumentError.value(
-        bootstrapProfile,
-        'bootstrapProfile',
-        'must be limited or node',
-      );
-    }
-    if (joinUrl && bootstrapProfile != 'node') {
-      throw ArgumentError('joinUrl requires bootstrapProfile=node');
-    }
 
     final data = await requestKnown(
       'device.pair.setupCode',
@@ -529,8 +513,6 @@ class OpenClawRuntime {
           'publicUrl': publicUrl!.trim(),
         if (preferRemoteUrl != null) 'preferRemoteUrl': preferRemoteUrl,
         'includeQr': includeQr,
-        if (bootstrapProfile != null) 'bootstrapProfile': bootstrapProfile,
-        if (joinUrl) 'joinUrl': true,
       },
       timeout: timeout,
     );

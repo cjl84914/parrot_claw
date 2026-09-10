@@ -5,9 +5,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
 import 'package:parrot_app/data/model/server_config.dart';
-import 'package:parrot_app/data/service/gateway_session.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/gateway_scope_store.dart';
+import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -25,6 +24,7 @@ class QrScanScreen extends StatefulWidget {
 class _QrScanScreenState extends State<QrScanScreen> {
   final MobileScannerController _controller = MobileScannerController();
   final Logger _log = Logger('QrScanScreen');
+  final OpenClawRuntime _runtime = OpenClawRuntime();
 
   bool _handling = false;
   bool _connectionHandedOff = false;
@@ -45,9 +45,18 @@ class _QrScanScreenState extends State<QrScanScreen> {
     'operator.write',
   ];
 
+  Future<void> _shutdownRuntime() async {
+    try {
+      await _runtime.shutdown();
+    } catch (error) {
+      _log.warning('Failed to close pairing runtime: $error');
+    }
+  }
+
   @override
   void dispose() {
     _controller.dispose();
+    _runtime.dispose();
     super.dispose();
   }
 
@@ -61,39 +70,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // 握手参数
-  // ─────────────────────────────────────────────
-
-  /// 第一阶段 node bootstrap：OpenClaw setup-code 配对是 node bootstrap 握手，
-  /// role=node + 空 scopes + mode=node 是服务端接受的精确形态；
-  /// 客户端身份必须用 canonical id（openclaw-android/ios）。
-  GatewayConnectOptions get _bootstrapOptions => GatewayConnectOptions(
-    role: 'node',
-    scopes: const <String>[],
-    scopesAreExplicit: true,
-    caps: const <String>[],
-    commands: const <String>[],
-    permissions: const <String, bool>{},
-    clientId: _clientId,
-    clientMode: 'node',
-    clientDisplayName: 'parrotClaw',
-  );
-
-  /// 第二阶段 operator 会话：只请求 bootstrap 实际授权的受限 scopes，
-  /// 避免按默认全量（含 admin/pairing）请求触发 scope-upgrade 审批。
-  GatewayConnectOptions operatorOptions(List<String> scopes) =>
-      GatewayConnectOptions(
-        role: 'operator',
-        scopes: scopes,
-        scopesAreExplicit: true,
-        caps: const <String>[],
-        commands: const <String>[],
-        permissions: const <String, bool>{},
-        clientId: _clientId,
-        clientMode: 'ui',
-        clientDisplayName: 'parrotClaw',
-      );
 
   // ─────────────────────────────────────────────
   // 主流程
@@ -109,20 +85,17 @@ class _QrScanScreenState extends State<QrScanScreen> {
         return;
       }
       await _controller.stop();
-      await _completePairing();
+      final paired = await _completePairing();
+      if (!paired && mounted) {
+        await _resetForRescan();
+      }
     } catch (error) {
       if (!mounted) return;
-      await _handleGatewayFailure(
-        gatewayErrorInfoFrom(error, method: 'connect'),
-      );
+      await _showHandshakeError(error.toString());
     } finally {
-      // 成功后连接已交给首页；仅失败/取消时关闭临时连接。
+      // 成功后将 operator 连接交给首页，避免 finally 抢先关闭它。
       if (!_connectionHandedOff) {
-        try {
-          await GatewayConnection.shared.shutdown();
-        } catch (e) {
-          print('[ParrotClaw] Failed to close test connection: $e');
-        }
+        await _shutdownRuntime();
       }
     }
   }
@@ -133,21 +106,30 @@ class _QrScanScreenState extends State<QrScanScreen> {
     final p = pairing;
     if (p == null) return false;
 
-    final bootstrapResult = await GatewayConnection.shared.configureResult(
-      url: p.wsUrl,
-      token: p.token,
-      password: p.password,
-      bootstrapToken: p.bootstrapToken,
-      connectOptions: _bootstrapOptions,
+    final bootstrapResult = await _runtime.configureResult(
+      OpenClawRuntimeConfig(
+        url: p.wsUrl,
+        token: p.token,
+        password: p.password,
+        bootstrapToken: p.bootstrapToken,
+        clientId: _clientId,
+        clientMode: 'node',
+        role: 'node',
+        scopes: const <String>[],
+        caps: const <String>[],
+        commands: const <String>[],
+        permissions: const <String, bool>{},
+        clientDisplayName: 'parrotClaw',
+      ),
     );
     if (!bootstrapResult.ok) {
-      await _handleGatewayFailure(bootstrapResult.error!);
+      await _showHandshakeError(bootstrapResult.error!.message);
       return false;
     }
 
     if (!mounted) return false;
     final snapshot =
-        bootstrapResult.data ?? GatewayConnection.shared.lastSnapshot;
+        bootstrapResult.data ?? _runtime.hello;
     final auth = snapshot?.auth ?? const <String, dynamic>{};
     _log.info('gateway bootstrap handshake completed');
 
@@ -163,13 +145,22 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
     final operatorScopes = _scopesFromEntry(operatorEntry);
 
-    final operatorResult = await GatewayConnection.shared.configureResult(
-      url: p.wsUrl,
-      token: operatorToken,
-      connectOptions: operatorOptions(operatorScopes),
+    final operatorResult = await _runtime.configureResult(
+      OpenClawRuntimeConfig(
+        url: p.wsUrl,
+        token: operatorToken,
+        clientId: _clientId,
+        clientMode: 'ui',
+        role: 'operator',
+        scopes: operatorScopes,
+        caps: const <String>[],
+        commands: const <String>[],
+        permissions: const <String, bool>{},
+        clientDisplayName: 'parrotClaw',
+      ),
     );
     if (!operatorResult.ok) {
-      await _handleGatewayFailure(operatorResult.error!);
+      await _showHandshakeError(operatorResult.error!.message);
       return false;
     }
 
@@ -190,8 +181,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
     await _saveConfig(config);
     // 配对成功后将已建立的 operator 连接交给首页 ConnViewModel。
-    // _handlePayload 的 finally 不能再 shutdown，否则会与首页的 connect()
-    // 形成竞态：刚配对成功就被关闭，首页会一直显示连接中。
+    // finally 不能再关闭它，否则首页刚开始连接就会被终止。
     _connectionHandedOff = true;
     if (mounted) context.go(Routes.index);
     return true;
@@ -205,32 +195,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
       await _handlePayload(payload);
     } catch (error) {
       if (!mounted) return;
-      await _handleGatewayFailure(
-        gatewayErrorInfoFrom(error, method: 'connect'),
-      );
+      await _showHandshakeError(error.toString());
     }
   }
 
   Future<void> _saveConfig(ServerConfig config) async {
     await widget.viewModel.addServer(config);
     widget.viewModel.selectServer(config);
-  }
-
-  Future<void> _handleGatewayFailure(GatewayErrorInfo error) async {
-    if (!mounted) return;
-    if (error.recoveryAction == GatewayRecoveryAction.showPairingPage) {
-      final approved = await context.push<bool>(Routes.gatewayPairing);
-      if (!mounted) return;
-      if (approved == true) {
-        // 网关上已授权（openclaw devices/nodes approve <requestId>）。
-        await _retryPairing();
-      } else {
-        // 用户直接返回：复位并恢复相机，等待重新扫码或再次进入。
-        await _resetForRescan();
-      }
-      return;
-    }
-    await _showHandshakeError(error.userMessage ?? error.message);
   }
 
   Future<void> _resetForRescan() async {

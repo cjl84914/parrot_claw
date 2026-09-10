@@ -314,7 +314,7 @@ class _SetupScreenState extends State<SetupScreen> {
         icon: Icons.error_outline,
         color: AppColors.error,
       ),
-    };
+    }; 
   }
 
   Future<void> _connect() async {
@@ -322,10 +322,14 @@ class _SetupScreenState extends State<SetupScreen> {
     try {
       final result = await widget.viewModel.connectLocal();
       if (!mounted) return;
-      if (result != null) {
-        context.push(result.hasModel ? Routes.index : Routes.setupModel);
+      if (result.isSaved) {
+        context.go(result.hasModel ? Routes.index : Routes.setupModel);
       } else {
-        MySnackBar.showWarning(context, '连接失败，请重试');
+        MySnackBar.showWarning(context, result.errorMessage ?? '保存本机网关失败，请重试');
+      }
+    } catch (error) {
+      if (mounted) {
+        MySnackBar.showWarning(context, '连接失败：$error');
       }
     } finally {
       if (mounted) setState(() => _connecting = false);

@@ -298,6 +298,7 @@ class OpenClawProtocolCatalog {
     'skills.proposals.reject', 'skills.proposals.quarantine', 'update.status',
     'update.run', 'voicewake.get', 'voicewake.set', 'secrets.reload',
     'secrets.resolve', 'voicewake.routing.get', 'sessions.list',
+    'config.get', 'config.patch',
     'sessions.subscribe', 'sessions.messages.subscribe',
     'sessions.messages.unsubscribe', 'sessions.viewers.set', 'sessions.preview',
     'sessions.describe', 'sessions.compaction.list', 'sessions.compaction.branch',
