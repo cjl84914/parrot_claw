@@ -7,6 +7,7 @@ import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/session_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
@@ -19,7 +20,7 @@ import 'package:uuid/uuid.dart';
 int _selectedNavIndex = 0;
 
 class SidebarWidget extends StatefulWidget {
-  final ConnViewModel viewModel;
+  final SessionViewModel viewModel;
 
   const SidebarWidget({super.key, required this.viewModel});
 

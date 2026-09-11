@@ -17,8 +17,9 @@ import 'package:parrot_app/data/model/message.dart' hide ChatMessage;
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
+import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
-import 'package:parrot_app/ui/view_model/hive_chat_controller.dart';
+import 'package:parrot_app/ui/widget/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/ui/widget/voice_input_button.dart';
@@ -36,7 +37,7 @@ import 'package:parrot_app/data/model/message.dart' as model;
 enum InputMode { Text, Voice }
 
 class ChatScreen extends StatefulWidget {
-  final ConnViewModel viewModel;
+  final ChatViewModel viewModel;
 
   const ChatScreen({super.key, required this.viewModel});
 

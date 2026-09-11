@@ -36,6 +36,7 @@ import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/cron_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/session_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/skill_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_model_viewmodel.dart';
@@ -50,6 +51,7 @@ import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/screen/launch_screen.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'ui/screen/help_screen.dart';
+import 'ui/view_model/chat_viewmodel.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
@@ -148,11 +150,17 @@ List<SingleChildWidget> providersLocal(
       create: (context) => ServerViewModel(serverRepository: context.read()),
     ),
     ChangeNotifierProvider(
+      create: (context) => ConnViewModel(gatewayRepository: context.read()),
+    ),
+    ChangeNotifierProvider(
       create:
-          (context) => ConnViewModel(
-            settingRepository: context.read(),
+          (context) => ChatViewModel(
             gatewayRepository: context.read(),
+            settingRepository: context.read(),
           ),
+    ),
+    ChangeNotifierProvider(
+      create: (context) => SessionViewModel(gatewayRepository: context.read()),
     ),
     // Skill / Cron 管理：直接依赖 OpenClawRuntime 全局单例
     ChangeNotifierProvider(create: (context) => SkillViewModel()),

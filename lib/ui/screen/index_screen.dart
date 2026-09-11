@@ -65,7 +65,7 @@ class _IndexScreenState extends State<IndexScreen> {
     return SafeArea(
       child: Scaffold(
         key: indexController.scaffoldKey,
-        drawer: Drawer(child: SidebarWidget(viewModel: widget.viewModel)),
+        drawer: Drawer(child: SidebarWidget(viewModel: context.read())),
         onDrawerChanged: (isOpened) {
           // indexController.switchSideBarVisible();
           if (!isOpened) {

@@ -10,7 +10,7 @@ import 'package:parrot_app/data/repository/setting_repository.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/flutter_tts_util.dart';
@@ -20,7 +20,7 @@ import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
 class VoiceScreen extends StatefulWidget {
-  final ConnViewModel viewModel;
+  final ChatViewModel viewModel;
 
   const VoiceScreen({super.key, required this.viewModel});
 
