@@ -88,15 +88,23 @@ class _IndexScreenState extends State<IndexScreen> {
               child: ListenableBuilder(
                 listenable: Listenable.merge([widget.viewModel]),
                 builder: (context, child) {
+                  final reconnecting = widget.viewModel.isReconnecting;
                   return Column(
                     children: [
                       if (widget.viewModel.disconnectReason != null &&
                           !widget.viewModel.connected)
                         _buildResultBanner(
-                          icon: Icons.error_outline,
-                          color: AppColors.error,
-                          title: '连接失败',
+                          icon: reconnecting
+                              ? Icons.sync
+                              : Icons.error_outline,
+                          color: reconnecting
+                              ? AppColors.warning
+                              : AppColors.error,
+                          title: reconnecting ? '正在重连' : '连接失败',
                           detail: widget.viewModel.disconnectReason!,
+                          onRetry: reconnecting
+                              ? null
+                              : () => widget.viewModel.reconnect(),
                         ),
                       Expanded(child: widget.child),
                       const SizedBox(height: 12),
@@ -116,6 +124,7 @@ class _IndexScreenState extends State<IndexScreen> {
     required Color color,
     required String title,
     String? detail,
+    VoidCallback? onRetry,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
@@ -131,13 +140,26 @@ class _IndexScreenState extends State<IndexScreen> {
             children: [
               Icon(icon, color: color, size: 18),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              if (onRetry != null)
+                TextButton(
+                  onPressed: onRetry,
+                  style: TextButton.styleFrom(
+                    foregroundColor: color,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('重试'),
+                ),
             ],
           ),
           if (detail != null) ...[

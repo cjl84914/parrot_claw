@@ -141,6 +141,7 @@ class OpenClawRuntime {
     required void Function(GatewayPush push) onPush,
     required void Function(String reason) onDisconnect,
   })
+
   sessionFactory;
 
   /// Whether this runtime is the shared [instance].
@@ -161,6 +162,46 @@ class OpenClawRuntime {
   Future<void>? _configureOperation;
   bool _disposed = false;
 
+  /// Whether the operator session should be kept alive.
+  ///
+  /// Set by [configure], cleared by [shutdown]/[dispose]. Every automatic
+  /// recovery path (reconnect supervisor + liveness probe) is gated on this so
+  /// a deliberately closed runtime never fights the caller.
+  bool _shouldRun = false;
+
+  Timer? _supervisorTimer;
+  Duration _supervisorBackoff = _supervisorInitialDelay;
+  Timer? _livenessTimer;
+  DateTime? _lastPushAt;
+  bool _probeInFlight = false;
+
+  /// First delay before the supervisor retries a dropped session.
+  static const Duration _supervisorInitialDelay = Duration(seconds: 1);
+
+  /// Upper bound for the supervisor backoff.
+  ///
+  /// Deliberately much shorter than [GatewayRetryPolicy.maxDelay]: a gateway
+  /// restart is usually back within a couple of seconds, and waiting 30s for
+  /// the next attempt is what makes the app look like it never reconnected.
+  static const Duration _supervisorMaxDelay = Duration(seconds: 5);
+
+  /// How often the runtime checks whether the session still looks alive.
+  static const Duration _defaultLivenessInterval = Duration(seconds: 15);
+
+  /// Silence on the push stream longer than this means the socket is suspect.
+  static const Duration _defaultLivenessStaleAfter = Duration(seconds: 45);
+
+  static const Duration _defaultLivenessTimeout = Duration(seconds: 6);
+
+  /// How often the liveness probe runs. Overridable for tests.
+  final Duration livenessInterval;
+
+  /// How long the push stream may stay quiet before the probe runs.
+  final Duration livenessStaleAfter;
+
+  /// Timeout of a single liveness probe request.
+  final Duration livenessTimeout;
+
   OpenClawRuntime({
     GatewaySession Function({
       required OpenClawRuntimeConfig config,
@@ -168,16 +209,25 @@ class OpenClawRuntime {
       required void Function(String reason) onDisconnect,
     })?
     sessionFactory,
+    this.livenessInterval = _defaultLivenessInterval,
+    this.livenessStaleAfter = _defaultLivenessStaleAfter,
+    this.livenessTimeout = _defaultLivenessTimeout,
   }) : sessionFactory = sessionFactory ?? _defaultSessionFactory,
        _isSingleton = false;
 
   OpenClawRuntime._singleton()
     : sessionFactory = _defaultSessionFactory,
+      livenessInterval = _defaultLivenessInterval,
+      livenessStaleAfter = _defaultLivenessStaleAfter,
+      livenessTimeout = _defaultLivenessTimeout,
       _isSingleton = true;
 
   OpenClawRuntimeState get state => _state;
 
   bool get isReady => _state == OpenClawRuntimeState.ready;
+
+  /// Whether the runtime has a configured session that is trying to come back.
+  bool get isReconnecting => _state == OpenClawRuntimeState.reconnecting;
 
   OpenClawRuntimeConfig? get config => _config;
 
@@ -198,7 +248,10 @@ class OpenClawRuntime {
     final operation = Completer<void>();
     _configureOperation = operation.future;
     try {
+      _shouldRun = true;
+      _startLivenessWatch();
       if (_config == config && _session != null) {
+        _supervisorBackoff = _supervisorInitialDelay;
         await _session!.connect();
         return;
       }
@@ -220,6 +273,10 @@ class OpenClawRuntime {
     } catch (error) {
       if (_session != null && !_session!.connected) {
         _setState(OpenClawRuntimeState.disconnected);
+        // `configure` may be called while the gateway is still down (e.g. the
+        // app starts before the local gateway finishes booting). Keep retrying
+        // instead of leaving the caller to notice.
+        _scheduleSupervisorReconnect();
       }
       rethrow;
     } finally {
@@ -257,8 +314,25 @@ class OpenClawRuntime {
     await configure(current);
   }
 
+  /// Makes sure the shared session is up, reusing [config] when needed.
+  ///
+  /// Safe to call repeatedly: a healthy runtime returns immediately. Used by
+  /// callers (repository / UI) that want a cheap "just reconnect" entry point.
+  Future<void> ensureConnected() async {
+    _ensureActive();
+    if (_state == OpenClawRuntimeState.ready && (_session?.connected ?? false)) {
+      return;
+    }
+    final current = _config;
+    if (current == null) return;
+    await configure(current);
+  }
+
   Future<void> shutdown() async {
     if (_disposed) return;
+    _shouldRun = false;
+    _cancelSupervisor();
+    _stopLivenessWatch();
     await _shutdownSession();
     _config = null;
     _hello = null;
@@ -738,6 +812,9 @@ class OpenClawRuntime {
     if (_isSingleton) {
       // The shared runtime is reused by other ViewModels (Skill/Cron) and by
       // later connections, so only release the current session here.
+      _shouldRun = false;
+      _cancelSupervisor();
+      _stopLivenessWatch();
       await _shutdownSession();
       _config = null;
       _hello = null;
@@ -745,14 +822,20 @@ class OpenClawRuntime {
       return;
     }
     _disposed = true;
+    _shouldRun = false;
+    _cancelSupervisor();
+    _stopLivenessWatch();
     await _shutdownSession();
     await _pushes.close();
     await _states.close();
   }
 
   void _handlePush(GatewayPush push) {
+    _lastPushAt = DateTime.now();
     if (push is GatewayPushSnapshot) {
       _hello = push.snapshot;
+      _supervisorBackoff = _supervisorInitialDelay;
+      _cancelSupervisor();
       _setState(OpenClawRuntimeState.ready);
     }
     if (!_pushes.isClosed) _pushes.add(push);
@@ -762,6 +845,119 @@ class OpenClawRuntime {
     if (_disposed) return;
     _setState(OpenClawRuntimeState.disconnected);
     _openClawLog.warning('OpenClaw operator session disconnected: $reason');
+    _scheduleSupervisorReconnect();
+  }
+
+  /// Retries the operator session on the runtime's own short backoff.
+  ///
+  /// `GatewaySession` already retries internally, but that loop only exists
+  /// while the session object itself is alive: it is dropped by
+  /// [shutdown]/[dispose], by a socket replaced under it, and by any path that
+  /// bumps the session generation before the failure is observed. When that
+  /// happens the app looks permanently disconnected even though the gateway is
+  /// healthy again. This supervisor is the app-level safety net for exactly
+  /// that case, and its cap (a few seconds) keeps recovery snappy after a
+  /// gateway restart.
+  void _scheduleSupervisorReconnect() {
+    if (_disposed || !_shouldRun) return;
+    if (_supervisorTimer?.isActive ?? false) return;
+    if (_state == OpenClawRuntimeState.ready ||
+        _state == OpenClawRuntimeState.connecting) {
+      return;
+    }
+    _setState(OpenClawRuntimeState.reconnecting);
+    final delay = _supervisorBackoff;
+    final next = Duration(
+      milliseconds: (_supervisorBackoff.inMilliseconds * 2).round(),
+    );
+    _supervisorBackoff = next.compareTo(_supervisorMaxDelay) > 0
+        ? _supervisorMaxDelay
+        : next;
+    _supervisorTimer = Timer(delay, () async {
+      _supervisorTimer = null;
+      if (_disposed ||
+          !_shouldRun ||
+          _state == OpenClawRuntimeState.ready ||
+          _state == OpenClawRuntimeState.connecting) {
+        return;
+      }
+      final session = _session;
+      if (session == null) {
+        // The session was torn down (e.g. by a competing shutdown). Rebuild it
+        // from the last known config so the connection comes back by itself.
+        final current = _config;
+        if (current == null) return;
+        try {
+          await configure(current);
+        } catch (error) {
+          _openClawLog.warning('Runtime rebuild failed: $error');
+          _scheduleSupervisorReconnect();
+        }
+        return;
+      }
+      try {
+        await session.connect();
+      } catch (error) {
+        _openClawLog.warning('Supervisor reconnect failed: $error');
+        _scheduleSupervisorReconnect();
+      }
+    });
+  }
+
+  void _cancelSupervisor() {
+    _supervisorTimer?.cancel();
+    _supervisorTimer = null;
+  }
+
+  void _startLivenessWatch() {
+    if (_livenessTimer != null) return;
+    _lastPushAt = DateTime.now();
+    _livenessTimer = Timer.periodic(livenessInterval, (_) => _probeLiveness());
+  }
+
+  void _stopLivenessWatch() {
+    _livenessTimer?.cancel();
+    _livenessTimer = null;
+    _probeInFlight = false;
+  }
+
+  /// Detects a half-open socket: the peer is gone but no close frame arrived.
+  ///
+  /// Only runs once the push stream has been quiet for [_livenessStaleAfter],
+  /// so a healthy (ticking) session costs no extra traffic. When the probe
+  /// fails the socket is torn down and reopened immediately instead of waiting
+  /// for the session's own tick watchdog.
+  Future<void> _probeLiveness() async {
+    if (_disposed || !_shouldRun || _probeInFlight) return;
+    if (_state != OpenClawRuntimeState.ready) {
+      _scheduleSupervisorReconnect();
+      return;
+    }
+    final session = _session;
+    if (session == null) {
+      _scheduleSupervisorReconnect();
+      return;
+    }
+    final last = _lastPushAt;
+    if (last != null &&
+        DateTime.now().difference(last) < livenessStaleAfter) {
+      return;
+    }
+    _probeInFlight = true;
+    try {
+      await session.request(method: 'health', timeout: livenessTimeout);
+    } catch (error) {
+      _openClawLog.warning('Gateway liveness probe failed: $error');
+      _setState(OpenClawRuntimeState.reconnecting);
+      try {
+        await session.forceReconnect();
+      } catch (reconnectError) {
+        _openClawLog.warning('Forced reconnect failed: $reconnectError');
+        _scheduleSupervisorReconnect();
+      }
+    } finally {
+      _probeInFlight = false;
+    }
   }
 
   Future<void> _shutdownSession() async {
@@ -781,7 +977,7 @@ class OpenClawRuntime {
   }
 }
 
-enum OpenClawRuntimeState { idle, connecting, ready, disconnected }
+enum OpenClawRuntimeState { idle, connecting, ready, reconnecting, disconnected }
 
 GatewaySession _defaultSessionFactory({
   required OpenClawRuntimeConfig config,

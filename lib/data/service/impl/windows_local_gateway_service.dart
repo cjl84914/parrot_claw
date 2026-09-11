@@ -133,7 +133,11 @@ class WindowsLocalGatewayService implements LocalGatewayService {
         token: token,
         password: password,
       );
-      final result = await OpenClawRuntime().configureResult(config);
+      // 探测必须用独立的 runtime 实例，绝不能碰 OpenClawRuntime.instance，
+      // 否则会把 App 正在用的共享会话一起关掉（并停掉它的自动重连）。
+      final probe = OpenClawRuntime();
+      _probeRuntime = probe;
+      final result = await probe.configureResult(config);
       await _shutdownProbeConnection();
       final ok = result.ok;
       _log.fine('Gateway at $host:$port: ${ok ? 'online' : 'unreachable'}');
@@ -144,9 +148,14 @@ class WindowsLocalGatewayService implements LocalGatewayService {
     }
   }
 
+  OpenClawRuntime? _probeRuntime;
+
   Future<void> _shutdownProbeConnection() async {
+    final probe = _probeRuntime;
+    _probeRuntime = null;
+    if (probe == null) return;
     try {
-      await OpenClawRuntime().shutdown();
+      await probe.dispose();
     } catch (e) {
       _log.fine('Gateway probe shutdown ignored: $e');
     }

@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/repository/local_gateway_repository.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
@@ -52,6 +53,15 @@ import 'ui/screen/help_screen.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
+  // 连接/重连这类问题只能靠日志定位，之前没有任何 onRecord 监听，
+  // 所有 _log.info/warning 都被丢弃了。这里统一打到控制台。
+  if (kDebugMode) {
+    Logger.root.onRecord.listen((record) {
+      debugPrint(
+        '[${record.level.name}] ${record.loggerName}: ${record.message}',
+      );
+    });
+  }
 
   WidgetsFlutterBinding.ensureInitialized();
   // await dotenv.load(fileName: '.env');
@@ -112,6 +122,13 @@ List<SingleChildWidget> providersLocal(
     ChangeNotifierProvider(
       create: (context) => ServerRepository(context.read<StorageService>()),
     ),
+    ChangeNotifierProvider(
+      create:
+          (context) => GatewayRepository(
+            settingRepository: context.read(),
+            serverRepository: context.read(),
+          ),
+    ),
     // 本地网关：Service + Repository（依赖 ServerRepository）
     Provider<LocalGatewayService>.value(value: openClawServices.gateway),
     Provider<OpenClawInstallerService>.value(value: openClawServices.installer),
@@ -134,7 +151,7 @@ List<SingleChildWidget> providersLocal(
       create:
           (context) => ConnViewModel(
             settingRepository: context.read(),
-            serverRepository: context.read(),
+            gatewayRepository: context.read(),
           ),
     ),
     // Skill / Cron 管理：直接依赖 OpenClawRuntime 全局单例

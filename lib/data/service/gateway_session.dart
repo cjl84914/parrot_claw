@@ -654,6 +654,9 @@ class GatewaySession {
     _cancelReconnect();
     await _disposeSocket(failPending: true);
     _challenge = Completer<String>();
+    // 失败路径会在没人 await 的情况下用错误结束 challenge（例如握手前的
+    // socket.ready 抛错）。挂一个空监听，避免变成未处理的异步异常。
+    _challenge!.future.ignore();
 
     try {
       await () async {
@@ -695,6 +698,28 @@ class GatewaySession {
     await _disposeSocket(failPending: true, shutdown: true);
     _completeConnectWaiters();
     _state = GatewaySessionState.idle;
+  }
+
+  /// Drops the current socket and immediately opens a fresh one.
+  ///
+  /// Unlike [connect] this never short-circuits on `connected`: a half-open
+  /// socket keeps `_state == ready` long after the peer is gone, so the only
+  /// way to recover from a stale connection is to tear the socket down first.
+  /// Reconnect stays enabled, so a failed attempt falls back to the regular
+  /// backoff loop.
+  Future<void> forceReconnect() async {
+    if (_state == GatewaySessionState.shuttingDown ||
+        _state == GatewaySessionState.idle) {
+      return;
+    }
+    _shouldReconnect = true;
+    _cancelReconnect();
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    ++_generation;
+    await _disposeSocket(failPending: true);
+    _state = GatewaySessionState.disconnected;
+    await connect();
   }
 
   Future<Map<String, dynamic>> request({

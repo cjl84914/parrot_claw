@@ -7,8 +7,7 @@ import 'package:parrot_app/data/service/openclaw_runtime.dart';
 /// 直接依赖全局 [OpenClawRuntime] 单例，由 ViewModel 负责参数校验、
 /// 结果解析和 loading/error 状态，不再经过额外的 Repository 层。
 class SkillViewModel extends ChangeNotifier {
-  SkillViewModel({OpenClawRuntime? runtime})
-    : _runtime = runtime ?? OpenClawRuntime.instance;
+  SkillViewModel() : _runtime = OpenClawRuntime.instance;
 
   final OpenClawRuntime _runtime;
   List<GatewaySkill> _skills = const [];
@@ -17,8 +16,11 @@ class SkillViewModel extends ChangeNotifier {
   String? _lastOperation;
 
   List<GatewaySkill> get skills => List.unmodifiable(_skills);
+
   bool get isLoading => _isLoading;
+
   String? get error => _error;
+
   String? get lastOperation => _lastOperation;
 
   Future<bool> load() async {

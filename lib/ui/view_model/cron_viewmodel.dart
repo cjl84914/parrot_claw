@@ -7,8 +7,8 @@ import 'package:parrot_app/data/service/openclaw_runtime.dart';
 /// 直接依赖全局 [OpenClawRuntime] 单例，由 ViewModel 负责参数校验、
 /// 结果解析和 loading/error 状态，不再经过额外的 Repository 层。
 class CronViewModel extends ChangeNotifier {
-  CronViewModel({OpenClawRuntime? runtime})
-    : _runtime = runtime ?? OpenClawRuntime.instance;
+  CronViewModel()
+    : _runtime = OpenClawRuntime.instance;
 
   final OpenClawRuntime _runtime;
   List<GatewayCronJob> _jobs = const [];
