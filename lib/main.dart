@@ -34,6 +34,8 @@ import 'package:parrot_app/ui/screen/gateway_control_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/cron_viewmodel.dart';
+import 'package:parrot_app/ui/view_model/skill_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_model_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
@@ -47,7 +49,6 @@ import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/screen/launch_screen.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'ui/screen/help_screen.dart';
-
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
@@ -136,6 +137,9 @@ List<SingleChildWidget> providersLocal(
             serverRepository: context.read(),
           ),
     ),
+    // Skill / Cron 管理：直接依赖 OpenClawRuntime 全局单例
+    ChangeNotifierProvider(create: (context) => SkillViewModel()),
+    ChangeNotifierProvider(create: (context) => CronViewModel()),
     // 本地引导 ViewModel
     ChangeNotifierProvider(
       create:
@@ -187,9 +191,11 @@ class _MyAppState extends State<MyApp> {
           themeMode: ThemeMode.dark,
           builder: (context, widget) {
             return MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: TextScaler.linear(Platform.isAndroid || Platform.isIOS? 1.0.sp : 1.0)),
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(
+                  Platform.isAndroid || Platform.isIOS ? 1.0.sp : 1.0,
+                ),
+              ),
               child: FlutterEasyLoading(child: widget),
             );
           },
@@ -304,7 +310,9 @@ final GoRouter router = GoRouter(
     ),
     GoRoute(
       path: Routes.gatewayPairing,
-      builder: (context, state) => GatewayPairingScreen(requestId: state.extra as String),
+      builder:
+          (context, state) =>
+              GatewayPairingScreen(requestId: state.extra as String),
     ),
     GoRoute(
       path: Routes.serverEdit,

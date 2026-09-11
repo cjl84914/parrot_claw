@@ -118,7 +118,7 @@ class ConnViewModel extends ChangeNotifier {
     OpenClawRuntime? runtime,
   }) : _settingRepository = settingRepository,
        _serverRepository = serverRepository,
-       _runtime = runtime ?? OpenClawRuntime() {
+       _runtime = runtime ?? OpenClawRuntime.instance {
     _runtimeSub = _runtime.pushes.listen(_handleRuntimePush);
     _runtimeStateSub = _runtime.states.listen(_handleRuntimeState);
     _serverRepository.addListener(_onServerChanged);
@@ -131,7 +131,6 @@ class ConnViewModel extends ChangeNotifier {
 
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
   bool _manualDisconnect = false;
-
 
   /// 连接服务器（串行化）
   ///

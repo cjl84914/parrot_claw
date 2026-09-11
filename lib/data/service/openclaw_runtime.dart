@@ -89,7 +89,7 @@ class OpenClawRuntimeConfig {
   }
 
   @override
-  bool operator == (Object other) =>
+  bool operator ==(Object other) =>
       other is OpenClawRuntimeConfig &&
       other.url == url &&
       other.token == token &&
@@ -128,13 +128,26 @@ class OpenClawRuntimeConfig {
 /// This class intentionally does not depend on existing screens, ViewModels or
 /// GatewayConnection. It reuses the tested low-level GatewaySession for the
 /// transport and owns the operator-facing protocol facade here.
+///
+/// The runtime is process-wide: [OpenClawRuntime.instance] is shared by every
+/// ViewModel (connection, Skill, Cron), so the operator session is configured
+/// once and all consumers talk to the same Gateway connection.
 class OpenClawRuntime {
+  /// The process-wide shared runtime.
+  static final OpenClawRuntime instance = OpenClawRuntime._singleton();
+
   final GatewaySession Function({
     required OpenClawRuntimeConfig config,
     required void Function(GatewayPush push) onPush,
     required void Function(String reason) onDisconnect,
   })
   sessionFactory;
+
+  /// Whether this runtime is the shared [instance].
+  ///
+  /// The shared runtime outlives individual ViewModels, so [dispose] only
+  /// releases its session instead of tearing down the object permanently.
+  final bool _isSingleton;
 
   final StreamController<GatewayPush> _pushes =
       StreamController<GatewayPush>.broadcast();
@@ -155,7 +168,12 @@ class OpenClawRuntime {
       required void Function(String reason) onDisconnect,
     })?
     sessionFactory,
-  }) : sessionFactory = sessionFactory ?? _defaultSessionFactory;
+  }) : sessionFactory = sessionFactory ?? _defaultSessionFactory,
+       _isSingleton = false;
+
+  OpenClawRuntime._singleton()
+    : sessionFactory = _defaultSessionFactory,
+      _isSingleton = true;
 
   OpenClawRuntimeState get state => _state;
 
@@ -220,9 +238,7 @@ class OpenClawRuntime {
       return GatewayOperationResult.success(data: _hello);
     } catch (error) {
       if (error is GatewayResponseError) {
-        return GatewayOperationResult.failure(
-          error: error,
-        );
+        return GatewayOperationResult.failure(error: error);
       }
       return GatewayOperationResult.failure(
         error: GatewayResponseError(
@@ -454,7 +470,7 @@ class OpenClawRuntime {
       _openClawLog.warning(
         'Session lifecycle action requires a durable session identity.',
       );
-      return false;h
+      return false;
     }
 
     final params = <String, dynamic>{
@@ -556,12 +572,108 @@ class OpenClawRuntime {
     Duration? timeout,
   }) => requestKnown(
     'cron.run',
-    params: {'id': id, 'force': force},
+    params: {'id': _requireJobId(id), 'force': force},
     timeout: timeout,
   );
 
+  Future<Map<String, dynamic>> cronRuns({
+    required String id,
+    int limit = 200,
+    Duration? timeout,
+  }) => requestKnown(
+    'cron.runs',
+    params: {'id': _requireJobId(id), 'limit': limit},
+    timeout: timeout,
+  );
+
+  Future<Map<String, dynamic>> cronAdd({
+    required Map<String, dynamic> payload,
+    Duration? timeout,
+  }) {
+    if (payload.isEmpty) {
+      throw ArgumentError.value(payload, 'payload', '任务参数不能为空');
+    }
+    return requestKnown('cron.add', params: payload, timeout: timeout);
+  }
+
+  Future<Map<String, dynamic>> cronUpdate({
+    required String id,
+    required Map<String, dynamic> patch,
+    Duration? timeout,
+  }) {
+    if (patch.isEmpty) {
+      throw ArgumentError.value(patch, 'patch', '更新内容不能为空');
+    }
+    return requestKnown(
+      'cron.update',
+      params: {'id': _requireJobId(id), 'patch': patch},
+      timeout: timeout,
+    );
+  }
+
+  Future<Map<String, dynamic>> cronRemove({
+    required String id,
+    Duration? timeout,
+  }) => requestKnown(
+    'cron.remove',
+    params: {'id': _requireJobId(id)},
+    timeout: timeout,
+  );
+
+  Future<Map<String, dynamic>> cronStatus({Duration? timeout}) =>
+      requestKnown('cron.status', timeout: timeout);
+
   Future<Map<String, dynamic>> skillsStatus({Duration? timeout}) =>
       requestKnown('skills.status', timeout: timeout);
+
+  Future<Map<String, dynamic>> skillsInstall({
+    required String name,
+    required String installId,
+    bool? dangerouslyForceUnsafeInstall,
+    Duration? timeout,
+  }) {
+    final normalizedName = name.trim();
+    final normalizedInstallId = installId.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Skill 名称不能为空');
+    }
+    if (normalizedInstallId.isEmpty) {
+      throw ArgumentError.value(installId, 'installId', '安装方式不能为空');
+    }
+    return requestKnown(
+      'skills.install',
+      params: {
+        'name': normalizedName,
+        'installId': normalizedInstallId,
+        if (dangerouslyForceUnsafeInstall != null)
+          'dangerouslyForceUnsafeInstall': dangerouslyForceUnsafeInstall,
+      },
+      timeout: timeout,
+    );
+  }
+
+  Future<Map<String, dynamic>> skillsUpdate({
+    required String skillKey,
+    bool? enabled,
+    String? apiKey,
+    Map<String, String>? env,
+    Duration? timeout,
+  }) {
+    final normalizedKey = skillKey.trim();
+    if (normalizedKey.isEmpty) {
+      throw ArgumentError.value(skillKey, 'skillKey', 'Skill 标识不能为空');
+    }
+    return requestKnown(
+      'skills.update',
+      params: {
+        'skillKey': normalizedKey,
+        if (enabled != null) 'enabled': enabled,
+        if (apiKey != null) 'apiKey': apiKey,
+        if (env != null && env.isNotEmpty) 'env': env,
+      },
+      timeout: timeout,
+    );
+  }
 
   Future<Map<String, dynamic>> skillsSearch({
     required String query,
@@ -581,7 +693,6 @@ class OpenClawRuntime {
     bool includeQr = true,
     Duration timeout = const Duration(seconds: 15),
   }) async {
-
     final data = await requestKnown(
       'device.pair.setupCode',
       params: {
@@ -624,6 +735,15 @@ class OpenClawRuntime {
 
   Future<void> dispose() async {
     if (_disposed) return;
+    if (_isSingleton) {
+      // The shared runtime is reused by other ViewModels (Skill/Cron) and by
+      // later connections, so only release the current session here.
+      await _shutdownSession();
+      _config = null;
+      _hello = null;
+      _setState(OpenClawRuntimeState.idle);
+      return;
+    }
     _disposed = true;
     await _shutdownSession();
     await _pushes.close();
@@ -682,6 +802,14 @@ GatewaySession _defaultSessionFactory({
 String? _nonEmpty(String? value) {
   final normalized = value?.trim();
   return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+String _requireJobId(String id) {
+  final normalized = id.trim();
+  if (normalized.isEmpty) {
+    throw ArgumentError.value(id, 'id', '任务 ID 不能为空');
+  }
+  return normalized;
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {
