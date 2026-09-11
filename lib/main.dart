@@ -32,7 +32,6 @@ import 'package:parrot_app/ui/screen/qr_code_screen.dart';
 import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/skill_screen.dart';
-import 'package:parrot_app/ui/screen/gateway_control_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
@@ -340,10 +339,6 @@ final GoRouter router = GoRouter(
       builder: (context, state) {
         return SetupModelScreen(viewModel: context.read());
       },
-    ),
-    GoRoute(
-      path: Routes.gatewayControl,
-      builder: (context, state) => const GatewayControlScreen(),
     ),
     GoRoute(
       path: Routes.gatewayPairing,

@@ -62,7 +62,10 @@ class _SkillScreenState extends State<SkillScreen> {
       );
       return;
     }
-    MySnackBar.showSuccess(context, value ? '${skill.name} 已启用' : '${skill.name} 已关闭');
+    MySnackBar.showSuccess(
+      context,
+      value ? '${skill.name} 已启用' : '${skill.name} 已关闭',
+    );
   }
 
   Future<void> _reload() async {
@@ -76,17 +79,20 @@ class _SkillScreenState extends State<SkillScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _Palette.background,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: '打开侧边栏',
+          onPressed: () => indexController.switchSideBarVisible(),
+        ),
+        title: _buildFilterBar(),
+        elevation: 0,
+      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.viewModel,
           builder: (context, _) {
-            return Column(
-              children: [
-                _buildFilterBar(),
-                Expanded(child: _buildBody()),
-                if (kIsMobile) _buildBottomNav(),
-              ],
-            );
+            return _buildBody();
           },
         ),
       ),
@@ -137,23 +143,20 @@ class _SkillScreenState extends State<SkillScreen> {
     if (skills.isEmpty) {
       final error = viewModel.error;
       return _EmptyState(
-        icon: error != null ? Icons.cloud_off_rounded : Icons.extension_outlined,
+        icon:
+            error != null ? Icons.cloud_off_rounded : Icons.extension_outlined,
         title: error != null ? '无法读取技能列表' : '暂无技能',
-        detail:
-            error ??
-            '网关还没有安装任何技能，或当前还没有连接到网关。',
+        detail: error ?? '网关还没有安装任何技能，或当前还没有连接到网关。',
         onRetry: _reload,
       );
     }
 
-    final visible =
-        skills
-            .where(
-              (skill) => _filter.matches(
-                skillStatusOf(skill, enabled: _isEnabled(skill)),
-              ),
-            )
-            .toList(growable: false);
+    final visible = skills
+        .where(
+          (skill) =>
+              _filter.matches(skillStatusOf(skill, enabled: _isEnabled(skill))),
+        )
+        .toList(growable: false);
 
     return RefreshIndicator(
       color: _Palette.title,
@@ -210,7 +213,11 @@ class _SkillScreenState extends State<SkillScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, size: 18, color: _Palette.red),
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 18,
+            color: _Palette.red,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -256,59 +263,6 @@ class _SkillScreenState extends State<SkillScreen> {
             onToggle: _setEnabled,
           ),
     );
-  }
-
-  // ==================== 底部导航 ====================
-
-  /// 截图里的系统级底栏：消息 / 主页 / 多任务 / 时钟 / 应用网格。
-  ///
-  /// 只在移动端显示——桌面端由侧边栏承担导航，再叠一条手机底栏会很怪。
-  /// 若希望桌面端也显示，把 `if (kIsMobile)` 判断去掉即可。
-  Widget _buildBottomNav() {
-    const items = <({IconData icon, String label})>[
-      (icon: Icons.chat_bubble_outline_rounded, label: '消息'),
-      (icon: Icons.keyboard_arrow_up_rounded, label: '主页'),
-      (icon: Icons.view_list_rounded, label: '多任务'),
-      (icon: Icons.schedule_rounded, label: '时钟'),
-      (icon: Icons.apps_rounded, label: '应用'),
-    ];
-
-    return Container(
-      height: 54,
-      decoration: const BoxDecoration(
-        color: _Palette.background,
-        border: Border(top: BorderSide(color: _Palette.divider)),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < items.length; i++)
-            Expanded(
-              child: InkResponse(
-                onTap: _onNavTap(i),
-                radius: 26,
-                child: Center(
-                  child: Icon(
-                    items[i].icon,
-                    size: 22,
-                    color: i == items.length - 1
-                        ? _Palette.title
-                        : _Palette.muted,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  VoidCallback? _onNavTap(int index) {
-    return switch (index) {
-      0 || 1 => () => context.go(Routes.index),
-      2 => indexController.switchSideBarVisible,
-      3 => () => MySnackBar.show(context, '定时任务功能即将开放'),
-      _ => null, // 应用网格即当前页
-    };
   }
 }
 
@@ -392,29 +346,95 @@ class _SkillVisual {
 
 /// 已知技能 → 图标 + 品牌色。命中规则按顺序取第一个 `match` 子串。
 const List<({String match, _SkillVisual visual})> _skillVisualRules = [
-  (match: '1password', visual: _SkillVisual(Icons.lock_outline_rounded, Color(0xFF4A8CFF))),
-  (match: 'reminders', visual: _SkillVisual(Icons.checklist_rounded, Color(0xFFFF7A5C))),
-  (match: 'apple-notes', visual: _SkillVisual(Icons.edit_note_rounded, Color(0xFFFFC44D))),
+  (
+    match: '1password',
+    visual: _SkillVisual(Icons.lock_outline_rounded, Color(0xFF4A8CFF)),
+  ),
+  (
+    match: 'reminders',
+    visual: _SkillVisual(Icons.checklist_rounded, Color(0xFFFF7A5C)),
+  ),
+  (
+    match: 'apple-notes',
+    visual: _SkillVisual(Icons.edit_note_rounded, Color(0xFFFFC44D)),
+  ),
   (match: 'bear', visual: _SkillVisual(Icons.pets_rounded, Color(0xFFE4573D))),
-  (match: 'blog', visual: _SkillVisual(Icons.rss_feed_rounded, Color(0xFFFF9F0A))),
-  (match: 'blucli', visual: _SkillVisual(Icons.speaker_rounded, Color(0xFF5AC8FA))),
-  (match: 'browser', visual: _SkillVisual(Icons.public_rounded, Color(0xFF64D2FF))),
-  (match: 'automation', visual: _SkillVisual(Icons.smart_toy_outlined, Color(0xFFBF5AF2))),
-  (match: 'cam', visual: _SkillVisual(Icons.photo_camera_rounded, Color(0xFFFFD60A))),
-  (match: 'snap', visual: _SkillVisual(Icons.photo_camera_rounded, Color(0xFFFFD60A))),
-  (match: 'canvas', visual: _SkillVisual(Icons.dashboard_customize_rounded, Color(0xFF30D158))),
-  (match: 'mail', visual: _SkillVisual(Icons.mail_outline_rounded, Color(0xFF4A8CFF))),
-  (match: 'calendar', visual: _SkillVisual(Icons.calendar_today_rounded, Color(0xFFFF6B66))),
-  (match: 'weather', visual: _SkillVisual(Icons.wb_sunny_rounded, Color(0xFFFFD60A))),
-  (match: 'github', visual: _SkillVisual(Icons.code_rounded, Color(0xFFC7C7CC))),
-  (match: 'spotify', visual: _SkillVisual(Icons.music_note_rounded, Color(0xFF30D158))),
-  (match: 'music', visual: _SkillVisual(Icons.music_note_rounded, Color(0xFFBF5AF2))),
-  (match: 'notion', visual: _SkillVisual(Icons.description_outlined, Color(0xFFC7C7CC))),
-  (match: 'note', visual: _SkillVisual(Icons.sticky_note_2_outlined, Color(0xFFFFC44D))),
-  (match: 'shell', visual: _SkillVisual(Icons.terminal_rounded, Color(0xFF8E8E93))),
-  (match: 'file', visual: _SkillVisual(Icons.folder_rounded, Color(0xFF5AC8FA))),
-  (match: 'image', visual: _SkillVisual(Icons.image_outlined, Color(0xFFBF5AF2))),
-  (match: 'screen', visual: _SkillVisual(Icons.desktop_windows_outlined, Color(0xFF64D2FF))),
+  (
+    match: 'blog',
+    visual: _SkillVisual(Icons.rss_feed_rounded, Color(0xFFFF9F0A)),
+  ),
+  (
+    match: 'blucli',
+    visual: _SkillVisual(Icons.speaker_rounded, Color(0xFF5AC8FA)),
+  ),
+  (
+    match: 'browser',
+    visual: _SkillVisual(Icons.public_rounded, Color(0xFF64D2FF)),
+  ),
+  (
+    match: 'automation',
+    visual: _SkillVisual(Icons.smart_toy_outlined, Color(0xFFBF5AF2)),
+  ),
+  (
+    match: 'cam',
+    visual: _SkillVisual(Icons.photo_camera_rounded, Color(0xFFFFD60A)),
+  ),
+  (
+    match: 'snap',
+    visual: _SkillVisual(Icons.photo_camera_rounded, Color(0xFFFFD60A)),
+  ),
+  (
+    match: 'canvas',
+    visual: _SkillVisual(Icons.dashboard_customize_rounded, Color(0xFF30D158)),
+  ),
+  (
+    match: 'mail',
+    visual: _SkillVisual(Icons.mail_outline_rounded, Color(0xFF4A8CFF)),
+  ),
+  (
+    match: 'calendar',
+    visual: _SkillVisual(Icons.calendar_today_rounded, Color(0xFFFF6B66)),
+  ),
+  (
+    match: 'weather',
+    visual: _SkillVisual(Icons.wb_sunny_rounded, Color(0xFFFFD60A)),
+  ),
+  (
+    match: 'github',
+    visual: _SkillVisual(Icons.code_rounded, Color(0xFFC7C7CC)),
+  ),
+  (
+    match: 'spotify',
+    visual: _SkillVisual(Icons.music_note_rounded, Color(0xFF30D158)),
+  ),
+  (
+    match: 'music',
+    visual: _SkillVisual(Icons.music_note_rounded, Color(0xFFBF5AF2)),
+  ),
+  (
+    match: 'notion',
+    visual: _SkillVisual(Icons.description_outlined, Color(0xFFC7C7CC)),
+  ),
+  (
+    match: 'note',
+    visual: _SkillVisual(Icons.sticky_note_2_outlined, Color(0xFFFFC44D)),
+  ),
+  (
+    match: 'shell',
+    visual: _SkillVisual(Icons.terminal_rounded, Color(0xFF8E8E93)),
+  ),
+  (
+    match: 'file',
+    visual: _SkillVisual(Icons.folder_rounded, Color(0xFF5AC8FA)),
+  ),
+  (
+    match: 'image',
+    visual: _SkillVisual(Icons.image_outlined, Color(0xFFBF5AF2)),
+  ),
+  (
+    match: 'screen',
+    visual: _SkillVisual(Icons.desktop_windows_outlined, Color(0xFF64D2FF)),
+  ),
 ];
 
 const List<Color> _fallbackColors = [

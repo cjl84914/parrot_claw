@@ -394,7 +394,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         token: config.isTokenAuth ? config.token : null,
         password: config.isPasswordAuth ? config.password : null,
       );
-      result = await OpenClawRuntime().configureResult(runtimeConfig);
+      result = await OpenClawRuntime.instance.configureResult(runtimeConfig);
       print('[ParrotClaw] Testing connection to ${config.wsUrl}');
 
       if (result != null) {
@@ -439,6 +439,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     }
 
     if (_testSuccess) {
+      await OpenClawRuntime.instance.shutdown();
       await _saveConfig(config);
       context.go(Routes.index);
       MySnackBar.showSuccess(context, _isEditing ? '网关已更新' : '网关已添加');
