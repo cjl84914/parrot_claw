@@ -132,11 +132,6 @@ class ConnViewModel extends ChangeNotifier {
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
   bool _manualDisconnect = false;
 
-  /// 每次主动断开时递增，使此前尚未完成的连接流程失效。
-  ///
-  /// 服务器删除可能发生在 WebSocket 握手过程中。没有该标记时，旧连接
-  /// 在 shutdown() 之后仍可能完成握手，并重新建立已删除服务器的连接。
-  int _connectionEpoch = 0;
 
   /// 连接服务器（串行化）
   ///
@@ -355,7 +350,6 @@ class ConnViewModel extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _log.info('shutdown sessionKey: $_sessionKey');
-    _connectionEpoch++;
     _manualDisconnect = true;
     _sessionKey = null;
     _sessions = [];
@@ -529,6 +523,31 @@ class ConnViewModel extends ChangeNotifier {
       _log.warning('Failed to refresh sessions after creation: $error');
     }
     return response;
+  }
+
+  /// 更新会话显示标签，并同步刷新会话列表。
+  Future<void> updateSessionLabel({
+    required String sessionKey,
+    required String label,
+    String? agentId,
+  }) async {
+    final normalizedLabel = label.trim();
+    if (normalizedLabel.isEmpty) {
+      throw ArgumentError.value(label, 'label', '标签不能为空');
+    }
+    final session = _sessions.cast<GatewaySessionEntry?>().firstWhere(
+      (item) => item?.key == sessionKey,
+      orElse: () => null,
+    );
+    final success = await _runtime.patchSession(
+      key: sessionKey,
+      ownerAgentId: agentId ?? session?.agentId,
+      label: normalizedLabel,
+    );
+    if (!success) {
+      throw StateError('更新会话标签失败');
+    }
+    await listSessions();
   }
 
   /// 删除会话及其 transcript，并清理本地状态。
@@ -768,7 +787,7 @@ class ConnViewModel extends ChangeNotifier {
             ? previous
             : _StreamingMessageState(id: uuid.v4(), text: text);
 
-    _streamingMessages[key] = state!.copyWith(text: text);
+    _streamingMessages[key] = state.copyWith(text: text);
     final message = ChatMessage(
       id: state.id,
       role: 'assistant',

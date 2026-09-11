@@ -410,6 +410,82 @@ class OpenClawRuntime {
     timeout: timeout,
   );
 
+  /// Applies the operator-facing session metadata patch used by the Android client.
+  ///
+  /// `clear*` takes precedence over the corresponding value and encodes an
+  /// explicit JSON null. An empty patch is rejected locally. Archiving also
+  /// requires [expectedSessionId] so a stale session entry cannot retire a
+  /// newly-created session that reused the same key.
+  Future<bool> patchSession({
+    required String key,
+    String? ownerAgentId,
+    String? expectedSessionId,
+    String? label,
+    bool clearLabel = false,
+    String? category,
+    bool clearCategory = false,
+    String? color,
+    bool clearColor = false,
+    bool? pinned,
+    bool? archived,
+    bool? unread,
+    OpenClawSessionUnreadExpectation? unreadExpectation,
+    Duration? timeout,
+  }) async {
+    final sessionKey = key.trim();
+    if (sessionKey.isEmpty) return false;
+
+    final normalizedOwner = ownerAgentId?.trim();
+    final normalizedExpectedSessionId = expectedSessionId?.trim();
+    final hasPatch =
+        clearLabel ||
+        label != null ||
+        clearCategory ||
+        category != null ||
+        clearColor ||
+        color != null ||
+        pinned != null ||
+        archived != null ||
+        unread != null;
+    if (!hasPatch) return false;
+    if (archived != null &&
+        (normalizedExpectedSessionId == null ||
+            normalizedExpectedSessionId.isEmpty)) {
+      _openClawLog.warning(
+        'Session lifecycle action requires a durable session identity.',
+      );
+      return false;h
+    }
+
+    final params = <String, dynamic>{
+      'key': sessionKey,
+      if (normalizedOwner != null && normalizedOwner.isNotEmpty)
+        'agentId': normalizedOwner,
+      if (normalizedExpectedSessionId != null &&
+          normalizedExpectedSessionId.isNotEmpty)
+        'expectedSessionId': normalizedExpectedSessionId,
+      if (clearLabel) 'label': null else if (label != null) 'label': label,
+      if (clearCategory)
+        'category': null
+      else if (category != null)
+        'category': category,
+      if (clearColor) 'color': null else if (color != null) 'color': color,
+      if (pinned != null) 'pinned': pinned,
+      if (archived != null) 'archived': archived,
+      if (unread != null) 'unread': unread,
+      if (unreadExpectation != null)
+        'expectedMarkedUnreadAt': unreadExpectation.markedUnreadAt,
+    };
+
+    try {
+      await requestKnown('sessions.patch', params: params, timeout: timeout);
+      return true;
+    } catch (error) {
+      _openClawLog.warning('patchSession failed: $error');
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> sessionsPatch({
     required String sessionKey,
     required Map<String, dynamic> patch,
@@ -622,6 +698,13 @@ bool _mapEquals<K, V>(Map<K, V> a, Map<K, V> b) {
     if (b[entry.key] != entry.value) return false;
   }
   return true;
+}
+
+/// Conditional acknowledgement marker for a session unread patch.
+class OpenClawSessionUnreadExpectation {
+  final double? markedUnreadAt;
+
+  const OpenClawSessionUnreadExpectation(this.markedUnreadAt);
 }
 
 class GatewaySessionEntry {

@@ -330,7 +330,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                session.displayName ?? session.label ?? session.key,
+                session.label ?? session.displayName ?? session.key,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyMedium.copyWith(
@@ -386,6 +386,12 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       position: menuRect,
       items: [
         PullDownMenuItem(
+          title: '改名',
+          onTap: () {
+            _editSessionLabel(context, session);
+          },
+        ),
+        PullDownMenuItem(
           title: '删除',
           // icon: Icons.delete_outline,
           isDestructive: true,
@@ -395,6 +401,72 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         ),
       ],
     );
+  }
+
+  Future<void> _editSessionLabel(
+    BuildContext context,
+    GatewaySessionEntry session,
+  ) async {
+    final controller = TextEditingController(text: session.label ?? '');
+    final formKey = GlobalKey<FormState>();
+    final label = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('修改会话名称'),
+            content: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 80,
+                decoration: const InputDecoration(
+                  labelText: '会话名称',
+                  hintText: '请输入会话名称',
+                ),
+                onFieldSubmitted: (_) {
+                  if (formKey.currentState?.validate() == true) {
+                    Navigator.pop(dialogContext, controller.text.trim());
+                  }
+                },
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return '请输入会话名称';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (formKey.currentState?.validate() == true) {
+                    Navigator.pop(dialogContext, controller.text.trim());
+                  }
+                },
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+    );
+    // controller.dispose();
+    if (label == null || !mounted) return;
+
+    try {
+      await widget.viewModel.updateSessionLabel(
+        sessionKey: session.key,
+        label: label,
+        agentId: session.agentId,
+      );
+    } catch (error) {
+      if (mounted) {
+        MySnackBar.showError(context, '修改会话名称失败：$error');
+      }
+    }
   }
 
   Future<void> _confirmDeleteSession(
