@@ -1,111 +1,64 @@
 import 'package:flutter/foundation.dart';
 import 'package:parrot_app/data/model/gateway_cron.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
+import 'package:parrot_app/data/repository/gateway_repository.dart';
 
 /// Cron 定时任务的界面状态。
 ///
-/// 直接依赖全局 [OpenClawRuntime] 单例，由 ViewModel 负责参数校验、
-/// 结果解析和 loading/error 状态，不再经过额外的 Repository 层。
+/// 状态与操作都由 [GatewayRepository] 持有（它复用全局共享的 OpenClawRuntime
+/// 会话），本 ViewModel 只做转发与变更通知，写法与 ConnViewModel 保持一致。
 class CronViewModel extends ChangeNotifier {
-  CronViewModel()
-    : _runtime = OpenClawRuntime.instance;
+  CronViewModel({required GatewayRepository gatewayRepository})
+    : _gatewayRepository = gatewayRepository {
+    _gatewayRepository.addListener(_notify);
+  }
 
-  final OpenClawRuntime _runtime;
-  List<GatewayCronJob> _jobs = const [];
-  List<Map<String, dynamic>> _runs = const [];
-  bool _isLoading = false;
-  String? _error;
-  String? _lastOperation;
+  final GatewayRepository _gatewayRepository;
 
-  List<GatewayCronJob> get jobs => List.unmodifiable(_jobs);
-  List<Map<String, dynamic>> get runs => List.unmodifiable(_runs);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  String? get lastOperation => _lastOperation;
+  void _notify() {
+    notifyListeners();
+  }
+
+  List<GatewayCronJob> get jobs => _gatewayRepository.cronJobs;
+
+  List<Map<String, dynamic>> get runs => _gatewayRepository.cronRuns;
+
+  bool get isLoading => _gatewayRepository.cronLoading;
+
+  String? get error => _gatewayRepository.cronError;
+
+  String? get lastOperation => _gatewayRepository.lastCronOperation;
 
   Future<bool> load({bool includeDisabled = true}) async {
-    if (_isLoading) return false;
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      _jobs =
-          GatewayCronList.fromJson(
-            await _runtime.cronList(includeDisabled: includeDisabled),
-          ).jobs;
-      return true;
-    } catch (error) {
-      _error = error.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    return await _gatewayRepository.loadCronJobs(
+      includeDisabled: includeDisabled,
+    );
   }
 
   Future<bool> loadRuns(String jobId, {int limit = 200}) async {
-    if (_isLoading) return false;
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      _runs =
-          GatewayCronRuns.fromJson(
-            await _runtime.cronRuns(id: jobId, limit: limit),
-          ).entries;
-      return true;
-    } catch (error) {
-      _error = error.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    return await _gatewayRepository.loadCronRuns(jobId, limit: limit);
   }
 
-  Future<bool> run(String jobId, {bool force = true}) =>
-      _mutate('run', () async {
-        await _runtime.cronRun(id: jobId, force: force);
-      });
-
-  Future<bool> add(Map<String, dynamic> payload) => _mutate('add', () async {
-    await _runtime.cronAdd(payload: payload);
-    await _reload();
-  });
-
-  Future<bool> update(String jobId, Map<String, dynamic> patch) =>
-      _mutate('update', () async {
-        await _runtime.cronUpdate(id: jobId, patch: patch);
-        await _reload();
-      });
-
-  Future<bool> remove(String jobId) => _mutate('remove', () async {
-    await _runtime.cronRemove(id: jobId);
-    _jobs = _jobs
-        .where((job) => job.id != jobId.trim())
-        .toList(growable: false);
-  });
-
-  Future<void> _reload() async {
-    _jobs = GatewayCronList.fromJson(await _runtime.cronList()).jobs;
+  Future<bool> run(String jobId, {bool force = true}) async {
+    return await _gatewayRepository.runCronJob(jobId, force: force);
   }
 
-  Future<bool> _mutate(String operation, Future<void> Function() action) async {
-    if (_isLoading) return false;
-    _isLoading = true;
-    _error = null;
-    _lastOperation = null;
-    notifyListeners();
-    try {
-      await action();
-      _lastOperation = operation;
-      return true;
-    } catch (error) {
-      _error = error.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+  Future<bool> add(Map<String, dynamic> payload) async {
+    return await _gatewayRepository.addCronJob(payload);
+  }
+
+  Future<bool> update(String jobId, Map<String, dynamic> patch) async {
+    return await _gatewayRepository.updateCronJob(jobId, patch);
+  }
+
+  Future<bool> remove(String jobId) async {
+    return await _gatewayRepository.removeCronJob(jobId);
+  }
+
+  @override
+  void dispose() {
+    // GatewayRepository 由根级 Provider 持有，本 ViewModel 只是消费者，
+    // 不能在这里 dispose，否则会连带拆掉共享连接。
+    _gatewayRepository.removeListener(_notify);
+    super.dispose();
   }
 }

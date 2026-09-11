@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
+import 'package:parrot_app/data/model/gateway_cron.dart';
+import 'package:parrot_app/data/model/gateway_skill.dart';
 import 'package:parrot_app/data/model/message.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/model/session_message.dart';
@@ -266,7 +268,7 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   void _handleGatewayEvent(String event, dynamic payload) {
-    _log.info(event);
+    // _log.info(event);
     switch (event) {
       case 'tick':
         break;
@@ -936,128 +938,241 @@ class GatewayRepository extends ChangeNotifier {
     return _runtime.devicePairSetupCode();
   }
 
-  Future<String> mainSessionKey() async {
-    return await _runtime.mainSessionKey();
+  // 说明：这里曾有一批 runtime 原样透传方法（mainSessionKey / configure /
+  // chatHistory / talkSpeak / chatAbort / sessionsList / sessionsCreate /
+  // patchSession / sessionsPatch / sessionsDelete）。它们没有任何调用方
+  // （上层走的是 listSessions / createSession / updateSessionLabel /
+  // deleteSession / setSessionConfig / abortMessage 这些带状态的方法），
+  // 且 sessionsPatch 与 chatAbort 会静默忽略自己的入参，容易误用，故删除。
+  // 需要新能力时，请在仓库里按「解析 + 更新状态 + notifyListeners」的模式新增。
+
+  // ==================== Skill 管理 ====================
+  //
+  // Skill 的状态与操作都收敛在这里（复用共享的 _runtime 会话），
+  // SkillViewModel 只做转发，不再自己持有状态或直连 runtime。
+
+  List<GatewaySkill> _skills = const [];
+
+  /// 当前网关上的 Skill 列表。
+  List<GatewaySkill> get skills => List.unmodifiable(_skills);
+
+  bool _skillsLoading = false;
+
+  /// Skill 列表加载或 Skill 操作是否进行中（用于去重与 loading 态）。
+  bool get skillsLoading => _skillsLoading;
+
+  String? _skillsError;
+
+  /// 最近一次 Skill 操作失败的原因。
+  String? get skillsError => _skillsError;
+
+  String? _lastSkillOperation;
+
+  /// 最近一次成功的 Skill 操作名（install / update）。
+  String? get lastSkillOperation => _lastSkillOperation;
+
+  /// 拉取 Skill 列表。已在进行中时直接返回 false，避免并发请求互相覆盖状态。
+  Future<bool> loadSkills() async {
+    if (_skillsLoading) return false;
+    _skillsLoading = true;
+    _skillsError = null;
+    notifyListeners();
+    try {
+      await _reloadSkills();
+      return true;
+    } catch (error) {
+      _skillsError = error.toString();
+      return false;
+    } finally {
+      _skillsLoading = false;
+      notifyListeners();
+    }
   }
 
-  Future<void> configure(runtimeConfig) async {
-    _runtime.configure(runtimeConfig);
-  }
-
-  Future<Map<String, dynamic>> chatHistory({required String sessionKey}) async {
-    return await _runtime.chatHistory(sessionKey: sessionKey);
-  }
-
-  Future<Map<String, dynamic>> talkSpeak(String text) async {
-    return await _runtime.talkSpeak(text);
-  }
-
-  Future<Map<String, dynamic>> chatAbort({
-    required String sessionKey,
-    String? runId,
+  /// 安装 Skill，成功后刷新列表。
+  Future<bool> installSkill({
+    required String name,
+    required String installId,
+    bool? dangerouslyForceUnsafeInstall,
   }) async {
-    return await _runtime.chatAbort(sessionKey: sessionKey, runId: _runId);
+    if (_skillsLoading) return false;
+    return _runSkillOperation('install', () async {
+      await _runtime.skillsInstall(
+        name: name,
+        installId: installId,
+        dangerouslyForceUnsafeInstall: dangerouslyForceUnsafeInstall,
+      );
+      await _reloadSkills();
+    });
   }
 
-  // Future<void> chatSend({
-  //   required String sessionKey,
-  //   required String message,
-  //   String? idempotencyKey,
-  //   String? agentId,
-  //   List<Map<String, dynamic>> attachments = const [],
-  //   Duration? timeout,
-  // }) async {
-  //   // await _runtime.chatSend(
-  //   //   sessionKey: resolvedSessionKey,
-  //   //   message: message,
-  //   //   idempotencyKey: _runId,
-  //   //   attachments:
-  //   //   attachments
-  //   //       .map(
-  //   //         (a) => {
-  //   //       'type': a.type,
-  //   //       'content': a.base64,
-  //   //       'mimeType': a.mimeType,
-  //   //       'fileName': a.fileName,
-  //   //     },
-  //   //   )
-  //   //       .toList(),);
-  // }
-
-  Future<Map<String, dynamic>>  sessionsList({
-    int? limit,
-    String? search,
-    bool archived = false,
-    String? agentId,
-    bool includeGlobal = true,
-    bool includeUnknown = false,
-    int? activeMinutes,
-    String? spawnedBy,
-    int? offset,
-    bool? configuredAgentsOnly,
+  /// 更新 Skill（启用状态 / apiKey / env），成功后刷新列表。
+  Future<bool> updateSkill({
+    required String skillKey,
+    bool? enabled,
+    String? apiKey,
+    Map<String, String>? env,
   }) async {
-    return await _runtime.sessionsList(
-      limit: limit,
-      search: search,
-      archived: archived,
-      agentId: agentId,
-      includeGlobal: includeGlobal,
-      includeUnknown: includeUnknown,
-      activeMinutes: activeMinutes,
-      spawnedBy: spawnedBy,
-      offset: offset,
-      configuredAgentsOnly: configuredAgentsOnly,
-    );
+    if (_skillsLoading) return false;
+    return _runSkillOperation('update', () async {
+      await _runtime.skillsUpdate(
+        skillKey: skillKey,
+        enabled: enabled,
+        apiKey: apiKey,
+        env: env,
+      );
+      await _reloadSkills();
+    });
   }
 
-  Future<Map<String, dynamic>>  sessionsCreate({
-    required String key,
-    String? agentId,
-    String? label,
-    String? parentSessionKey,
-    bool? worktree,
-    String? worktreeBaseRef,
-  }) async {
-    return await _runtime.sessionsCreate(
-      key: key,
-      agentId: agentId,
-      label: label,
-      parentSessionKey: parentSessionKey,
-      worktree: worktree,
-      worktreeBaseRef: worktreeBaseRef,
-    );
+  Future<void> _reloadSkills() async {
+    _skills =
+        GatewaySkillsStatus.fromJson(await _runtime.skillsStatus()).skills;
   }
 
-
-  Future<bool>  patchSession({
-    required String key,
-    required String label,
-    String? ownerAgentId,
-  }) async {
-    return await _runtime.patchSession(
-      key: key,
-      ownerAgentId: ownerAgentId,
-      label: label,
-    );
+  Future<bool> _runSkillOperation(
+    String operation,
+    Future<void> Function() action,
+  ) async {
+    _skillsLoading = true;
+    _skillsError = null;
+    _lastSkillOperation = null;
+    notifyListeners();
+    try {
+      await action();
+      _lastSkillOperation = operation;
+      return true;
+    } catch (error) {
+      _skillsError = error.toString();
+      return false;
+    } finally {
+      _skillsLoading = false;
+      notifyListeners();
+    }
   }
 
-  Future<Map<String, dynamic>> sessionsPatch({
-    required String sessionKey,
-    required Map<String, dynamic> patch,
-    Duration? timeout,
-  }) => _runtime.sessionsPatch(
-    sessionKey: _sessionKey!,
-    patch: patch,
-    timeout: const Duration(seconds: 15),
-  );
+  // ==================== Cron 管理 ====================
+  //
+  // 与 Skill 同一套分层：状态与操作在仓库，CronViewModel 只做转发。
 
-  Future<Map<String, dynamic>>  sessionsDelete({
-    required String sessionKey,
-    String? agentId,
-  }) async {
-    return await _runtime.sessionsDelete(
-        sessionKey: sessionKey, agentId: agentId
-    );
+  List<GatewayCronJob> _cronJobs = const [];
+
+  /// 当前网关上的定时任务列表。
+  List<GatewayCronJob> get cronJobs => List.unmodifiable(_cronJobs);
+
+  List<Map<String, dynamic>> _cronRuns = const [];
+
+  /// 最近一次 [loadCronRuns] 拉取到的运行记录。
+  List<Map<String, dynamic>> get cronRuns => List.unmodifiable(_cronRuns);
+
+  bool _cronLoading = false;
+
+  /// Cron 列表加载或任务操作是否进行中（用于去重与 loading 态）。
+  bool get cronLoading => _cronLoading;
+
+  String? _cronError;
+
+  /// 最近一次 Cron 操作失败的原因。
+  String? get cronError => _cronError;
+
+  String? _lastCronOperation;
+
+  /// 最近一次成功的 Cron 操作名（run / add / update / remove）。
+  String? get lastCronOperation => _lastCronOperation;
+
+  /// 拉取定时任务列表。已在进行中时直接返回 false。
+  Future<bool> loadCronJobs({bool includeDisabled = true}) async {
+    if (_cronLoading) return false;
+    _cronLoading = true;
+    _cronError = null;
+    notifyListeners();
+    try {
+      _cronJobs =
+          GatewayCronList.fromJson(
+            await _runtime.cronList(includeDisabled: includeDisabled),
+          ).jobs;
+      return true;
+    } catch (error) {
+      _cronError = error.toString();
+      return false;
+    } finally {
+      _cronLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 拉取某个任务的运行记录。已在进行中时直接返回 false。
+  Future<bool> loadCronRuns(String jobId, {int limit = 200}) async {
+    if (_cronLoading) return false;
+    _cronLoading = true;
+    _cronError = null;
+    notifyListeners();
+    try {
+      _cronRuns =
+          GatewayCronRuns.fromJson(
+            await _runtime.cronRuns(id: jobId, limit: limit),
+          ).entries;
+      return true;
+    } catch (error) {
+      _cronError = error.toString();
+      return false;
+    } finally {
+      _cronLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 立即执行一次任务（不改变任务配置，因此不刷新列表）。
+  Future<bool> runCronJob(String jobId, {bool force = true}) =>
+      _runCronOperation('run', () async {
+        await _runtime.cronRun(id: jobId, force: force);
+      });
+
+  Future<bool> addCronJob(Map<String, dynamic> payload) =>
+      _runCronOperation('add', () async {
+        await _runtime.cronAdd(payload: payload);
+        await _reloadCronJobs();
+      });
+
+  Future<bool> updateCronJob(String jobId, Map<String, dynamic> patch) =>
+      _runCronOperation('update', () async {
+        await _runtime.cronUpdate(id: jobId, patch: patch);
+        await _reloadCronJobs();
+      });
+
+  /// 删除任务：本地直接摘掉对应条目，避免多打一次列表请求。
+  Future<bool> removeCronJob(String jobId) =>
+      _runCronOperation('remove', () async {
+        await _runtime.cronRemove(id: jobId);
+        _cronJobs = _cronJobs
+            .where((job) => job.id != jobId.trim())
+            .toList(growable: false);
+      });
+
+  Future<void> _reloadCronJobs() async {
+    _cronJobs = GatewayCronList.fromJson(await _runtime.cronList()).jobs;
+  }
+
+  Future<bool> _runCronOperation(
+    String operation,
+    Future<void> Function() action,
+  ) async {
+    if (_cronLoading) return false;
+    _cronLoading = true;
+    _cronError = null;
+    _lastCronOperation = null;
+    notifyListeners();
+    try {
+      await action();
+      _lastCronOperation = operation;
+      return true;
+    } catch (error) {
+      _cronError = error.toString();
+      return false;
+    } finally {
+      _cronLoading = false;
+      notifyListeners();
+    }
   }
 
   @override

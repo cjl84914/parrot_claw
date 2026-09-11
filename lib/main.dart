@@ -31,6 +31,7 @@ import 'package:parrot_app/ui/screen/server_list_screen.dart';
 import 'package:parrot_app/ui/screen/qr_code_screen.dart';
 import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
+import 'package:parrot_app/ui/screen/skill_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_control_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
@@ -162,9 +163,13 @@ List<SingleChildWidget> providersLocal(
     ChangeNotifierProvider(
       create: (context) => SessionViewModel(gatewayRepository: context.read()),
     ),
-    // Skill / Cron 管理：直接依赖 OpenClawRuntime 全局单例
-    ChangeNotifierProvider(create: (context) => SkillViewModel()),
-    ChangeNotifierProvider(create: (context) => CronViewModel()),
+    // Skill / Cron 管理：状态与操作都委托给 GatewayRepository（共享 OpenClawRuntime 会话）
+    ChangeNotifierProvider(
+      create: (context) => SkillViewModel(gatewayRepository: context.read()),
+    ),
+    ChangeNotifierProvider(
+      create: (context) => CronViewModel(gatewayRepository: context.read()),
+    ),
     // 本地引导 ViewModel
     ChangeNotifierProvider(
       create:
@@ -278,6 +283,13 @@ final GoRouter router = GoRouter(
           pageBuilder:
               (context, state) => NoTransitionPage(
                 child: SettingScreen(viewmodel: context.read()),
+              ),
+        ),
+        GoRoute(
+          path: Routes.skill,
+          pageBuilder:
+              (context, state) => NoTransitionPage(
+                child: SkillScreen(viewModel: context.read()),
               ),
         ),
         GoRoute(
@@ -406,4 +418,5 @@ abstract final class Routes {
   static const gatewayPairing = '/gateway_pairing';
   static const voice = '/voice';
   static const setting = '/setting';
+  static const skill = '/skill';
 }

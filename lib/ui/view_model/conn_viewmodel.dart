@@ -1,12 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:logging/logging.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/service/openclaw_protocol.dart';
 
 class ConnViewModel extends ChangeNotifier {
-  final Logger _log = Logger('ConnViewModel');
-
   String? get sessionKey => _gatewayRepository.sessionKey;
 
   bool get connected => _gatewayRepository.connected;
@@ -32,7 +29,7 @@ class ConnViewModel extends ChangeNotifier {
   /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
   /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
   Future<void> connect() async {
-    _gatewayRepository.connect();
+    await _gatewayRepository.connect();
   }
 
   /// 主动断开连接（保留服务器配置，可随时重新连接）。

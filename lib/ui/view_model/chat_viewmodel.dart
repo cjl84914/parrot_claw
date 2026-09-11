@@ -1,15 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/message.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
-import 'package:parrot_app/data/service/openclaw_protocol.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 
 class ChatViewModel extends ChangeNotifier {
-  final Logger _log = Logger('ChatViewModel');
-
 
   Stream<ChatMessage>? get messageEvents => _gatewayRepository.messageController.stream;
 
@@ -76,21 +71,21 @@ class ChatViewModel extends ChangeNotifier {
   void unsubscribeSessionMessage() {}
 
   Future<void> beginHistoryLoad() async {
-    _gatewayRepository.beginHistoryLoad();
+    await _gatewayRepository.beginHistoryLoad();
   }
 
   Future<void> sendChatMessage(
     String text, {
     List<OutgoingAttachment> attachments = const [],
   }) async {
-    _gatewayRepository.sendChatMessage(text, attachments: attachments);
+    await _gatewayRepository.sendChatMessage(text, attachments: attachments);
   }
 
   Future<void> switchTalkMode(bool talkMode) =>
       _gatewayRepository.switchTalkMode(talkMode);
 
   Future<void> sendTalkSpeak(String text) async {
-    await _gatewayRepository.sendChatMessage(text);
+    await _gatewayRepository.sendTalkSpeak(text);
   }
 
   Future<void> abortMessage() async {
@@ -104,7 +99,10 @@ class ChatViewModel extends ChangeNotifier {
   /// 只会把非 null 的字段写入请求，因此可以单独更新其中一项，
   /// 也可以在一次 sessions.patch 请求中同时更新两项。
   Future<void> setSessionConfig({String? model, String? thinkingLevel}) async {
-    _gatewayRepository.setSessionConfig(model: model, thinkingLevel: thinkingLevel);
+    await _gatewayRepository.setSessionConfig(
+      model: model,
+      thinkingLevel: thinkingLevel,
+    );
   }
 
   @override

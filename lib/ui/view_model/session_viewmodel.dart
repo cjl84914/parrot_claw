@@ -1,13 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/message.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/service/openclaw_runtime.dart';
 
 class SessionViewModel extends ChangeNotifier {
-  final Logger _log = Logger('SessionViewModel');
-
   /// 获取当前服务器的会话列表。
   List<GatewaySessionEntry> get sessions => _gatewayRepository.sessions;
 
@@ -88,7 +85,7 @@ class SessionViewModel extends ChangeNotifier {
     required String label,
     String? agentId,
   }) async {
-    _gatewayRepository.updateSessionLabel(
+    await _gatewayRepository.updateSessionLabel(
       sessionKey: sessionKey,
       label: label,
       agentId: agentId,
@@ -100,7 +97,10 @@ class SessionViewModel extends ChangeNotifier {
     required String sessionKey,
     String? agentId,
   }) async {
-    _gatewayRepository.deleteSession(sessionKey: sessionKey, agentId: agentId);
+    await _gatewayRepository.deleteSession(
+      sessionKey: sessionKey,
+      agentId: agentId,
+    );
   }
 
   @override

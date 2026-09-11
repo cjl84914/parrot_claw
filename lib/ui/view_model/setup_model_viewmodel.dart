@@ -49,10 +49,9 @@ enum SetupModelPhase { idle, saving, validating, success, error }
 class SetupModelViewModel extends ChangeNotifier {
   SetupModelViewModel({
     required ServerRepository serverRepository,
-    OpenClawRuntime? runtime,
     Logger? logger,
   }) : _serverRepository = serverRepository,
-       _runtime = runtime ?? OpenClawRuntime(),
+       _runtime = OpenClawRuntime.instance,
        _log = logger ?? Logger('SetupModelViewModel');
 
   static const List<SetupProviderOption> providerOptions = [

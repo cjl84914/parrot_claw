@@ -6,7 +6,6 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/session_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:provider/provider.dart';
@@ -89,6 +88,13 @@ class _SidebarWidgetState extends State<SidebarWidget> {
               //   index: 1,
               //   selectedColor: selectedColor,
               // ),
+              _buildNavigationItem(
+                context,
+                icon: Icons.extension_outlined,
+                label: '技能',
+                index: 3,
+                selectedColor: selectedColor,
+              ),
               _buildNavigationItem(
                 context,
                 icon: Icons.dns_outlined,
@@ -208,16 +214,20 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         setState(() {
           _selectedNavIndex = index;
         });
-        if (index == 0) {
-          _closeDrawer(context);
-          context.go(Routes.index);
-        } else if (index == 1) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('定时任务功能即将开放')));
-        } else {
-          _closeDrawer(context);
-          context.go(Routes.serverList);
+        switch (index) {
+          case 0:
+            _closeDrawer(context);
+            context.go(Routes.index);
+          case 2:
+            _closeDrawer(context);
+            context.go(Routes.serverList);
+          case 3:
+            _closeDrawer(context);
+            context.go(Routes.skill);
+          default:
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('定时任务功能即将开放')),
+            );
         }
       },
     );
@@ -275,6 +285,9 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       final response = await widget.viewModel.createSession(key: key);
       if (!mounted) return;
       await widget.viewModel.switchSession(response.key);
+      // switchSession 之后又是一个异步间隙：widget 可能已卸载，
+      // 这里用 context.mounted 确认这个 BuildContext 仍然有效。
+      if (!mounted || !context.mounted) return;
       setState(() {
         _selectedNavIndex = -1;
         // _selectedSessionIndex = widget.viewModel.sessions.indexWhere(
@@ -284,7 +297,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
       });
       _closeDrawer(context);
     } catch (error) {
-      if (mounted) {
+      if (context.mounted) {
         MySnackBar.showError(context, '创建会话失败：$error');
       }
     } finally {
@@ -302,7 +315,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
     return GestureDetector(
       onTap: () async {
         await widget.viewModel.switchSession(session.key);
-        if (!mounted) return;
+        if (!mounted || !context.mounted) return;
         setState(() {
           _selectedNavIndex = -1;
         });
@@ -364,7 +377,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         );
       }
     } catch (error) {
-      if (mounted) {
+      if (context.mounted) {
         MySnackBar.showError(context, '删除会话失败：$error');
       }
     } finally {
@@ -455,7 +468,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
           ),
     );
     // controller.dispose();
-    if (label == null || !mounted) return;
+    if (label == null || !context.mounted) return;
 
     try {
       await widget.viewModel.updateSessionLabel(
@@ -464,7 +477,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         agentId: session.agentId,
       );
     } catch (error) {
-      if (mounted) {
+      if (context.mounted) {
         MySnackBar.showError(context, '修改会话名称失败：$error');
       }
     }
@@ -498,7 +511,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
           ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !context.mounted) return;
     await _deleteSession(context, session);
   }
 

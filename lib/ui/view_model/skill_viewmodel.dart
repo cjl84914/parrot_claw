@@ -1,44 +1,33 @@
 import 'package:flutter/foundation.dart';
 import 'package:parrot_app/data/model/gateway_skill.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
+import 'package:parrot_app/data/repository/gateway_repository.dart';
 
 /// Skill 管理的界面状态。
 ///
-/// 直接依赖全局 [OpenClawRuntime] 单例，由 ViewModel 负责参数校验、
-/// 结果解析和 loading/error 状态，不再经过额外的 Repository 层。
+/// 状态与操作都由 [GatewayRepository] 持有（它复用全局共享的 OpenClawRuntime
+/// 会话），本 ViewModel 只做转发与变更通知，写法与 ConnViewModel 保持一致。
 class SkillViewModel extends ChangeNotifier {
-  SkillViewModel() : _runtime = OpenClawRuntime.instance;
+  SkillViewModel({required GatewayRepository gatewayRepository})
+    : _gatewayRepository = gatewayRepository {
+    _gatewayRepository.addListener(_notify);
+  }
 
-  final OpenClawRuntime _runtime;
-  List<GatewaySkill> _skills = const [];
-  bool _isLoading = false;
-  String? _error;
-  String? _lastOperation;
+  final GatewayRepository _gatewayRepository;
 
-  List<GatewaySkill> get skills => List.unmodifiable(_skills);
+  void _notify() {
+    notifyListeners();
+  }
 
-  bool get isLoading => _isLoading;
+  List<GatewaySkill> get skills => _gatewayRepository.skills;
 
-  String? get error => _error;
+  bool get isLoading => _gatewayRepository.skillsLoading;
 
-  String? get lastOperation => _lastOperation;
+  String? get error => _gatewayRepository.skillsError;
+
+  String? get lastOperation => _gatewayRepository.lastSkillOperation;
 
   Future<bool> load() async {
-    if (_isLoading) return false;
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      _skills =
-          GatewaySkillsStatus.fromJson(await _runtime.skillsStatus()).skills;
-      return true;
-    } catch (error) {
-      _error = error.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    return await _gatewayRepository.loadSkills();
   }
 
   Future<bool> install({
@@ -46,15 +35,11 @@ class SkillViewModel extends ChangeNotifier {
     required String installId,
     bool? dangerouslyForceUnsafeInstall,
   }) async {
-    if (_isLoading) return false;
-    return _runOperation('install', () async {
-      await _runtime.skillsInstall(
-        name: name,
-        installId: installId,
-        dangerouslyForceUnsafeInstall: dangerouslyForceUnsafeInstall,
-      );
-      await _reload();
-    });
+    return await _gatewayRepository.installSkill(
+      name: name,
+      installId: installId,
+      dangerouslyForceUnsafeInstall: dangerouslyForceUnsafeInstall,
+    );
   }
 
   Future<bool> update({
@@ -63,41 +48,19 @@ class SkillViewModel extends ChangeNotifier {
     String? apiKey,
     Map<String, String>? env,
   }) async {
-    if (_isLoading) return false;
-    return _runOperation('update', () async {
-      await _runtime.skillsUpdate(
-        skillKey: skillKey,
-        enabled: enabled,
-        apiKey: apiKey,
-        env: env,
-      );
-      await _reload();
-    });
+    return await _gatewayRepository.updateSkill(
+      skillKey: skillKey,
+      enabled: enabled,
+      apiKey: apiKey,
+      env: env,
+    );
   }
 
-  Future<void> _reload() async {
-    _skills =
-        GatewaySkillsStatus.fromJson(await _runtime.skillsStatus()).skills;
-  }
-
-  Future<bool> _runOperation(
-    String operation,
-    Future<void> Function() action,
-  ) async {
-    _isLoading = true;
-    _error = null;
-    _lastOperation = null;
-    notifyListeners();
-    try {
-      await action();
-      _lastOperation = operation;
-      return true;
-    } catch (error) {
-      _error = error.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+  @override
+  void dispose() {
+    // GatewayRepository 由根级 Provider 持有，本 ViewModel 只是消费者，
+    // 不能在这里 dispose，否则会连带拆掉共享连接。
+    _gatewayRepository.removeListener(_notify);
+    super.dispose();
   }
 }

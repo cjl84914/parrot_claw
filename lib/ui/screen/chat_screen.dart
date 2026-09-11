@@ -18,7 +18,6 @@ import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
-import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/widget/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -363,12 +362,7 @@ class _ChatScreenState extends State<ChatScreen>
                                     visible: true,
                                     icon: Icons.delete_sweep,
                                     title: 'Clear',
-                                    onPressed: () {
-                                      _chatController.setMessages([]);
-                                      widget.viewModel.sendChatMessage(
-                                        '/reset',
-                                      );
-                                    },
+                                    onPressed: _resetConversation,
                                   ),
                                   ComposerActionButton(
                                     visible: true,
@@ -687,18 +681,22 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  /// 清空当前会话：先清本地消息，再让网关重置。
+  /// 必须等 sendChatMessage 完成并接住异常，否则失败时界面只会静默清空。
+  Future<void> _resetConversation() async {
+    _chatController.setMessages([]);
+    try {
+      await widget.viewModel.sendChatMessage('/reset');
+    } catch (e) {
+      if (!mounted) return;
+      MySnackBar.showError(context, e.toString());
+    }
+  }
+
   void _abortMessage() async {
     widget.viewModel.abortMessage();
     await Future.delayed(const Duration(milliseconds: 500));
     // _removeTyping();
-  }
-
-  void _removeItem(Message item) async {
-    // widget.viewModel.removeMessage(item.id);
-    await _chatController.removeMessage(item);
-    if (_chatController.messages.length == 1) {
-      await _chatController.removeMessage(_chatController.messages[0]);
-    }
   }
 
   void _handleAttachmentTap() async {
@@ -823,7 +821,10 @@ class _ChatScreenState extends State<ChatScreen>
           createdAt: DateTime.now().toUtc(),
         ),
       );
-    } catch (e) {}
+    } catch (e) {
+      // 「正在输入」只是装饰性提示，插入失败不应影响消息发送本身。
+      debugPrint('Failed to insert typing indicator: $e');
+    }
   }
 
   Future<void> _removeTyping() async {
