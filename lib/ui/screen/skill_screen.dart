@@ -85,14 +85,23 @@ class _SkillScreenState extends State<SkillScreen> {
           tooltip: '打开侧边栏',
           onPressed: () => indexController.switchSideBarVisible(),
         ),
-        title: _buildFilterBar(),
+        title: Text('Skill管理'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: '搜索 ClawHub',
+            onPressed: () => context.push(Routes.skillSearch),
+          ),
+        ],
         elevation: 0,
       ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.viewModel,
           builder: (context, _) {
-            return _buildBody();
+            return Column(children: [
+              _buildFilterBar(),
+              Expanded(child: _buildBody())]);
           },
         ),
       ),
@@ -140,16 +149,16 @@ class _SkillScreenState extends State<SkillScreen> {
       );
     }
 
-    if (skills.isEmpty) {
-      final error = viewModel.error;
-      return _EmptyState(
-        icon:
-            error != null ? Icons.cloud_off_rounded : Icons.extension_outlined,
-        title: error != null ? '无法读取技能列表' : '暂无技能',
-        detail: error ?? '网关还没有安装任何技能，或当前还没有连接到网关。',
-        onRetry: _reload,
-      );
-    }
+    // if (skills.isEmpty) {
+    //   final error = viewModel.error;
+    //   return _EmptyState(
+    //     icon:
+    //         error != null ? Icons.cloud_off_rounded : Icons.extension_outlined,
+    //     title: error != null ? '无法读取技能列表' : '暂无技能',
+    //     detail: error ?? '网关还没有安装任何技能，或当前还没有连接到网关。',
+    //     onRetry: _reload,
+    //   );
+    // }
 
     final visible = skills
         .where(
@@ -165,8 +174,6 @@ class _SkillScreenState extends State<SkillScreen> {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          if (viewModel.error != null)
-            SliverToBoxAdapter(child: _buildErrorBanner(viewModel.error!)),
           if (visible.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
@@ -198,49 +205,6 @@ class _SkillScreenState extends State<SkillScreen> {
               },
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: _Palette.red.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 18,
-            color: _Palette.red,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _Palette.red,
-                fontSize: 12.5,
-                height: 1.4,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: _reload,
-            style: TextButton.styleFrom(
-              foregroundColor: _Palette.red,
-              minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('重试'),
-          ),
         ],
       ),
     );
@@ -306,7 +270,7 @@ SkillStatus skillStatusOf(GatewaySkill skill, {bool? enabled}) {
 enum _SkillFilter {
   all('全部'),
   ready('就绪'),
-  needsSetup('需要设置'),
+  // needsSetup('需要设置'),
   disabled('关闭');
 
   const _SkillFilter(this.label);
@@ -316,7 +280,7 @@ enum _SkillFilter {
   bool matches(SkillStatus status) => switch (this) {
     _SkillFilter.all => true,
     _SkillFilter.ready => status == SkillStatus.ready,
-    _SkillFilter.needsSetup => status == SkillStatus.needsSetup,
+    // _SkillFilter.needsSetup => status == SkillStatus.needsSetup,
     _SkillFilter.disabled => status == SkillStatus.disabled,
   };
 }

@@ -19,6 +19,11 @@ class GatewaySkill {
     this.blockedByAgentFilter = false,
     this.platformIncompatible = false,
     this.missing = const <String, dynamic>{},
+    this.clawHubSlug,
+    this.clawHubValid = false,
+    this.clawHubRequestedReference,
+    this.clawHubOwnerHandle,
+    this.clawHubInstalledVersion,
     this.raw = const <String, dynamic>{},
   });
 
@@ -44,6 +49,24 @@ class GatewaySkill {
   /// 缺失的依赖项，形如
   /// `{bins: [], anyBins: [], env: ['GITHUB_TOKEN'], config: [], os: []}`。
   final Map<String, dynamic> missing;
+
+  /// 该技能在 ClawHub 上的标识（`clawhub.slug`）。
+  final String? clawHubSlug;
+
+  /// 网关是否确认它来自 ClawHub 且引用有效。
+  final bool clawHubValid;
+
+  /// 安装时请求的原始引用。
+  ///
+  /// 「只能直接安装」的来源（install-only）引用不是 `@owner/slug` 形式，
+  /// slug 比对永远匹配不上，回读已安装状态只能靠这个字段。
+  final String? clawHubRequestedReference;
+
+  /// ClawHub 上的发布者 handle。
+  final String? clawHubOwnerHandle;
+
+  /// 实际安装的版本号。
+  final String? clawHubInstalledVersion;
 
   final Map<String, dynamic> raw;
 
@@ -89,6 +112,10 @@ class GatewaySkill {
             : rawEnabled is bool
             ? !rawEnabled
             : false;
+    final rawClawHub = json['clawhub'];
+    final clawHub = rawClawHub is Map
+        ? rawClawHub.cast<String, dynamic>()
+        : null;
     return GatewaySkill(
       key: key,
       name: name,
@@ -102,9 +129,267 @@ class GatewaySkill {
           json['missing'] is Map
               ? Map<String, dynamic>.from(json['missing'] as Map)
               : const <String, dynamic>{},
+      clawHubSlug: _nonEmptyString(clawHub?['slug']),
+      clawHubValid: clawHub?['valid'] == true,
+      clawHubRequestedReference: _nonEmptyString(
+        clawHub?['requestedReference'],
+      ),
+      clawHubOwnerHandle: _nonEmptyString(clawHub?['ownerHandle']),
+      clawHubInstalledVersion: _nonEmptyString(clawHub?['installedVersion']),
       raw: Map<String, dynamic>.from(json),
     );
   }
+}
+
+/// ClawHub 搜索命中的技能（对应 Android 的 `GatewayClawHubSkillSummary`）。
+///
+/// 多个发布者可能共用一个 slug，所以「识别一条结果」「区分两行」「安装时回传什么」
+/// 用的都是网关给的 [reference]，而不是自己拿 owner + slug 拼出来的。
+class GatewayClawHubSkillSummary {
+  const GatewayClawHubSkillSummary({
+    required this.slug,
+    this.installRef,
+    this.installOnly,
+    this.trustState,
+    required this.displayName,
+    this.summary,
+    this.version,
+  });
+
+  final String slug;
+
+  /// 网关给的可安装引用，缺省时退回 [slug]。
+  final String? installRef;
+
+  /// 该结果是否只能直接安装（不支持查看详情）。
+  final bool? installOnly;
+
+  /// ClawHub 的信任状态，`not-scanned-by-clawhub` 表示未扫描来源。
+  final String? trustState;
+
+  final String displayName;
+  final String? summary;
+  final String? version;
+
+  String get reference {
+    final ref = installRef?.trim();
+    return (ref == null || ref.isEmpty) ? slug : ref;
+  }
+
+  /// 只有显式标记为「仅安装」的结果才跳过审核：旧网关不带这个字段，
+  /// 那些结果必须保留一直以来的「先看版本再安装」流程。
+  bool get canReadDetails => installOnly != true;
+
+  bool get isUnscannedSource => trustState == 'not-scanned-by-clawhub';
+
+  /// 解析 `skills.search` 的响应（`{results: [...]}`）。
+  ///
+  /// 与网关 schema 一致：`slug` 和 `displayName` 为空的结果直接丢弃。
+  static List<GatewayClawHubSkillSummary> listFromSearchResponse(
+    Map<String, dynamic> json,
+  ) {
+    final rawResults = json['results'];
+    if (rawResults is! List) return const <GatewayClawHubSkillSummary>[];
+    final results = <GatewayClawHubSkillSummary>[];
+    for (final item in rawResults) {
+      if (item is! Map) continue;
+      final slug = _nonEmptyString(item['slug']);
+      final displayName = _nonEmptyString(item['displayName']);
+      if (slug == null || displayName == null) continue;
+      final rawInstallOnly = item['installOnly'];
+      results.add(
+        GatewayClawHubSkillSummary(
+          slug: slug,
+          installRef: _nonEmptyString(item['installRef']),
+          installOnly: rawInstallOnly is bool ? rawInstallOnly : null,
+          trustState: _nonEmptyString(item['trustState']),
+          displayName: displayName,
+          summary: _nonEmptyString(item['summary']),
+          version: _nonEmptyString(item['version']),
+        ),
+      );
+    }
+    return results;
+  }
+}
+
+/// 安装前的版本审核信息（对应 Android 的 `GatewayClawHubInstallReview`）。
+class GatewayClawHubInstallReview {
+  const GatewayClawHubInstallReview({
+    required this.slug,
+    required this.displayName,
+    this.summary,
+    required this.version,
+    required this.author,
+  });
+
+  final String slug;
+  final String displayName;
+  final String? summary;
+  final String version;
+  final String author;
+
+  /// 解析 `skills.detail` 的响应；返回 null 表示网关没给出可安装的版本。
+  ///
+  /// 详情响应就是「审核」与「安装」的分界线，所以版本优先取它的
+  /// `latestVersion.version`，而不是搜索列表里可能已经过期的那个。
+  static GatewayClawHubInstallReview? fromDetailResponse(
+    Map<String, dynamic> json, {
+    required GatewayClawHubSkillSummary fallback,
+  }) {
+    final skill = _asObject(json['skill']);
+    final latestVersion = _asObject(json['latestVersion']);
+    final owner = _asObject(json['owner']);
+    final version =
+        _nonEmptyString(latestVersion?['version']) ?? fallback.version;
+    if (version == null) return null;
+    final ownerDisplayName = _nonEmptyString(owner?['displayName']);
+    final ownerHandle = _nonEmptyString(owner?['handle']);
+    final reviewedSlug = _canonicalClawHubReference(
+      slug: _nonEmptyString(skill?['slug']) ?? fallback.slug,
+      ownerHandle: ownerHandle,
+    );
+    if (reviewedSlug == null) return null;
+    final author = switch ((ownerDisplayName, ownerHandle)) {
+      (final String name, final String handle)
+          when name.toLowerCase() != handle.toLowerCase() =>
+        '$name (@$handle)',
+      (final String name, _) => name,
+      (_, final String handle) => '@$handle',
+      _ => '未知发布者',
+    };
+    return GatewayClawHubInstallReview(
+      slug: reviewedSlug,
+      displayName:
+          _nonEmptyString(skill?['displayName']) ?? fallback.displayName,
+      summary: _nonEmptyString(skill?['summary']) ?? fallback.summary,
+      version: version,
+      author: author,
+    );
+  }
+}
+
+class _ClawHubSkillReference {
+  const _ClawHubSkillReference(this.slug, this.ownerHandle);
+
+  final String slug;
+  final String? ownerHandle;
+}
+
+/// 拆 `@owner/slug`；不带 `@` 的按「只有 slug、没有发布者」处理。
+_ClawHubSkillReference? _parseClawHubSkillReference(String rawValue) {
+  final value = rawValue.trim();
+  if (value.isEmpty) return null;
+  if (!value.startsWith('@')) return _ClawHubSkillReference(value, null);
+  final parts = value.substring(1).split('/');
+  if (parts.length != 2 || parts.any((part) => part.isEmpty)) return null;
+  return _ClawHubSkillReference(parts[1], parts[0].toLowerCase());
+}
+
+/// 审核用的规范引用：发布者以详情响应里的 `owner.handle` 为准。
+String? _canonicalClawHubReference({
+  required String slug,
+  String? ownerHandle,
+}) {
+  final reference = _parseClawHubSkillReference(slug);
+  if (reference == null) return null;
+  final trimmedHandle = ownerHandle?.trim();
+  final owner = (trimmedHandle == null || trimmedHandle.isEmpty)
+      ? reference.ownerHandle
+      : trimmedHandle.toLowerCase();
+  return owner == null ? reference.slug : '@$owner/${reference.slug}';
+}
+
+Map<String, dynamic>? _asObject(Object? value) =>
+    value is Map ? value.cast<String, dynamic>() : null;
+
+String? _nonEmptyString(Object? value) {
+  final text = value?.toString().trim();
+  return (text == null || text.isEmpty) ? null : text;
+}
+
+/// 某条 ClawHub 搜索结果是否已经装在网关上（对应 Android `isClawHubSkillInstalled`）。
+///
+/// 三种回读方式，按结果的能力分派：
+/// - 只能直接安装的来源没有 `@owner/slug` 引用，靠网关记录的原始引用比对；
+/// - 能看详情、且带版本号的结果必须**版本也一致**才算已安装
+///   （否则「装了旧版」会被误判成「已是最新」）；
+/// - 能看详情但没版本号时，只比对引用。
+bool isClawHubSkillInstalled(
+  List<GatewaySkill> skills,
+  GatewayClawHubSkillSummary result,
+) {
+  if (!result.canReadDetails) {
+    return isClawHubSkillInstalledByReference(skills, result.reference);
+  }
+  final version = result.version;
+  if (version != null) {
+    return isClawHubSkillInstalledAtVersion(skills, result.reference, version);
+  }
+  return _isClawHubReferenceInstalled(skills, result.reference);
+}
+
+bool _isClawHubReferenceInstalled(
+  List<GatewaySkill> skills,
+  String slug,
+) {
+  final reference = _parseClawHubSkillReference(slug);
+  if (reference == null) return false;
+  return skills.any((skill) => _matchesClawHubReference(skill, reference));
+}
+
+/// 安装回读：引用与**版本**都必须对上。
+///
+/// 与 [isClawHubSkillInstalled] 的区别是这里不猜 —— 安装方明确知道自己
+/// 请求的是哪个版本，装成了别的版本就不算成功。
+bool isClawHubSkillInstalledAtVersion(
+  List<GatewaySkill> skills,
+  String slug,
+  String version,
+) {
+  final reference = _parseClawHubSkillReference(slug);
+  if (reference == null) return false;
+  return skills.any(
+    (skill) =>
+        _matchesClawHubReference(skill, reference) &&
+        skill.clawHubInstalledVersion == version,
+  );
+}
+
+/// 安装回读：只能直接安装的来源按原始引用比对。
+///
+/// 它的引用不是 `@owner/slug` 形式，slug 比对永远匹配不上，
+/// 网关会把安装时用的原始引用记在 `requestedReference` 里。
+bool isClawHubSkillInstalledByReference(
+  List<GatewaySkill> skills,
+  String requestedReference,
+) {
+  final reference = requestedReference.trim();
+  if (reference.isEmpty) return false;
+  return skills.any(
+    (skill) =>
+        skill.clawHubValid && skill.clawHubRequestedReference == reference,
+  );
+}
+
+bool _matchesClawHubReference(
+  GatewaySkill skill,
+  _ClawHubSkillReference reference,
+) {
+  if (!skill.clawHubValid) return false;
+  final installedSlug = skill.clawHubSlug;
+  final installedReference = installedSlug == null
+      ? null
+      : _parseClawHubSkillReference(installedSlug);
+  if (installedReference == null) return false;
+  if (installedReference.slug.toLowerCase() != reference.slug.toLowerCase()) {
+    return false;
+  }
+  final requestedOwner = reference.ownerHandle;
+  if (requestedOwner == null) return true;
+  final installedOwner =
+      installedReference.ownerHandle ?? skill.clawHubOwnerHandle;
+  return installedOwner?.toLowerCase() == requestedOwner.toLowerCase();
 }
 
 class GatewaySkillsStatus {

@@ -32,6 +32,7 @@ import 'package:parrot_app/ui/screen/qr_code_screen.dart';
 import 'package:parrot_app/ui/screen/qr_scan_screen.dart';
 import 'package:parrot_app/ui/screen/setting_screen.dart';
 import 'package:parrot_app/ui/screen/skill_screen.dart';
+import 'package:parrot_app/ui/screen/skill_search_screen.dart';
 import 'package:parrot_app/ui/screen/gateway_pairing_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
@@ -365,6 +366,13 @@ final GoRouter router = GoRouter(
         return QrScanScreen(viewModel: context.read());
       },
     ),
+    GoRoute(
+      path: Routes.skillSearch,
+      builder: (context, state) {
+        return SkillSearchScreen(viewModel: context.read());
+      },
+    ),
+
     // GoRoute(
     //   path: Routes.live2d,
     //   builder: (context, state) {
@@ -414,4 +422,5 @@ abstract final class Routes {
   static const voice = '/voice';
   static const setting = '/setting';
   static const skill = '/skill';
+  static const skillSearch = '/skill_search';
 }

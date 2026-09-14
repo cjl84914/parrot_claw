@@ -1051,6 +1051,324 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
+  // ==================== ClawHub 技能搜索 / 安装审核 ====================
+  //
+  // 对应 Android `NodeRuntime.searchClawHubSkillsFromGateway` 与
+  // `reviewClawHubSkillInstallFromGateway`：搜索与审核共用一套状态，
+  // 放在这里，上层只做转发。与 Skill 列表是两套状态，互不影响。
+
+  /// ClawHub 技能管理所需的网关方法族（Android 的 CLAWHUB_SKILL_GATEWAY_METHODS）。
+  static const _clawHubGatewayMethods = <String>[
+    'skills.search',
+    'skills.detail',
+    'skills.install',
+  ];
+
+  List<GatewayClawHubSkillSummary> _clawHubResults = const [];
+
+  /// 最近一次 ClawHub 搜索的结果。
+  List<GatewayClawHubSkillSummary> get clawHubResults =>
+      List.unmodifiable(_clawHubResults);
+
+  String _clawHubQuery = '';
+
+  /// 最近一次搜索用的关键字。
+  String get clawHubQuery => _clawHubQuery;
+
+  bool _clawHubSearching = false;
+
+  /// 是否正在搜索 ClawHub。
+  bool get clawHubSearching => _clawHubSearching;
+
+  String? _clawHubError;
+
+  /// 最近一次搜索或审核失败的原因。
+  String? get clawHubError => _clawHubError;
+
+  String? _clawHubMessage;
+
+  /// 搜索成功但无结果时的提示。
+  String? get clawHubMessage => _clawHubMessage;
+
+  String? _clawHubReviewingSlug;
+
+  /// 正在读取详情的技能引用（用于该行的 loading 态）。
+  String? get clawHubReviewingSlug => _clawHubReviewingSlug;
+
+  GatewayClawHubInstallReview? _clawHubInstallReview;
+
+  /// 已加载的安装审核信息，null 表示没有待确认的安装。
+  GatewayClawHubInstallReview? get clawHubInstallReview =>
+      _clawHubInstallReview;
+
+  final Set<String> _clawHubInstallingSlugs = <String>{};
+
+  /// 正在安装的 ClawHub 引用（用于把对应那行的按钮置为「安装中」并去重）。
+  Set<String> get clawHubInstallingSlugs =>
+      Set.unmodifiable(_clawHubInstallingSlugs);
+
+  /// 当前连接是否拿到 `operator.admin`。
+  ///
+  /// 安装 ClawHub 技能需要写权限，与 Android `operatorAdminScopeAvailable` 同源：
+  /// 读 hello 里 `auth.scopes`（网关没返回时视为没有，由调用方提示）。
+  bool get clawHubCanInstall {
+    final scopes = _runtime.hello?.auth['scopes'];
+    if (scopes is! List) return false;
+    return scopes
+        .whereType<String>()
+        .any((scope) => scope.trim() == 'operator.admin');
+  }
+
+  /// 搜索序号：只让最新一次搜索的结果落地，旧响应直接丢弃。
+  int _clawHubSearchSeq = 0;
+
+  /// 审核序号：新的搜索 / 审核会让在途的详情响应作废。
+  int _clawHubReviewSeq = 0;
+
+  /// 网关是否宣告了完整的 ClawHub 方法族（hello 的 `features.methods`）。
+  ///
+  /// 与 Android 一致：网关没宣告（含旧网关不返回 methods）时视为不支持，
+  /// 由调用方提示用户升级 Gateway。
+  bool get clawHubSkillsAvailable {
+    final methods = _runtime.hello?.features['methods'];
+    if (methods is! List) return false;
+    final advertised = methods
+        .whereType<String>()
+        .map((method) => method.trim())
+        .toSet();
+    return _clawHubGatewayMethods.every(advertised.contains);
+  }
+
+  /// 搜索 ClawHub 技能，结果与状态写入本仓库。
+  Future<bool> searchClawHubSkillsFromGateway(String query) async {
+    final normalized = query.trim();
+    final searchSeq = ++_clawHubSearchSeq;
+    // 新的搜索会作废在途的详情请求与待确认的审核。
+    _clawHubReviewSeq++;
+    if (!_connected) {
+      _clawHubQuery = normalized;
+      _clawHubSearching = false;
+      _clawHubResults = const [];
+      _clawHubReviewingSlug = null;
+      _clawHubInstallReview = null;
+      _clawHubError = '请先连接网关，再搜索 ClawHub 技能';
+      _clawHubMessage = null;
+      notifyListeners();
+      return false;
+    }
+    if (!clawHubSkillsAvailable) {
+      _clawHubQuery = normalized;
+      _clawHubSearching = false;
+      _clawHubResults = const [];
+      _clawHubReviewingSlug = null;
+      _clawHubInstallReview = null;
+      _clawHubError = '当前网关不支持 ClawHub 技能搜索，请升级 Gateway 后重试';
+      _clawHubMessage = null;
+      notifyListeners();
+      return false;
+    }
+    _clawHubQuery = normalized;
+    _clawHubSearching = true;
+    _clawHubResults = const [];
+    _clawHubReviewingSlug = null;
+    _clawHubInstallReview = null;
+    _clawHubError = null;
+    _clawHubMessage = null;
+    notifyListeners();
+    try {
+      final response = await _runtime.skillsSearch(query: normalized);
+      final results = GatewayClawHubSkillSummary.listFromSearchResponse(
+        response,
+      );
+      if (searchSeq != _clawHubSearchSeq) return false;
+      _clawHubResults = results;
+      _clawHubMessage = results.isEmpty ? '没有匹配的 ClawHub 技能' : null;
+      return true;
+    } catch (error) {
+      if (searchSeq != _clawHubSearchSeq) return false;
+      _clawHubError = '搜索 ClawHub 技能失败：$error';
+      return false;
+    } finally {
+      if (searchSeq == _clawHubSearchSeq) {
+        _clawHubSearching = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// 读取安装前的版本审核信息，成功后 [clawHubInstallReview] 就是待确认的版本。
+  ///
+  /// 对应 Android `reviewClawHubSkillInstallFromGateway`：用搜索结果自带的
+  /// reference 去读详情，所以「审核的发布者」与「安装的发布者」是同一个。
+  Future<bool> reviewClawHubSkillInstallFromGateway(
+    GatewayClawHubSkillSummary skill,
+  ) async {
+    final reference = skill.reference;
+    final reviewSeq = ++_clawHubReviewSeq;
+    if (!_connected) {
+      _clawHubError = '请先连接网关，再查看 ClawHub 技能详情';
+      notifyListeners();
+      return false;
+    }
+    if (!clawHubSkillsAvailable) {
+      _clawHubError = '当前网关不支持 ClawHub 技能搜索，请升级 Gateway 后重试';
+      notifyListeners();
+      return false;
+    }
+    _clawHubReviewingSlug = reference;
+    _clawHubInstallReview = null;
+    _clawHubError = null;
+    _clawHubMessage = null;
+    notifyListeners();
+    try {
+      final response = await _runtime.skillsDetail(slug: reference);
+      final review = GatewayClawHubInstallReview.fromDetailResponse(
+        response,
+        fallback: skill,
+      );
+      if (reviewSeq != _clawHubReviewSeq) return false;
+      _clawHubReviewingSlug = null;
+      _clawHubInstallReview = review;
+      _clawHubError = review == null
+          ? 'ClawHub 没有为 $reference 返回可安装的版本'
+          : null;
+      return review != null;
+    } catch (error) {
+      if (reviewSeq != _clawHubReviewSeq) return false;
+      _clawHubReviewingSlug = null;
+      _clawHubError = '加载 $reference 的 ClawHub 详情失败：$error';
+      return false;
+    } finally {
+      if (reviewSeq == _clawHubReviewSeq) notifyListeners();
+    }
+  }
+
+  /// 关掉待确认的安装（弹窗「取消」）。
+  ///
+  /// 同时自增审核序号：在途的详情响应落地时会被丢弃，不会又把弹窗顶回来。
+  void dismissClawHubSkillInstallReview() {
+    _clawHubReviewSeq++;
+    _clawHubReviewingSlug = null;
+    _clawHubInstallReview = null;
+    notifyListeners();
+  }
+
+  /// 安装一条 ClawHub 搜索结果，成功后刷新 Skill 列表。
+  ///
+  /// 对应 Android `installClawHubSkillFromGateway`。入参是审核确认过的
+  /// `slug` + `version` —— 装的必须就是审核时看到的那个版本。
+  ///
+  /// 失败路径都先回读一次列表再定性：超时或被拒时网关其实可能已经装上了，
+  /// 直接报「失败」会让用户重复安装。
+  Future<bool> installClawHubSkillFromGateway({
+    required String slug,
+    String? version,
+  }) async {
+    final normalized = slug.trim();
+    if (normalized.isEmpty) return false;
+    if (!_connected) {
+      _clawHubError = '请先连接网关，再安装 ClawHub 技能';
+      notifyListeners();
+      return false;
+    }
+    if (!clawHubSkillsAvailable) {
+      _clawHubError = '当前网关不支持 ClawHub 技能搜索，请升级 Gateway 后重试';
+      notifyListeners();
+      return false;
+    }
+    if (!clawHubCanInstall) {
+      _clawHubError = '当前连接缺少 operator.admin 权限，无法安装 ClawHub 技能';
+      notifyListeners();
+      return false;
+    }
+    // 同一条结果重复点击直接吞掉，别打两次网关。
+    if (!_clawHubInstallingSlugs.add(normalized)) return false;
+    final trimmedVersion = version?.trim();
+    final attemptedVersion = (trimmedVersion == null || trimmedVersion.isEmpty)
+        ? null
+        : trimmedVersion;
+    _clawHubInstallReview = null;
+    _clawHubError = null;
+    _clawHubMessage = null;
+    notifyListeners();
+    try {
+      final response = await _runtime.skillsInstallFromClawHub(
+        slug: normalized,
+        version: attemptedVersion,
+      );
+      final refreshed = await _refreshSkillsQuietly();
+      _clawHubMessage = _formatClawHubInstallMessage(
+        _nonEmptyText(response['message']) ?? '已安装 $normalized',
+        [
+          _nonEmptyText(response['warning']),
+          if (!refreshed) '已安装，但技能列表刷新失败，请下拉刷新',
+        ].whereType<String>().join('\n'),
+      );
+      return true;
+    } on TimeoutException {
+      if (await _refreshAndConfirmClawHubInstall(normalized, attemptedVersion)) {
+        _clawHubMessage = '已安装 $normalized';
+        return true;
+      }
+      _clawHubError =
+          '$normalized 的安装结果未知。请重新连接、刷新技能列表后重试；'
+          '网关会安全地接续仍在进行的同一次安装。';
+      return false;
+    } on GatewayResponseError catch (error) {
+      if (await _refreshAndConfirmClawHubInstall(normalized, attemptedVersion)) {
+        _clawHubMessage = '已安装 $normalized';
+        return true;
+      }
+      _clawHubError = _formatClawHubInstallMessage(
+        _nonEmptyText(error.message) ?? '网关拒绝了这个 ClawHub 安装请求',
+        _nonEmptyText(error.details['clawhubWarning']),
+      );
+      return false;
+    } catch (error) {
+      _clawHubError = '从 ClawHub 安装 $normalized 失败：$error';
+      return false;
+    } finally {
+      _clawHubInstallingSlugs.remove(normalized);
+      notifyListeners();
+    }
+  }
+
+  /// 回读列表并确认安装结果。
+  ///
+  /// 带版本时要求引用与版本都对上；不带版本说明来源是「只能直接安装」的，
+  /// 只能按网关记录的原始引用比对。
+  Future<bool> _refreshAndConfirmClawHubInstall(
+    String slug,
+    String? version,
+  ) async {
+    if (!await _refreshSkillsQuietly()) return false;
+    final skills = _skills;
+    if (version != null) {
+      return isClawHubSkillInstalledAtVersion(skills, slug, version);
+    }
+    return isClawHubSkillInstalledByReference(skills, slug);
+  }
+
+  /// 重新拉取 Skill 列表；失败返回 false，不写 [_skillsError]（调用方自己决定文案）。
+  Future<bool> _refreshSkillsQuietly() async {
+    try {
+      await _reloadSkills();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String? _nonEmptyText(Object? value) {
+    final text = value?.toString().trim();
+    return (text == null || text.isEmpty) ? null : text;
+  }
+
+  static String _formatClawHubInstallMessage(
+    String message,
+    String? warning,
+  ) => (warning == null || warning.isEmpty) ? message : '$message\n\n$warning';
+
   // ==================== Cron 管理 ====================
   //
   // 与 Skill 同一套分层：状态与操作在仓库，CronViewModel 只做转发。

@@ -749,11 +749,75 @@ class OpenClawRuntime {
     );
   }
 
+  /// 搜索 ClawHub 技能。
+  ///
+  /// 网关的 `query` 是非空字符串（空串会被参数校验拒绝），所以关键字为空时
+  /// 不传该字段，只带 limit —— 与 Android `clawHubSearchParams` 一致。
   Future<Map<String, dynamic>> skillsSearch({
-    required String query,
+    String? query,
+    int limit = 25,
     Duration? timeout,
-  }) =>
-      requestKnown('skills.search', params: {'query': query}, timeout: timeout);
+  }) {
+    final normalized = query?.trim();
+    return requestKnown(
+      'skills.search',
+      params: {
+        if (normalized != null && normalized.isNotEmpty) 'query': normalized,
+        'limit': limit,
+      },
+      timeout: timeout,
+    );
+  }
+
+  /// 读取 ClawHub 技能详情，用于安装前的版本审核。
+  ///
+  /// 入参是 `skills.search` 给出的 reference（可能是 `@owner/slug`）：
+  /// 网关的 `skills.detail` / `skills.install` 用同一套引用语法，
+  /// 免得「审了一个发布者的卡片、装的是另一个发布者的包」。
+  Future<Map<String, dynamic>> skillsDetail({
+    required String slug,
+    Duration? timeout,
+  }) {
+    final normalized = slug.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(slug, 'slug', 'ClawHub 技能引用不能为空');
+    }
+    return requestKnown(
+      'skills.detail',
+      params: {'slug': normalized},
+      timeout: timeout,
+    );
+  }
+
+  /// 从 ClawHub 安装技能（对应 Android `clawHubInstallParams`）。
+  ///
+  /// 与 [skillsInstall] 不是同一个入参形态：那条走网关自带的安装方式
+  /// （`name` + `installId`），这条按 ClawHub 引用装，并且要指定具体版本，
+  /// 让网关去校验的就是「审核时看到的那个版本」。
+  ///
+  /// 安装可能等很久（下载 + 校验），所以默认给 125s 超时。
+  Future<Map<String, dynamic>> skillsInstallFromClawHub({
+    required String slug,
+    String? version,
+    Duration? timeout,
+  }) {
+    final normalized = slug.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(slug, 'slug', 'ClawHub 技能引用不能为空');
+    }
+    final normalizedVersion = version?.trim();
+    return requestKnown(
+      'skills.install',
+      params: {
+        'source': 'clawhub',
+        'slug': normalized,
+        if (normalizedVersion != null && normalizedVersion.isNotEmpty)
+          'version': normalizedVersion,
+        'timeoutMs': 120000,
+      },
+      timeout: timeout ?? const Duration(milliseconds: 125000),
+    );
+  }
 
   Future<Map<String, dynamic>> modelsList({Duration? timeout}) =>
       requestKnown('models.list', timeout: timeout);
