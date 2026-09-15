@@ -5,8 +5,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/service/gateway_connector.dart';
 import 'package:parrot_app/data/service/gateway_scope_store.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -24,10 +24,8 @@ class QrScanScreen extends StatefulWidget {
 class _QrScanScreenState extends State<QrScanScreen> {
   final MobileScannerController _controller = MobileScannerController();
   final Logger _log = Logger('QrScanScreen');
-  final OpenClawRuntime _runtime = OpenClawRuntime();
 
   bool _handling = false;
-  bool _connectionHandedOff = false;
   GatewayPairingRequest? pairing;
   String? _lastPayload;
 
@@ -45,18 +43,11 @@ class _QrScanScreenState extends State<QrScanScreen> {
     'operator.write',
   ];
 
-  Future<void> _shutdownRuntime() async {
-    try {
-      await _runtime.shutdown();
-    } catch (error) {
-      _log.warning('Failed to close pairing runtime: $error');
-    }
-  }
-
+  /// 配对用的会话都是用完即弃的：每次 [probeGateway] 都会在返回前把它关掉，
+  /// 因此这里不需要再手工收尾。
   @override
   void dispose() {
     _controller.dispose();
-    _runtime.dispose();
     super.dispose();
   }
 
@@ -92,11 +83,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
     } catch (error) {
       if (!mounted) return;
       await _showHandshakeError(error.toString());
-    } finally {
-      // 成功后将 operator 连接交给首页，避免 finally 抢先关闭它。
-      if (!_connectionHandedOff) {
-        await _shutdownRuntime();
-      }
     }
   }
 
@@ -106,8 +92,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
     final p = pairing;
     if (p == null) return false;
 
-    final bootstrapResult = await _runtime.configureResult(
-      OpenClawRuntimeConfig(
+    final bootstrapResult = await probeGateway(
+      GatewayConnectConfig(
         url: p.wsUrl,
         token: p.token,
         password: p.password,
@@ -128,8 +114,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
 
     if (!mounted) return false;
-    final snapshot =
-        bootstrapResult.data ?? _runtime.hello;
+    final snapshot = bootstrapResult.data;
     final auth = snapshot?.auth ?? const <String, dynamic>{};
     _log.info('gateway bootstrap handshake completed');
 
@@ -145,8 +130,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
     final operatorScopes = _scopesFromEntry(operatorEntry);
 
-    final operatorResult = await _runtime.configureResult(
-      OpenClawRuntimeConfig(
+    final operatorResult = await probeGateway(
+      GatewayConnectConfig(
         url: p.wsUrl,
         token: operatorToken,
         clientId: _clientId,
@@ -180,9 +165,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
     );
 
     await _saveConfig(config);
-    // 配对成功后将已建立的 operator 连接交给首页 ConnViewModel。
-    // finally 不能再关闭它，否则首页刚开始连接就会被终止。
-    _connectionHandedOff = true;
+    // 首页的连接由 ServerRepository 变更驱动（GatewayRepository.connect()），
+    // 与这里这条用完即弃的探测会话无关，所以直接跳转即可。
     if (mounted) context.go(Routes.index);
     return true;
   }

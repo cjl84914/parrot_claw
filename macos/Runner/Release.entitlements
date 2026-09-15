@@ -24,6 +24,8 @@
     		<string>/opt/homebrew/</string>
     		<string>/opt/homebrew/bin/</string>
     	</array>
+    	<key>com.apple.security.files.user-selected.read-only</key>
+        <true/>
     	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
     	<array>
     		<string>com.apple.coresymbolicationd</string>

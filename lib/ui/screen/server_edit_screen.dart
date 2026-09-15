@@ -3,12 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
-import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 class ServerEditScreen extends StatefulWidget {
@@ -385,65 +382,39 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     });
 
     final config = _buildConfig();
-    var openPairingPage = false;
-    GatewayOperationResult<dynamic>? result;
+    // 试连走一次性的独立 runtime 实例：无论成功失败都不会动 App 当前使用的
+    // 共享会话，因此这里失败不会连累首页那条已经连上的网关。
+    final result = await widget.viewModel.probeServer(config);
 
-    try {
-      final runtimeConfig = OpenClawRuntimeConfig(
-        url: config.wsUrl,
-        token: config.isTokenAuth ? config.token : null,
-        password: config.isPasswordAuth ? config.password : null,
-      );
-      result = await OpenClawRuntime.instance.configureResult(runtimeConfig);
-      print('[ParrotClaw] Testing connection to ${config.wsUrl}');
+    if (!mounted) return;
 
-      if (result != null) {
-        if (result.error != null) {
-          final error = result.error;
-          final isPairingRequired =
-              gatewayErrorCodeFromRaw(result.error!.code) ==
-                  GatewayErrorCode.deviceNotPaired;
-          openPairingPage = isPairingRequired;
-          setState(() {
-            _testError = error?.message;
-          });
-        }
+    final error = result.error;
+    final pairingRequired =
+        error != null &&
+        gatewayErrorCodeFromRaw(error.code) == GatewayErrorCode.deviceNotPaired;
 
-        if (mounted) {
-          setState(() {
-            _testSuccess = result!.ok;
-          });
-        }
+    setState(() {
+      _isTesting = false;
+      _testSuccess = result.ok;
+      _testError = error?.message;
+    });
+
+    if (pairingRequired) {
+      final details = GatewayErrorDetails.fromJson(error.details);
+      final result = await context.push(Routes.gatewayPairing, extra: details.requestId);
+      if(result == true){
+        _connectAndSave();
       }
-    } catch (e) {
-      // 这里只处理非网关流程本身的意外异常，GatewayFailure 由 result 统一处理。
-      if (mounted) {
-        setState(() {
-          _testSuccess = false;
-          _testError = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
-    }
-
-
-    if (mounted) {
-      setState(() {
-        _isTesting = false;
-      });
-    }
-
-    if (openPairingPage) {
-      final details = GatewayErrorDetails.fromJson(result!.error!.details);
-      context.push(Routes.gatewayPairing, extra: details.requestId);
       return;
     }
 
-    if (_testSuccess) {
-      await OpenClawRuntime.instance.shutdown();
-      await _saveConfig(config);
-      context.go(Routes.index);
-      MySnackBar.showSuccess(context, _isEditing ? '网关已更新' : '网关已添加');
-    }
+    if (!result.ok) return;
+
+    // 只有试连成功才保存并切过去，旧会话在切换成功之后才被拆掉。
+    await _saveConfig(config);
+    if (!mounted) return;
+    context.go(Routes.index);
+    MySnackBar.showSuccess(context, _isEditing ? '网关已更新' : '网关已添加');
   }
 
   Future<void> _saveConfig(ServerConfig config) async {

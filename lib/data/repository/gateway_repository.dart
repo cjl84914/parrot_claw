@@ -2,15 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/gateway_cron.dart';
+import 'package:parrot_app/data/model/gateway_session_models.dart';
 import 'package:parrot_app/data/model/gateway_skill.dart';
 import 'package:parrot_app/data/model/message.dart';
-import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/model/session_message.dart';
-import 'package:parrot_app/data/repository/server_repository.dart';
-import 'package:parrot_app/data/repository/setting_repository.dart';
-import 'package:parrot_app/data/service/gateway_scope_store.dart';
+import 'package:parrot_app/data/service/gateway_connector.dart';
 import 'package:parrot_app/data/service/openclaw_protocol.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:parrot_app/util/parse.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:uuid/uuid.dart';
@@ -18,8 +15,6 @@ import 'package:uuid/uuid.dart';
 class GatewayRepository extends ChangeNotifier {
   final Logger _log = Logger('GatewayRepository');
   var uuid = const Uuid();
-
-  ServerConfig? _config;
 
   List<GatewaySessionEntry> _sessions = [];
 
@@ -31,7 +26,7 @@ class GatewayRepository extends ChangeNotifier {
   Stream<ChatMessage>? get messageEvents => messageController.stream;
 
   final sessionUpdateController =
-      StreamController<List<ChatMessage>>.broadcast();
+  StreamController<List<ChatMessage>>.broadcast();
 
   Stream<List<ChatMessage>>? get sessionUpdateEvents =>
       sessionUpdateController.stream;
@@ -44,8 +39,18 @@ class GatewayRepository extends ChangeNotifier {
 
   Stream<dynamic>? get voiceEvents => voiceController.stream;
 
+  final StreamController<GatewayPush> _pushes =
+  StreamController<GatewayPush>.broadcast();
+
+  /// 会话的原始推送流（snapshot / event）。
+  ///
+  /// 供需要自行等待某个网关事件的调用方使用 —— 例如引导页要等模型验证的
+  /// `chat` final 事件，而它用的 idempotencyKey 不是本仓库的 `_runId`，
+  /// 所以走不了 [pendingRunEvents]。日常 UI 状态请优先用具名事件流。
+  Stream<GatewayPush> get pushes => _pushes.stream;
+
   final StreamController<SessionMessage> _sessionMessageController =
-      StreamController<SessionMessage>.broadcast();
+  StreamController<SessionMessage>.broadcast();
 
   Stream<SessionMessage> get sessionMessageStream =>
       _sessionMessageController.stream;
@@ -80,10 +85,6 @@ class GatewayRepository extends ChangeNotifier {
 
   bool get isHistoryLoading => _isHistoryLoading;
 
-  final SettingRepository _settingRepository;
-
-  SettingRepository get settingRepository => _settingRepository;
-
   String _runId = '';
 
   String get runId => _runId;
@@ -96,28 +97,47 @@ class GatewayRepository extends ChangeNotifier {
 
   bool get talkMode => _talkMode;
 
-  final ServerRepository _serverRepository;
-  final OpenClawRuntime _runtime;
-  StreamSubscription? _runtimeSub;
-  StreamSubscription? _runtimeStateSub;
+  /// 会话工厂：默认走真实 WebSocket，测试在这里注入假会话。
+  final GatewaySessionFactory _sessionFactory;
+
+  /// 当前正在使用的会话。
+  ///
+  /// 由本仓库直接持有并管理 —— 没有中间的 runtime 层，也没有进程级单例。
+  /// 断线自愈完全交给 `GatewaySession` 自己的退避重连 + tick 看门狗，
+  /// 仓库只负责把状态翻译给 UI。
+  GatewaySession? _session;
+
+  /// 正在握手、尚未接管的候选会话（见 [_ensureSession] 的「先连后拆」）。
+  ///
+  /// 它只在一次 [_ensureSession] 调用内存在，用来把「新配置能不能连上」和
+  /// 「拆掉旧会话」分开，避免失败的新配置把可用的旧连接一起带走。
+  GatewaySession? _pendingSession;
+
+  /// 当前会话对应的连接配置，用于判断「是否同一配置」。
+  GatewayConnectConfig? _gatewayConfig;
+
+  /// 最近一次握手的 hello。
+  ///
+  /// `clawHubCanInstall` / `clawHubSkillsAvailable` 依赖它，而 `GatewaySession`
+  /// 不暴露 `HelloOk`，所以在快照推送时自己缓存一份。
+  HelloOk? _hello;
+
+  /// 会话是否应当保持存活；手动断开时置 false。
+  bool _shouldRun = false;
+
   String? disconnectReason;
 
   GatewayRepository({
-    required SettingRepository settingRepository,
-    required ServerRepository serverRepository,
-    OpenClawRuntime? runtime,
-  }) : _settingRepository = settingRepository,
-       _serverRepository = serverRepository,
-       _runtime = runtime ?? OpenClawRuntime.instance {
-    _runtimeSub = _runtime.pushes.listen(_handleRuntimePush);
-    _runtimeStateSub = _runtime.states.listen(_handleRuntimeState);
-    _serverRepository.addListener(_onServerChanged);
+    GatewaySessionFactory? sessionFactory,
+  }) :
+        _sessionFactory = sessionFactory ?? defaultGatewaySessionFactory{
+
   }
 
 
   void _onServerChanged() {
     _log.info('Server configuration changed, auto connecting...');
-    connect(); // 自动调用连接
+    reconnect(); // 自动调用连接
   }
 
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
@@ -133,62 +153,143 @@ class GatewayRepository extends ChangeNotifier {
   /// ServerRepository 的每次变更都会触发本方法（添加/选择/更新/删除），
   /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
   /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
-  Future<void> connect() async {
-    final config = _serverRepository.selectedServer;
-    if (config == null) {
-      _isConnecting = false;
-      _connected = false;
-      notifyListeners();
-      return;
-    }
-    if (_connected && _config == config) {
+  Future<void> connect(GatewayConnectConfig config) async {
+    if (_connected && _gatewayConfig == config) {
       return;
     }
     await _doConnect(config);
   }
 
-  Future<void> _doConnect(
-    ServerConfig config, {
+  Future<void> _doConnect(GatewayConnectConfig config, {
     bool reconnecting = false,
   }) async {
     _manualDisconnect = false;
-    _config = config;
+    // 这里**不能**先把 `_gatewayConfig` 改成新配置：`_ensureSession` 就是靠
+    // 「当前配置 == 目标配置吗」来判断「直接复用会话」还是「先建候选会话再拆
+    // 旧的」。提前覆盖等于把每次切换都伪装成「同一个配置」，候选会话那条路
+    // 永远走不到，切网关会变成在旧地址上重连。配置由 `_ensureSession` 在
+    // 真正接管会话时才落库。
     _isConnecting = true;
     _connected = false;
     _isReconnecting = reconnecting;
     disconnectReason = reconnecting ? '正在重新连接网关…' : null;
     _runId = '';
-    _log.info('Switching to server: ${config.name}');
+    // _log.info('Switching to server: ${config.clientDisplayName}');
 
     try {
       notifyListeners();
-      // 扫码配对（受限 operator）加入的网关：重连时复用配对时实际授权的
-      // scopes，避免按默认全量（含 admin/pairing）请求触发 scope-upgrade 审批。
-      final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
-      final runtimeConfig = OpenClawRuntimeConfig(
-        url: config.wsUrl,
-        token: config.isTokenAuth ? config.token : null,
-        password: config.isPasswordAuth ? config.password : null,
-        scopes: storedScopes ?? openClawOperatorScopes,
-      );
-      await _runtime.configure(runtimeConfig);
-      // configure() returns only after the authenticated WebSocket handshake.
-      // Use it as a fallback when a snapshot was emitted before this listener
-      // was attached or when the snapshot health payload has another shape.
-      if (!_connected && identical(_config, config)) {
+      await _ensureSession(config);
+      // _ensureSession() 只在认证握手完成后才返回。
+      // 用它兜底：快照可能在本监听器挂上之前就推完了，或者快照里的 health
+      // 载荷是另一种形状。
+      if (!_connected && identical(_gatewayConfig, config)) {
         _markConnected(null);
       }
     } catch (e) {
-      _isConnecting = false;
-      _connected = false;
-      notifyListeners();
       _log.warning('Connect failed in ViewModel: $e');
-      // runtime 会在后台继续重连，这里只把失败原因交给 UI。
-      if (!_manualDisconnect) {
-        disconnectReason = _describeConnectError(e);
+      // if (_session?.connected ?? false) {
+        // 旧会话仍然健康：这次切换失败不该让 UI 掉到「未连接」——
+        // 连接其实还在，只是新目标没连上。
+        _isConnecting = false;
+        _isReconnecting = false;
+        _connected = true;
+        disconnectReason = null;
         notifyListeners();
-      }
+      // }
     }
+  }
+
+  /// 确保有一条连到 [config] 的可用会话。
+  ///
+  /// 三条路径：
+  /// - 已经是同一配置 → 直接让现有会话重连（幂等，可反复调用）；
+  /// - 换了配置 → 先建候选会话并完成握手，**成功后才**拆掉旧会话；
+  /// - 握手失败 → 有健康旧会话就丢弃候选、什么都不动；否则把新配置落成
+  ///   当前配置，交给候选会话自己的退避重连继续重试。
+  Future<void> _ensureSession(GatewayConnectConfig config) async {
+    _shouldRun = true;
+    final current = _session;
+    if (_gatewayConfig == config && current != null) {
+      await current.connect();
+      return;
+    }
+
+    late final GatewaySession candidate;
+    candidate = _sessionFactory(
+      config: config,
+      onPush: (push) {
+        if (_acceptsPush(candidate)) {
+          _handlePush(push, pending: identical(_pendingSession, candidate));
+        }
+      },
+      onDisconnect: (reason) {
+        if (_acceptsDisconnect(candidate)) _handleDisconnect(reason);
+      },
+    );
+
+    // 旧会话健康时才需要保护它：此时切换全程对外保持「已连接」。
+    final protected = current != null && current.connected;
+    _pendingSession = candidate;
+    try {
+      await candidate.connect();
+    } catch (error) {
+      _pendingSession = null;
+      if (protected) {
+        // 旧会话仍然可用：丢弃候选，配置 / 状态 / 自动重连全都不动。
+        await _retireSession(candidate);
+      } else {
+        // 没有可用的旧会话（冷启动，或旧会话已断）：把新目标落成当前配置。
+        // 候选会话在自己的 connect() 失败分支里已经排好了退避重连，所以这里
+        // 只能接管它，**不能**把它拆掉，否则重试循环就没了。
+        await _retireSession(current);
+        _session = candidate;
+        _gatewayConfig = config;
+        _hello = null;
+      }
+      rethrow;
+    }
+    _pendingSession = null;
+
+    if (!_shouldRun) {
+      // 握手期间有人调用了 disconnect()/dispose()：不要在这里复活会话。
+      await _retireSession(candidate);
+      return;
+    }
+
+    // 握手成功后才切换：先换引用，再拆旧会话。反过来会让旧会话的 shutdown
+    // 波及刚装上的新会话。
+    _session = candidate;
+    _gatewayConfig = config;
+    if (current != null && !identical(current, candidate)) {
+      await _retireSession(current);
+    }
+  }
+
+  /// 构造连接某个网关所需的运行时配置。
+  ///
+  /// scopes 的决策只在这里做一次：扫码配对（受限 operator）加入的网关要复用
+  /// 配对时实际授权的 scopes，否则按默认全量（含 admin/pairing）请求会触发
+  /// scope-upgrade 审批。探测与正式连接共用它，"探测通过"才等于"连得上"。
+  // Future<GatewayConnectConfig> _connectConfigFor(ServerConfig config) async {
+  //   final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
+  //   return GatewayConnectConfig(
+  //     url: config.wsUrl,
+  //     token: config.isTokenAuth ? config.token : null,
+  //     password: config.isPasswordAuth ? config.password : null,
+  //     scopes: storedScopes ?? openClawOperatorScopes,
+  //   );
+  // }
+
+  /// 用一条用完即弃的会话试连，**不会**触碰本仓库正在使用的会话。
+  ///
+  /// 见 [probeGateway]：探测与正式连接共用同一套 scopes 决策。
+  Future<GatewayOperationResult<HelloOk>> probeServer(
+      GatewayConnectConfig config,) async {
+    final result = await probeGateway(config);
+    if (!result.ok) {
+      _log.warning('Gateway probe failed: ${result.error}');
+    }
+    return result;
   }
 
   /// 把底层异常转成用户能看懂的一行原因。
@@ -208,7 +309,7 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   void _markConnected(dynamic health) {
-    if (_runtime.state != OpenClawRuntimeState.ready) return;
+    if (!(_session?.connected ?? false)) return;
     if (_connected && !_isConnecting) return;
     _isConnecting = false;
     _isReconnecting = false;
@@ -223,48 +324,141 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _initializeSessionData() async {
     try {
-      _sessionKey ??= await _runtime.mainSessionKey();
+      _sessionKey ??= await mainSessionKey();
       await beginHistoryLoad();
     } catch (error) {
       _log.warning('Failed to initialize main session: $error');
     }
   }
 
-  String buildMediaUrl(String srcUrl) {
-    return _config!.buildMediaUrl(srcUrl);
-  }
+  // String buildMediaUrl(String sourcePath) {
+  //   final encodedPath = Uri.encodeComponent(sourcePath);
+  //   final url = '${_gatewayConfig!
+  //       .url}/__openclaw__/assistant-media?token=${_gatewayConfig!
+  //       .token}&source=$encodedPath';
+  //   _log.info(url);
+  //   return url;
+  // }
 
-  void _handleRuntimePush(GatewayPush push) {
+
+  /// 处理来自会话的推送。
+  ///
+  /// [pending] 为 true 表示这条推送来自尚未接管的候选会话：只缓存 hello，
+  /// 不上报「已连接」。否则切换网关时候选会话一握手成功就会触发
+  /// `listSessions()`，而那一刻 `_session` 还指着旧会话，请求会打到错的地方。
+  void _handlePush(GatewayPush push, {bool pending = false}) {
     if (push is GatewayPushSnapshot) {
-      _markConnected(push.snapshot.snapshot.health);
+      _hello = push.snapshot;
+      if (!pending) _markConnected(push.snapshot.snapshot.health);
     } else if (push is GatewayPushEvent) {
       _handleGatewayEvent(push.event, push.payload);
     }
+    if (!_pushes.isClosed) _pushes.add(push);
   }
 
-  void _handleRuntimeState(OpenClawRuntimeState state) {
+  /// 会话掉线：UI 进入「正在自动重连」。
+  ///
+  /// 重连本身不在这里操心 —— `GatewaySession` 的退避循环与 tick 看门狗会自己
+  /// 把连接拉回来，成功时推一份 snapshot，[_handlePush] 随即把状态翻回已连接。
+  void _handleDisconnect(String reason) {
     if (_manualDisconnect) return;
-    switch (state) {
-      case OpenClawRuntimeState.ready:
-        // 正常路径由 snapshot 触发 _markConnected；这里兜底，避免 push 丢失
-        // （或监听器晚挂）时 UI 永远停在"已断开"。
-        _markConnected(null);
-      case OpenClawRuntimeState.disconnected:
-      case OpenClawRuntimeState.reconnecting:
-        final wasConnected = _connected || _isConnecting;
-        _isReconnecting = true;
-        _isConnecting = false;
-        if (wasConnected) {
-          _sessionKey = null;
-          _sessions = [];
-        }
-        _connected = false;
-        disconnectReason = '与网关的连接已断开，正在自动重连…';
-        notifyListeners();
-      case OpenClawRuntimeState.idle:
-      case OpenClawRuntimeState.connecting:
-        break;
+    final wasConnected = _connected || _isConnecting;
+    _isConnecting = false;
+    _isReconnecting = true;
+    _connected = false;
+    if (wasConnected) {
+      _sessionKey = null;
+      _sessions = [];
     }
+    disconnectReason = '与网关的连接已断开，正在自动重连…';
+    _log.warning('Gateway session disconnected: $reason');
+    notifyListeners();
+  }
+
+  /// 候选会话在接管之前也允许推送：握手时的那份 snapshot 正是 hello 的来源。
+  bool _acceptsPush(GatewaySession session) =>
+      identical(_session, session) || identical(_pendingSession, session);
+
+  /// 只有当前会话的断开才算故障。
+  ///
+  /// 候选会话握手失败由 [_ensureSession] 的异常路径处理，不能被当成「连接断了」
+  /// 上报给 UI —— 那正是「测试连接失败连累默认网关」的成因。
+  bool _acceptsDisconnect(GatewaySession session) =>
+      identical(_session, session);
+
+  /// 拆掉一条已不属于本仓库的会话。
+  ///
+  /// 退役失败不能影响刚建立的新连接，所以这里只记日志。
+  Future<void> _retireSession(GatewaySession? session) async {
+    if (session == null) return;
+    try {
+      await session.shutdown();
+    } catch (error) {
+      _log.warning('Retiring superseded gateway session failed: $error');
+    }
+  }
+
+  /// 关掉当前会话并清空连接状态（主动断开 / 释放仓库时用）。
+  Future<void> _shutdownSession() async {
+    final session = _session;
+    _session = null;
+    _pendingSession = null;
+    _gatewayConfig = null;
+    _hello = null;
+    if (session == null) return;
+    try {
+      await session.shutdown();
+    } catch (error) {
+      _log.warning('Shutting down gateway session failed: $error');
+    }
+  }
+
+  // ==================== 会话请求通道 ====================
+  //
+  // 这一层刻意保持「薄」：不再为每个网关方法写一个命名包装。原先 runtime 层
+  // 有 41 个这样的包装，而本仓库又把它们逐个包了一遍 —— 同一件事写两遍。
+  // 现在调用方直接按方法名请求，由 OpenClawProtocolCatalog 兜住拼写错误。
+
+  /// 向当前会话发起一次协议请求。
+  ///
+  /// 不在协议目录里的方法名会被本地拒绝，避免把拼错的请求打到网关。
+  Future<Map<String, dynamic>> requestKnown(String method, {
+    Map<String, dynamic>? params,
+    Duration? timeout,
+  }) {
+    if (!OpenClawProtocolCatalog.supportsMethod(method)) {
+      throw ArgumentError.value(
+        method,
+        'method',
+        'Not in the OpenClaw protocol catalog',
+      );
+    }
+    return _request(method, params: params, timeout: timeout);
+  }
+
+  Future<Map<String, dynamic>> _request(String method, {
+    Map<String, dynamic>? params,
+    Duration? timeout,
+  }) {
+    final session = _session;
+    if (session == null) {
+      throw StateError('OpenClaw Gateway is not configured');
+    }
+    return session.request(method: method, params: params, timeout: timeout);
+  }
+
+  /// 当前主会话的 key（`session.scope` 为 `global` 时是 `global`）。
+  ///
+  /// 优先用握手快照里的默认值，缺失时才回读一次 config。
+  Future<String> mainSessionKey({Duration? timeout}) async {
+    final cached =
+    _hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
+    if (cached != null && cached
+        .trim()
+        .isNotEmpty) return cached;
+    final data = await requestKnown('config.get', timeout: timeout);
+    final scope = ((data['config'] as Map?)?['session'] as Map?)?['scope'];
+    return scope?.toString().trim() == 'global' ? 'global' : 'main';
   }
 
   void _handleGatewayEvent(String event, dynamic payload) {
@@ -335,15 +529,16 @@ class GatewayRepository extends ChangeNotifier {
     }
     _isHistoryLoading = true;
     notifyListeners();
-    final Map<String, dynamic> json = await _runtime.chatHistory(
-      sessionKey: sessionKey!,
+    final Map<String, dynamic> json = await requestKnown(
+      'chat.history',
+      params: {'sessionKey': sessionKey!},
     );
 
     final sessionInfo = json['sessionInfo'];
     final sessionInfoMap =
-        sessionInfo is Map
-            ? sessionInfo.cast<String, dynamic>()
-            : const <String, dynamic>{};
+    sessionInfo is Map
+        ? sessionInfo.cast<String, dynamic>()
+        : const <String, dynamic>{};
     _thinkingOptions = sessionInfoMap['thinkingOptions'] as List? ?? const [];
     _modelDefault = sessionInfoMap['model'] as String?;
     _log.info(json);
@@ -364,8 +559,10 @@ class GatewayRepository extends ChangeNotifier {
         final openclaw = obj['__openclaw'] as Map<String, dynamic>?;
         final id =
             obj['id'] as String? ??
-            openclaw?['id']?.toString() ??
-            'msg_${DateTime.now().microsecondsSinceEpoch}';
+                openclaw?['id']?.toString() ??
+                'msg_${DateTime
+                    .now()
+                    .microsecondsSinceEpoch}';
         messages.add(
           ChatMessage(
             id: id,
@@ -383,25 +580,12 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Future<void> disconnect() async {
-  //   _log.info('shutdown sessionKey: $_sessionKey');
-  //   _manualDisconnect = true;
-  //   _sessionKey = null;
-  //   _sessions = [];
-  //   _connected = false;
-  //   _isConnecting = false;
-  //   _config = null;
-  //   disconnectReason = null;
-  //   notifyListeners();
-  //   await _runtime.shutdown();
-  // }
-
-  /// 主动断开：关闭共享会话并停止自动重连。
+  /// 主动断开：关闭会话并停止自动重连。
   ///
   /// 与 [dispose] 的区别：这里只影响连接，不影响仓库自身；
   /// 之后任何 [connect] / [reconnect] 都能重新建立会话。
   Future<void> disconnect() async {
-    _log.info('Disconnecting from server: ${_config?.name} (${_config?.id})');
+    _log.info('Disconnecting  server');
     _manualDisconnect = true;
     _sessionKey = null;
     _sessions = [];
@@ -410,22 +594,16 @@ class GatewayRepository extends ChangeNotifier {
     _isReconnecting = false;
     disconnectReason = null;
     notifyListeners();
-    await _runtime.shutdown();
+    await _shutdownSession();
   }
 
-  /// 手动重连：走一次完整的 configure，成功后 UI 会立刻恢复。
+  /// 手动重连：走一次完整的连接，成功后 UI 会立刻恢复。
   ///
   /// 与 [connect] 的区别只是语义（带"正在重连"状态 + 失败原因），
-  /// 底层同样是 runtime 的共享会话，因此不会额外建第二条连接。
+  /// 底层复用同一条会话，因此不会额外建第二条连接。
   Future<void> reconnect() async {
-    final config = _serverRepository.selectedServer ?? _config;
-    if (config == null) {
-      _log.warning('Reconnect skipped: no server selected');
-      return;
-    }
-    _log.info('Reconnecting to server: ${config.name} (${config.id})');
     try {
-      await _doConnect(config, reconnecting: true);
+      await _doConnect(_gatewayConfig!, reconnecting: true);
     } catch (error) {
       _log.warning('Manual reconnect failed: $error');
     }
@@ -436,8 +614,7 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sendChatMessage(
-    String text, {
+  Future<void> sendChatMessage(String text, {
     List<OutgoingAttachment> attachments = const [],
   }) async {
     _log.info('sendMessage: $text');
@@ -446,7 +623,9 @@ class GatewayRepository extends ChangeNotifier {
       return;
     }
     _runId =
-        'chat_${DateTime.now().millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
+    'chat_${DateTime
+        .now()
+        .millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
     notifyListeners();
     if (attachments.isEmpty) {
       // 2. 乐观更新：创建并显示用户消息
@@ -454,7 +633,9 @@ class GatewayRepository extends ChangeNotifier {
         id: uuid.v4(),
         role: 'user',
         content: [ChatMessageContent(type: 'text', text: message)],
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: DateTime
+            .now()
+            .millisecondsSinceEpoch,
         idempotencyKey: _runId,
       );
       messageController.add(userMessage);
@@ -473,31 +654,38 @@ class GatewayRepository extends ChangeNotifier {
               fileName: a.fileName,
             ),
           ],
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: DateTime
+              .now()
+              .millisecondsSinceEpoch,
           idempotencyKey: _runId,
         );
         messageController.add(userMessage);
       }
     }
 
-    final resolvedSessionKey = sessionKey ?? await _runtime.mainSessionKey();
+    final resolvedSessionKey = sessionKey ?? await mainSessionKey();
     _sessionKey = resolvedSessionKey;
     try {
-      await _runtime.chatSend(
-        sessionKey: resolvedSessionKey,
-        message: message,
-        idempotencyKey: _runId,
-        attachments:
+      await requestKnown(
+        'chat.send',
+        params: {
+          'sessionKey': resolvedSessionKey,
+          'message': message,
+          'idempotencyKey': _runId,
+          if (attachments.isNotEmpty)
+            'attachments':
             attachments
                 .map(
-                  (a) => {
-                    'type': a.type,
-                    'content': a.base64,
-                    'mimeType': a.mimeType,
-                    'fileName': a.fileName,
-                  },
-                )
+                  (a) =>
+              {
+                'type': a.type,
+                'content': a.base64,
+                'mimeType': a.mimeType,
+                'fileName': a.fileName,
+              },
+            )
                 .toList(),
+        },
       );
     } catch (error) {
       if (_runId.isNotEmpty) {
@@ -510,14 +698,17 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   Future<void> switchTalkMode(bool talkMode) async {
-    _runtime.talkMode(enabled: talkMode);
+    await requestKnown('talk.mode', params: {'enabled': talkMode});
   }
 
   Future<void> sendTalkSpeak(String text) async {
     if (text.isEmpty) {
       return;
     }
-    final Map<String, dynamic> payload = await _runtime.talkSpeak(text);
+    final Map<String, dynamic> payload = await requestKnown(
+      'talk.speak',
+      params: {'text': text},
+    );
     if (payload.containsKey('audioBase64')) {
       voiceController.add(payload['audioBase64']);
     }
@@ -525,7 +716,10 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> abortMessage() async {
     if (_runId != '') {
-      await _runtime.chatAbort(sessionKey: sessionKey!, runId: _runId);
+      await requestKnown(
+        'chat.abort',
+        params: {'sessionKey': sessionKey!, 'runId': _runId},
+      );
       _runId = '';
       notifyListeners();
     }
@@ -550,17 +744,28 @@ class GatewayRepository extends ChangeNotifier {
     bool? configuredAgentsOnly,
   }) async {
     final response = GatewaySessionsListResponse.fromJson(
-      await _runtime.sessionsList(
-        limit: limit,
-        search: search,
-        archived: archived,
-        agentId: agentId,
-        includeGlobal: includeGlobal,
-        includeUnknown: includeUnknown,
-        activeMinutes: activeMinutes,
-        spawnedBy: spawnedBy,
-        offset: offset,
-        configuredAgentsOnly: configuredAgentsOnly,
+      await requestKnown(
+        'sessions.list',
+        params: {
+          'includeGlobal': includeGlobal,
+          'includeUnknown': includeUnknown,
+          if (limit != null) 'limit': limit,
+          if (search
+              ?.trim()
+              .isNotEmpty == true) 'search': search!.trim(),
+          if (archived) 'archived': true,
+          if (agentId
+              ?.trim()
+              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          if (activeMinutes != null) 'activeMinutes': activeMinutes,
+          if (spawnedBy
+              ?.trim()
+              .isNotEmpty == true)
+            'spawnedBy': spawnedBy!.trim(),
+          if (offset != null) 'offset': offset,
+          if (configuredAgentsOnly != null)
+            'configuredAgentsOnly': configuredAgentsOnly,
+        },
       ),
     );
     _sessions = response.sessions;
@@ -578,13 +783,21 @@ class GatewayRepository extends ChangeNotifier {
     String? worktreeBaseRef,
   }) async {
     final response = GatewayCreateSessionResponse.fromJson(
-      await _runtime.sessionsCreate(
-        key: key,
-        agentId: agentId,
-        label: label,
-        parentSessionKey: parentSessionKey,
-        worktree: worktree,
-        worktreeBaseRef: worktreeBaseRef,
+      await requestKnown(
+        'sessions.create',
+        params: {
+          'key': key,
+          if (agentId
+              ?.trim()
+              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          if (label != null) 'label': label,
+          if (parentSessionKey != null) 'parentSessionKey': parentSessionKey,
+          if (worktree != null) 'worktree': worktree,
+          if (worktreeBaseRef
+              ?.trim()
+              .isNotEmpty == true)
+            'worktreeBaseRef': worktreeBaseRef!.trim(),
+        },
       ),
     );
     try {
@@ -606,12 +819,12 @@ class GatewayRepository extends ChangeNotifier {
       throw ArgumentError.value(label, 'label', '标签不能为空');
     }
     final session = _sessions.cast<GatewaySessionEntry?>().firstWhere(
-      (item) => item?.key == sessionKey,
+          (item) => item?.key == sessionKey,
       orElse: () => null,
     );
-    final success = await _runtime.patchSession(
-      key: sessionKey,
-      ownerAgentId: agentId ?? session?.agentId,
+    final success = await _patchSessionLabel(
+      sessionKey: sessionKey,
+      agentId: agentId ?? session?.agentId,
       label: normalizedLabel,
     );
     if (!success) {
@@ -620,12 +833,48 @@ class GatewayRepository extends ChangeNotifier {
     await listSessions();
   }
 
+  /// 写入会话标签。
+  ///
+  /// 失败只记日志并返回 false，由调用方决定文案 —— 会话标签是「尽力而为」的
+  /// 元数据，不值得为它中断上层流程。
+  Future<bool> _patchSessionLabel({
+    required String sessionKey,
+    required String label,
+    String? agentId,
+  }) async {
+    try {
+      await requestKnown(
+        'sessions.patch',
+        params: {
+          'key': sessionKey,
+          if (agentId
+              ?.trim()
+              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          'label': label,
+        },
+      );
+      return true;
+    } catch (error) {
+      _log.warning('patchSession failed: $error');
+      return false;
+    }
+  }
+
   /// 删除会话及其 transcript，并清理本地状态。
   Future<void> deleteSession({
     required String sessionKey,
     String? agentId,
   }) async {
-    await _runtime.sessionsDelete(sessionKey: sessionKey, agentId: agentId);
+    await requestKnown(
+      'sessions.delete',
+      params: {
+        'key': sessionKey,
+        if (agentId
+            ?.trim()
+            .isNotEmpty == true) 'agentId': agentId!.trim(),
+        'deleteTranscript': true,
+      },
+    );
     _sessions =
         _sessions.where((session) => session.key != sessionKey).toList();
     if (_sessionKey == sessionKey) {
@@ -636,14 +885,6 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (_connected) await listSessions();
-  }
-
-  bool isOpenclawTTS() {
-    return _settingRepository.isOpenclawTTS;
-  }
-
-  bool isTTSAbort() {
-    return _settingRepository.isTTSAbort;
   }
 
   List<ChatMessageContent> _parseChatMessageContents(Map<String, dynamic> obj) {
@@ -661,12 +902,14 @@ class GatewayRepository extends ChangeNotifier {
             );
             final List<String> mediaUrls = result.mediaUrls ?? [];
             for (String url in mediaUrls) {
-              final fileName = url.split('/').last;
+              final fileName = url
+                  .split('/')
+                  .last;
               final String type = _mediaType(url);
               contentList.add(
                 ChatMessageContent(
                   type: type,
-                  text: _config!.buildMediaUrl(url),
+                  text: url,
                   fileName: fileName,
                 ),
               );
@@ -715,7 +958,9 @@ class GatewayRepository extends ChangeNotifier {
             type: 'image',
             mimeType: el['mimeType'] as String?,
             fileName: el['fileName'] as String?,
-            base64: b64.trim().isEmpty ? null : b64,
+            base64: b64
+                .trim()
+                .isEmpty ? null : b64,
           );
         } else {
           return ChatMessageContent(type: 'text', text: el['url'] as String?);
@@ -734,7 +979,7 @@ class GatewayRepository extends ChangeNotifier {
     final runId = payload['runId'] as String?;
     switch (stream) {
       case 'assistant':
-        // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
+      // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
         final text = data?['text'] as String?;
         if (text != null && text.isNotEmpty) {
           _pushStreamingMessage(text, runId);
@@ -742,7 +987,9 @@ class GatewayRepository extends ChangeNotifier {
         final mediaUrlsRaw = data['mediaUrls'] as List<dynamic>?;
         if (mediaUrlsRaw != null && mediaUrlsRaw.isNotEmpty) {
           for (String mediaUrl in mediaUrlsRaw) {
-            final fileName = mediaUrl.split('/').last;
+            final fileName = mediaUrl
+                .split('/')
+                .last;
             final type = _mediaType(mediaUrl);
             final message = ChatMessage(
               id: uuid.v4(),
@@ -750,18 +997,20 @@ class GatewayRepository extends ChangeNotifier {
               content: [
                 ChatMessageContent(
                   type: type,
-                  text: _config!.buildMediaUrl(mediaUrl),
+                  text: mediaUrl,
                   fileName: fileName,
                 ),
               ],
-              timestamp: DateTime.now().millisecondsSinceEpoch,
+              timestamp: DateTime
+                  .now()
+                  .millisecondsSinceEpoch,
             );
             messageController.add(message);
           }
         }
         break;
       case 'tool':
-        // 3. 处理工具调用状态 (start/result)
+      // 3. 处理工具调用状态 (start/result)
         final phase = data?['phase'] as String?;
         final name = data?['name'] as String?;
         final toolCallId = data?['toolCallId'] as String?;
@@ -776,19 +1025,19 @@ class GatewayRepository extends ChangeNotifier {
           // 可在此发送事件通知 UI 移除工具执行状态
         }
         break;
-      // case 'item':
-      //   final message = ChatMessage(
-      //     id: runId!,
-      //     role: 'assistant',
-      //     content: [
-      //       ChatMessageContent(
-      //         type: 'toolCall',
-      //         text: data?['data'] as String?,
-      //       ),
-      //     ],
-      //     timestamp: DateTime.now().millisecondsSinceEpoch,
-      //   );
-      //   messageController.add(message);
+    // case 'item':
+    //   final message = ChatMessage(
+    //     id: runId!,
+    //     role: 'assistant',
+    //     content: [
+    //       ChatMessageContent(
+    //         type: 'toolCall',
+    //         text: data?['data'] as String?,
+    //       ),
+    //     ],
+    //     timestamp: DateTime.now().millisecondsSinceEpoch,
+    //   );
+    //   messageController.add(message);
       case 'error':
         break;
     }
@@ -817,7 +1066,10 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   String _mediaType(String mediaUrl) {
-    final extension = '.${mediaUrl.split('.').last.toLowerCase()}';
+    final extension = '.${mediaUrl
+        .split('.')
+        .last
+        .toLowerCase()}';
     const imageExts = {
       '.png',
       '.jpg',
@@ -851,18 +1103,20 @@ class GatewayRepository extends ChangeNotifier {
     final previous = _streamingMessages[key];
     final isContinuation =
         previous != null &&
-        (text == previous.text || text.startsWith(previous.text));
+            (text == previous.text || text.startsWith(previous.text));
     final state =
-        isContinuation
-            ? previous
-            : _StreamingMessageState(id: uuid.v4(), text: text);
+    isContinuation
+        ? previous
+        : _StreamingMessageState(id: uuid.v4(), text: text);
 
     _streamingMessages[key] = state.copyWith(text: text);
     final message = ChatMessage(
       id: state.id,
       role: 'assistant',
       content: [ChatMessageContent(type: 'text', text: text)],
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: DateTime
+          .now()
+          .millisecondsSinceEpoch,
       idempotencyKey: runId,
     );
     messageController.add(message);
@@ -883,8 +1137,8 @@ class GatewayRepository extends ChangeNotifier {
   Future listModels() async {
     if (!_connected) return; // 防止未连接时的无效底请求
     try {
-      final rawModels = await _runtime.listModels();
-      _rawModels = rawModels;
+      final data = await requestKnown('models.list');
+      _rawModels = data['models'] as List? ?? const [];
       notifyListeners();
     } catch (e) {
       _log.warning('listModels failed: $e');
@@ -907,9 +1161,9 @@ class GatewayRepository extends ChangeNotifier {
         if (model != null) 'model': model,
         if (thinkingLevel != null) 'thinkingLevel': thinkingLevel,
       };
-      final Map<String, dynamic> json = await _runtime.sessionsPatch(
-        sessionKey: _sessionKey!,
-        patch: patch,
+      final Map<String, dynamic> json = await requestKnown(
+        'sessions.patch',
+        params: {'key': _sessionKey!, ...patch},
         timeout: const Duration(seconds: 15),
       );
       _log.info(json);
@@ -924,7 +1178,7 @@ class GatewayRepository extends ChangeNotifier {
 
       _log.info(
         'Successfully updated session config: '
-        'model=$model, thinkingLevel=$thinkingLevel',
+            'model=$model, thinkingLevel=$thinkingLevel',
       );
     } catch (e) {
       _log.warning('setSessionConfig failed: $e');
@@ -935,21 +1189,33 @@ class GatewayRepository extends ChangeNotifier {
   Future<OpenClawDevicePairSetupCodeResponse> devicePairSetupCode({
     String? publicUrl,
   }) async {
-    return _runtime.devicePairSetupCode();
+    // 注意：这里把 publicUrl 真的透传下去了。原实现声明了这个入参却直接丢弃，
+    // 属于「签名承诺了、实现没做」——调用方目前都不传，所以行为不变。
+    return OpenClawDevicePairSetupCodeResponse.fromJson(
+      await requestKnown(
+        'device.pair.setupCode',
+        params: {
+          if (publicUrl
+              ?.trim()
+              .isNotEmpty == true)
+            'publicUrl': publicUrl!.trim(),
+          'includeQr': true,
+        },
+        timeout: const Duration(seconds: 15),
+      ),
+    );
   }
 
-  // 说明：这里曾有一批 runtime 原样透传方法（mainSessionKey / configure /
-  // chatHistory / talkSpeak / chatAbort / sessionsList / sessionsCreate /
-  // patchSession / sessionsPatch / sessionsDelete）。它们没有任何调用方
-  // （上层走的是 listSessions / createSession / updateSessionLabel /
-  // deleteSession / setSessionConfig / abortMessage 这些带状态的方法），
-  // 且 sessionsPatch 与 chatAbort 会静默忽略自己的入参，容易误用，故删除。
-  // 需要新能力时，请在仓库里按「解析 + 更新状态 + notifyListeners」的模式新增。
+  // 说明：上层只通过带状态的方法访问网关（listSessions / createSession /
+  // updateSessionLabel / deleteSession / setSessionConfig / abortMessage 等）。
+  // 需要新能力时，请在仓库里按「请求 + 解析 + 更新状态 + notifyListeners」的
+  // 模式新增，而不要再为每个网关方法加一层纯转发包装 —— 那正是刚被删掉的
+  // runtime 层做过的事。
 
   // ==================== Skill 管理 ====================
   //
-  // Skill 的状态与操作都收敛在这里（复用共享的 _runtime 会话），
-  // SkillViewModel 只做转发，不再自己持有状态或直连 runtime。
+  // Skill 的状态与操作都收敛在这里（复用本仓库持有的会话），
+  // SkillViewModel 只做转发，不再自己持有状态或直连连接。
 
   List<GatewaySkill> _skills = const [];
 
@@ -997,10 +1263,22 @@ class GatewayRepository extends ChangeNotifier {
   }) async {
     if (_skillsLoading) return false;
     return _runSkillOperation('install', () async {
-      await _runtime.skillsInstall(
-        name: name,
-        installId: installId,
-        dangerouslyForceUnsafeInstall: dangerouslyForceUnsafeInstall,
+      final normalizedName = name.trim();
+      final normalizedInstallId = installId.trim();
+      if (normalizedName.isEmpty) {
+        throw ArgumentError.value(name, 'name', 'Skill 名称不能为空');
+      }
+      if (normalizedInstallId.isEmpty) {
+        throw ArgumentError.value(installId, 'installId', '安装方式不能为空');
+      }
+      await requestKnown(
+        'skills.install',
+        params: {
+          'name': normalizedName,
+          'installId': normalizedInstallId,
+          if (dangerouslyForceUnsafeInstall != null)
+            'dangerouslyForceUnsafeInstall': dangerouslyForceUnsafeInstall,
+        },
       );
       await _reloadSkills();
     });
@@ -1015,11 +1293,18 @@ class GatewayRepository extends ChangeNotifier {
   }) async {
     if (_skillsLoading) return false;
     return _runSkillOperation('update', () async {
-      await _runtime.skillsUpdate(
-        skillKey: skillKey,
-        enabled: enabled,
-        apiKey: apiKey,
-        env: env,
+      final normalizedKey = skillKey.trim();
+      if (normalizedKey.isEmpty) {
+        throw ArgumentError.value(skillKey, 'skillKey', 'Skill 标识不能为空');
+      }
+      await requestKnown(
+        'skills.update',
+        params: {
+          'skillKey': normalizedKey,
+          if (enabled != null) 'enabled': enabled,
+          if (apiKey != null) 'apiKey': apiKey,
+          if (env != null && env.isNotEmpty) 'env': env,
+        },
       );
       await _reloadSkills();
     });
@@ -1027,13 +1312,15 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _reloadSkills() async {
     _skills =
-        GatewaySkillsStatus.fromJson(await _runtime.skillsStatus()).skills;
+        GatewaySkillsStatus
+            .fromJson(
+          await requestKnown('skills.status'),
+        )
+            .skills;
   }
 
-  Future<bool> _runSkillOperation(
-    String operation,
-    Future<void> Function() action,
-  ) async {
+  Future<bool> _runSkillOperation(String operation,
+      Future<void> Function() action,) async {
     _skillsLoading = true;
     _skillsError = null;
     _lastSkillOperation = null;
@@ -1112,7 +1399,7 @@ class GatewayRepository extends ChangeNotifier {
   /// 安装 ClawHub 技能需要写权限，与 Android `operatorAdminScopeAvailable` 同源：
   /// 读 hello 里 `auth.scopes`（网关没返回时视为没有，由调用方提示）。
   bool get clawHubCanInstall {
-    final scopes = _runtime.hello?.auth['scopes'];
+    final scopes = _hello?.auth['scopes'];
     if (scopes is! List) return false;
     return scopes
         .whereType<String>()
@@ -1130,7 +1417,7 @@ class GatewayRepository extends ChangeNotifier {
   /// 与 Android 一致：网关没宣告（含旧网关不返回 methods）时视为不支持，
   /// 由调用方提示用户升级 Gateway。
   bool get clawHubSkillsAvailable {
-    final methods = _runtime.hello?.features['methods'];
+    final methods = _hello?.features['methods'];
     if (methods is! List) return false;
     final advertised = methods
         .whereType<String>()
@@ -1176,7 +1463,13 @@ class GatewayRepository extends ChangeNotifier {
     _clawHubMessage = null;
     notifyListeners();
     try {
-      final response = await _runtime.skillsSearch(query: normalized);
+      final response = await requestKnown(
+        'skills.search',
+        params: {
+          if (normalized.isNotEmpty) 'query': normalized,
+          'limit': 25,
+        },
+      );
       final results = GatewayClawHubSkillSummary.listFromSearchResponse(
         response,
       );
@@ -1201,8 +1494,7 @@ class GatewayRepository extends ChangeNotifier {
   /// 对应 Android `reviewClawHubSkillInstallFromGateway`：用搜索结果自带的
   /// reference 去读详情，所以「审核的发布者」与「安装的发布者」是同一个。
   Future<bool> reviewClawHubSkillInstallFromGateway(
-    GatewayClawHubSkillSummary skill,
-  ) async {
+      GatewayClawHubSkillSummary skill,) async {
     final reference = skill.reference;
     final reviewSeq = ++_clawHubReviewSeq;
     if (!_connected) {
@@ -1221,7 +1513,10 @@ class GatewayRepository extends ChangeNotifier {
     _clawHubMessage = null;
     notifyListeners();
     try {
-      final response = await _runtime.skillsDetail(slug: reference);
+      final response = await requestKnown(
+        'skills.detail',
+        params: {'slug': reference},
+      );
       final review = GatewayClawHubInstallReview.fromDetailResponse(
         response,
         fallback: skill,
@@ -1292,9 +1587,18 @@ class GatewayRepository extends ChangeNotifier {
     _clawHubMessage = null;
     notifyListeners();
     try {
-      final response = await _runtime.skillsInstallFromClawHub(
-        slug: normalized,
-        version: attemptedVersion,
+      // 与「网关自带安装方式」不是同一个入参形态：这条按 ClawHub 引用装，
+      // 并且要指定具体版本，让网关校验的就是「审核时看到的那个版本」。
+      // 安装可能等很久（下载 + 校验），所以给 125s 超时。
+      final response = await requestKnown(
+        'skills.install',
+        params: {
+          'source': 'clawhub',
+          'slug': normalized,
+          if (attemptedVersion != null) 'version': attemptedVersion,
+          'timeoutMs': 120000,
+        },
+        timeout: const Duration(milliseconds: 125000),
       );
       final refreshed = await _refreshSkillsQuietly();
       _clawHubMessage = _formatClawHubInstallMessage(
@@ -1306,16 +1610,18 @@ class GatewayRepository extends ChangeNotifier {
       );
       return true;
     } on TimeoutException {
-      if (await _refreshAndConfirmClawHubInstall(normalized, attemptedVersion)) {
+      if (await _refreshAndConfirmClawHubInstall(
+          normalized, attemptedVersion)) {
         _clawHubMessage = '已安装 $normalized';
         return true;
       }
       _clawHubError =
-          '$normalized 的安装结果未知。请重新连接、刷新技能列表后重试；'
+      '$normalized 的安装结果未知。请重新连接、刷新技能列表后重试；'
           '网关会安全地接续仍在进行的同一次安装。';
       return false;
     } on GatewayResponseError catch (error) {
-      if (await _refreshAndConfirmClawHubInstall(normalized, attemptedVersion)) {
+      if (await _refreshAndConfirmClawHubInstall(
+          normalized, attemptedVersion)) {
         _clawHubMessage = '已安装 $normalized';
         return true;
       }
@@ -1337,10 +1643,8 @@ class GatewayRepository extends ChangeNotifier {
   ///
   /// 带版本时要求引用与版本都对上；不带版本说明来源是「只能直接安装」的，
   /// 只能按网关记录的原始引用比对。
-  Future<bool> _refreshAndConfirmClawHubInstall(
-    String slug,
-    String? version,
-  ) async {
+  Future<bool> _refreshAndConfirmClawHubInstall(String slug,
+      String? version,) async {
     if (!await _refreshSkillsQuietly()) return false;
     final skills = _skills;
     if (version != null) {
@@ -1364,10 +1668,9 @@ class GatewayRepository extends ChangeNotifier {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  static String _formatClawHubInstallMessage(
-    String message,
-    String? warning,
-  ) => (warning == null || warning.isEmpty) ? message : '$message\n\n$warning';
+  static String _formatClawHubInstallMessage(String message,
+      String? warning,) =>
+      (warning == null || warning.isEmpty) ? message : '$message\n\n$warning';
 
   // ==================== Cron 管理 ====================
   //
@@ -1406,9 +1709,14 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
     try {
       _cronJobs =
-          GatewayCronList.fromJson(
-            await _runtime.cronList(includeDisabled: includeDisabled),
-          ).jobs;
+          GatewayCronList
+              .fromJson(
+            await requestKnown(
+              'cron.list',
+              params: {'includeDisabled': includeDisabled},
+            ),
+          )
+              .jobs;
       return true;
     } catch (error) {
       _cronError = error.toString();
@@ -1427,9 +1735,14 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
     try {
       _cronRuns =
-          GatewayCronRuns.fromJson(
-            await _runtime.cronRuns(id: jobId, limit: limit),
-          ).entries;
+          GatewayCronRuns
+              .fromJson(
+            await requestKnown(
+              'cron.runs',
+              params: {'id': _requireJobId(jobId), 'limit': limit},
+            ),
+          )
+              .entries;
       return true;
     } catch (error) {
       _cronError = error.toString();
@@ -1443,38 +1756,64 @@ class GatewayRepository extends ChangeNotifier {
   /// 立即执行一次任务（不改变任务配置，因此不刷新列表）。
   Future<bool> runCronJob(String jobId, {bool force = true}) =>
       _runCronOperation('run', () async {
-        await _runtime.cronRun(id: jobId, force: force);
+        await requestKnown(
+          'cron.run',
+          params: {'id': _requireJobId(jobId), 'force': force},
+        );
       });
 
   Future<bool> addCronJob(Map<String, dynamic> payload) =>
       _runCronOperation('add', () async {
-        await _runtime.cronAdd(payload: payload);
+        if (payload.isEmpty) {
+          throw ArgumentError.value(payload, 'payload', '任务参数不能为空');
+        }
+        await requestKnown('cron.add', params: payload);
         await _reloadCronJobs();
       });
 
   Future<bool> updateCronJob(String jobId, Map<String, dynamic> patch) =>
       _runCronOperation('update', () async {
-        await _runtime.cronUpdate(id: jobId, patch: patch);
+        if (patch.isEmpty) {
+          throw ArgumentError.value(patch, 'patch', '更新内容不能为空');
+        }
+        await requestKnown(
+          'cron.update',
+          params: {'id': _requireJobId(jobId), 'patch': patch},
+        );
         await _reloadCronJobs();
       });
 
   /// 删除任务：本地直接摘掉对应条目，避免多打一次列表请求。
   Future<bool> removeCronJob(String jobId) =>
       _runCronOperation('remove', () async {
-        await _runtime.cronRemove(id: jobId);
+        await requestKnown(
+          'cron.remove',
+          params: {'id': _requireJobId(jobId)},
+        );
         _cronJobs = _cronJobs
             .where((job) => job.id != jobId.trim())
             .toList(growable: false);
       });
 
   Future<void> _reloadCronJobs() async {
-    _cronJobs = GatewayCronList.fromJson(await _runtime.cronList()).jobs;
+    _cronJobs = GatewayCronList
+        .fromJson(
+      await requestKnown('cron.list'),
+    )
+        .jobs;
   }
 
-  Future<bool> _runCronOperation(
-    String operation,
-    Future<void> Function() action,
-  ) async {
+  /// 任务 ID 不能为空 —— 空 ID 打到网关只会换来一个含糊的服务端错误。
+  static String _requireJobId(String id) {
+    final normalized = id.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(id, 'id', '任务 ID 不能为空');
+    }
+    return normalized;
+  }
+
+  Future<bool> _runCronOperation(String operation,
+      Future<void> Function() action,) async {
     if (_cronLoading) return false;
     _cronLoading = true;
     _cronError = null;
@@ -1495,16 +1834,15 @@ class GatewayRepository extends ChangeNotifier {
 
   @override
   void dispose() {
-    _serverRepository.removeListener(_onServerChanged); // 🌟 修复点 6：反注册监听器
-    _runtimeSub?.cancel();
-    _runtimeStateSub?.cancel();
-    // OpenClawRuntime 是进程级共享单例（Skill / Cron 等 ViewModel 也在用），
-    // 这里只能解除订阅，不能 dispose：否则会把共享会话一起关掉，并把
-    // session 的 _shouldReconnect 置为 false，导致之后网关重启再也不自动重连。
+    // GatewaySession.shutdown() 会把它的 _shouldReconnect 一起停掉，
+    // 否则退避重连会留着一个已经没人消费的连接继续重试。
+    _shouldRun = false;
+    unawaited(_shutdownSession());
     messageController.close();
     sessionUpdateController.close();
     messageFinalController.close();
     voiceController.close();
+    _pushes.close();
     _sessionMessageController.close();
     super.dispose();
   }

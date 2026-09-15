@@ -764,7 +764,7 @@ class _ChatScreenState extends State<ChatScreen>
                     final base64Content = base64Encode(bytes);
                     final attachment = OutgoingAttachment(
                       base64: base64Content,
-                      mimeType: file.xFile.mimeType!,
+                      mimeType: file.xFile.mimeType??'',
                       fileName: file.name,
                       type: 'file',
                     );

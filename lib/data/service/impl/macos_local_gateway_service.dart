@@ -6,7 +6,7 @@ import 'package:logging/logging.dart';
 import 'package:parrot_app/data/service/impl/macos_openclaw_environment.dart';
 import 'package:parrot_app/data/service/gateway_connection.dart';
 import 'package:parrot_app/data/service/local_gateway_service.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
+import 'package:parrot_app/data/service/gateway_connector.dart';
 
 /// 本机 OpenClaw 网关检测服务（无状态，纯本机操作）
 ///
@@ -120,8 +120,8 @@ class MacOSLocalGatewayService implements LocalGatewayService {
 
   /// 探测指定端口是否为本机 OpenClaw gateway
   ///
-  /// 用 [GatewayConnection] 做真实握手（与 server_edit 连接测试同款）：
-  /// - 能握手 + status() ok → 该端口确实是 OpenClaw gateway
+  /// 做一次真实握手 + 认证：
+  /// - 能握手 → 该端口确实是 OpenClaw gateway
   /// - 失败/超时 → 不是 gateway 或没在跑
   ///
   /// [token]/[password] 可选：传入则同时验证认证是否有效。
@@ -137,45 +137,18 @@ class MacOSLocalGatewayService implements LocalGatewayService {
                 _isolatedGatewayStarted
             ? _isolatedGatewayToken
             : token;
-    try {
-      final config = OpenClawRuntimeConfig(
+    // 探测走一条用完即弃的会话，绝不会碰到 App 正在用的那条连接，
+    // 也不会把它的自动重连带停。
+    final result = await probeGateway(
+      GatewayConnectConfig(
         url: 'ws://$host:$port',
         token: effectiveToken,
         password: password,
-      );
-      // 探测必须用独立的 runtime 实例，绝不能碰 OpenClawRuntime.instance，
-      // 否则会把 App 正在用的共享会话一起关掉（并停掉它的自动重连）。
-      final probe = OpenClawRuntime();
-      _probeRuntime = probe;
-      final result = await probe.configureResult(config);
-      await _shutdownProbeConnection();
-      final ok = result.ok;
-      _log.fine('Gateway at $host:$port: ${ok ? 'online' : 'unreachable'}');
-      return ok;
-    } catch (e) {
-      // final isAuthChallenge =
-      //     e is GatewayConnectAuthError ||
-      //     e.toString().contains('gateway token missing') ||
-      //     e.toString().contains('unauthorized');
-      // _log.fine(
-      //   'Gateway at $host:$port ${isAuthChallenge ? 'requires auth' : 'not reachable'}: $e',
-      // );
-      await _shutdownProbeConnection();
-      return false;
-    }
-  }
-
-  OpenClawRuntime? _probeRuntime;
-
-  Future<void> _shutdownProbeConnection() async {
-    final probe = _probeRuntime;
-    _probeRuntime = null;
-    if (probe == null) return;
-    try {
-      await probe.dispose();
-    } catch (e) {
-      _log.fine('Gateway probe shutdown ignored: $e');
-    }
+      ),
+    );
+    final ok = result.ok;
+    _log.fine('Gateway at $host:$port: ${ok ? 'online' : 'unreachable'}');
+    return ok;
   }
 
   /// 查询本机 Gateway 服务状态，不要求 WebSocket 鉴权成功。

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:parrot_app/data/model/message.dart';
+import 'package:parrot_app/data/model/gateway_session_models.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 
 class SessionViewModel extends ChangeNotifier {
   /// 获取当前服务器的会话列表。

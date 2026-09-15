@@ -4,9 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/data/model/server_config.dart';
+import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
-import 'package:parrot_app/data/service/openclaw_runtime.dart';
 import 'package:uuid/uuid.dart';
 
 class SetupModelOption {
@@ -49,9 +49,10 @@ enum SetupModelPhase { idle, saving, validating, success, error }
 class SetupModelViewModel extends ChangeNotifier {
   SetupModelViewModel({
     required ServerRepository serverRepository,
+    required GatewayRepository gatewayRepository,
     Logger? logger,
   }) : _serverRepository = serverRepository,
-       _runtime = OpenClawRuntime.instance,
+       _gatewayRepository = gatewayRepository,
        _log = logger ?? Logger('SetupModelViewModel');
 
   static const List<SetupProviderOption> providerOptions = [
@@ -93,7 +94,7 @@ class SetupModelViewModel extends ChangeNotifier {
   ];
 
   final ServerRepository _serverRepository;
-  final OpenClawRuntime _runtime;
+  final GatewayRepository _gatewayRepository;
   final Logger _log;
 
   SetupModelPhase _phase = SetupModelPhase.idle;
@@ -154,7 +155,7 @@ class SetupModelViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _configureGateway(server);
+      await _ensureGatewayConnected(server);
       final patch = {
         'agents': {
           'defaults': {
@@ -206,7 +207,7 @@ class SetupModelViewModel extends ChangeNotifier {
   }
 
   Future<String> _readConfigBaseHash() async {
-    final response = await _runtime.configGet();
+    final response = await _gatewayRepository.requestKnown('config.get');
     final config = response['config'];
     final configMap = config is Map ? config : null;
     final value =
@@ -227,7 +228,7 @@ class SetupModelViewModel extends ChangeNotifier {
   }
 
   Future<void> _sendConfigPatch(Map<String, dynamic> patch, String baseHash) {
-    return _runtime.requestKnown(
+    return _gatewayRepository.requestKnown(
       'config.patch',
       params: {'raw': jsonEncode(patch), 'baseHash': baseHash},
     );
@@ -241,12 +242,12 @@ class SetupModelViewModel extends ChangeNotifier {
   }
 
   Future<void> _validateConversation() async {
-    final sessionKey = await _runtime.mainSessionKey();
+    final sessionKey = await _gatewayRepository.mainSessionKey();
     final idempotencyKey = 'setup_${const Uuid().v4()}';
     final completer = Completer<void>();
     late final StreamSubscription<GatewayPush> subscription;
 
-    subscription = _runtime.pushes.listen((push) {
+    subscription = _gatewayRepository.pushes.listen((push) {
       if (push is! GatewayPushEvent || push.event != 'chat') return;
       final payload = push.payload;
       if (payload is! Map || payload['runId'] != idempotencyKey) return;
@@ -275,10 +276,13 @@ class SetupModelViewModel extends ChangeNotifier {
     });
 
     try {
-      await _runtime.chatSend(
-        sessionKey: sessionKey,
-        message: '请仅回复：配置测试成�?',
-        idempotencyKey: idempotencyKey,
+      await _gatewayRepository.requestKnown(
+        'chat.send',
+        params: {
+          'sessionKey': sessionKey,
+          'message': '请仅回复：配置测试成功',
+          'idempotencyKey': idempotencyKey,
+        },
       );
       await completer.future.timeout(
         const Duration(seconds: 30),
@@ -338,12 +342,23 @@ class SetupModelViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _configureGateway(ServerConfig server) async{
-    final config = OpenClawRuntimeConfig(
-      url: server.wsUrl,
-      token: server.isTokenAuth ? server.token : null,
-      password: server.isPasswordAuth ? server.password : null,
+  /// 确保网关已连接 —— 后面的 config.get / config.patch / chat.send 都要走这条会话。
+  ///
+  /// 仓库的 connect() 会把失败原因写进 disconnectReason 而不抛出，所以这里要
+  /// 用 connected 复核一次，才能把「连不上」如实报给用户。
+  Future<void> _ensureGatewayConnected(ServerConfig config) async {
+    await _gatewayRepository.connect(
+      GatewayConnectConfig(
+        url: config.wsUrl,
+        token: config.isTokenAuth ? config.token : null,
+        password: config.isPasswordAuth ? config.password : null,
+      ),
     );
-    return _runtime.configure(config);
+    if (!_gatewayRepository.connected) {
+      throw StateError(
+        _gatewayRepository.disconnectReason ??
+            '无法连接到网关，请确认 OpenClaw Gateway 正在运行',
+      );
+    }
   }
 }

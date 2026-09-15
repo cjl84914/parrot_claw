@@ -125,13 +125,7 @@ List<SingleChildWidget> providersLocal(
     ChangeNotifierProvider(
       create: (context) => ServerRepository(context.read<StorageService>()),
     ),
-    ChangeNotifierProvider(
-      create:
-          (context) => GatewayRepository(
-            settingRepository: context.read(),
-            serverRepository: context.read(),
-          ),
-    ),
+    ChangeNotifierProvider(create: (context) => GatewayRepository()),
     // 本地网关：Service + Repository（依赖 ServerRepository）
     Provider<LocalGatewayService>.value(value: openClawServices.gateway),
     Provider<OpenClawInstallerService>.value(value: openClawServices.installer),
@@ -148,10 +142,18 @@ List<SingleChildWidget> providersLocal(
       create: (context) => SettingViewmodel(settingRepository: context.read()),
     ),
     ChangeNotifierProvider(
-      create: (context) => ServerViewModel(serverRepository: context.read()),
+      create:
+          (context) => ServerViewModel(
+            serverRepository: context.read(),
+            gatewayRepository: context.read(),
+          ),
     ),
     ChangeNotifierProvider(
-      create: (context) => ConnViewModel(gatewayRepository: context.read()),
+      create:
+          (context) => ConnViewModel(
+            gatewayRepository: context.read(),
+            serverRepository: context.read(),
+          ),
     ),
     ChangeNotifierProvider(
       create:
@@ -163,7 +165,7 @@ List<SingleChildWidget> providersLocal(
     ChangeNotifierProvider(
       create: (context) => SessionViewModel(gatewayRepository: context.read()),
     ),
-    // Skill / Cron 管理：状态与操作都委托给 GatewayRepository（共享 OpenClawRuntime 会话）
+    // Skill / Cron 管理：状态与操作都委托给 GatewayRepository（它自己持有网关会话）
     ChangeNotifierProvider(
       create: (context) => SkillViewModel(gatewayRepository: context.read()),
     ),
@@ -180,7 +182,10 @@ List<SingleChildWidget> providersLocal(
     ),
     ChangeNotifierProvider(
       create:
-          (context) => SetupModelViewModel(serverRepository: context.read()),
+          (context) => SetupModelViewModel(
+            serverRepository: context.read(),
+            gatewayRepository: context.read(),
+          ),
     ),
   ];
 }

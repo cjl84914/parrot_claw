@@ -53,6 +53,128 @@ class GatewayConnectOptions {
   });
 }
 
+/// Operator scopes requested by the OpenClaw companion client by default.
+const openClawOperatorScopes = <String>[
+  'operator.admin',
+  'operator.approvals',
+  'operator.questions',
+  'operator.read',
+  'operator.talk.secrets',
+  'operator.write',
+];
+
+/// 建立一条 operator 会话所需的连接设置（值对象，不可变）。
+///
+/// 这是「App 侧的连接意图」：一个 url + 一套凭据 + 一份角色/权限声明，
+/// 由 [toGatewayOptions] 映射成握手用的 [GatewayConnectOptions]。
+/// 原先叫 `OpenClawRuntimeConfig`，随 runtime 层一起并入本文件
+/// —— 它本来就是 `GatewayConnectOptions` 的应用侧形态。
+class GatewayConnectConfig {
+  final String url;
+  final String? token;
+  final String? password;
+  final String? bootstrapToken;
+  final String clientId;
+  final String clientMode;
+  final String role;
+  final List<String> scopes;
+  final List<String> caps;
+  final List<String> commands;
+  final Map<String, bool> permissions;
+  final String? clientDisplayName;
+
+  const GatewayConnectConfig({
+    required this.url,
+    this.token,
+    this.password,
+    this.bootstrapToken,
+    this.clientId = 'openclaw-android',
+    this.clientMode = 'ui',
+    this.role = 'operator',
+    this.scopes = openClawOperatorScopes,
+    this.caps = const <String>[],
+    this.commands = const <String>[],
+    this.permissions = const <String, bool>{},
+    this.clientDisplayName = 'ParrotClaw',
+  });
+
+  GatewayConnectOptions toGatewayOptions() => GatewayConnectOptions(
+    role: role,
+    scopes: scopes,
+    scopesAreExplicit: true,
+    caps: caps,
+    commands: commands,
+    permissions: permissions,
+    clientId: clientId,
+    clientMode: clientMode,
+    clientDisplayName: clientDisplayName,
+  );
+
+  GatewayConnectConfig copyWith({
+    String? url,
+    String? token,
+    String? password,
+    String? bootstrapToken,
+    String? clientId,
+    String? clientMode,
+    String? role,
+    List<String>? scopes,
+    List<String>? caps,
+    List<String>? commands,
+    Map<String, bool>? permissions,
+    String? clientDisplayName,
+  }) {
+    return GatewayConnectConfig(
+      url: url ?? this.url,
+      token: token ?? this.token,
+      password: password ?? this.password,
+      bootstrapToken: bootstrapToken ?? this.bootstrapToken,
+      clientId: clientId ?? this.clientId,
+      clientMode: clientMode ?? this.clientMode,
+      role: role ?? this.role,
+      scopes: scopes ?? this.scopes,
+      caps: caps ?? this.caps,
+      commands: commands ?? this.commands,
+      permissions: permissions ?? this.permissions,
+      clientDisplayName: clientDisplayName ?? this.clientDisplayName,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is GatewayConnectConfig &&
+      other.url == url &&
+      other.token == token &&
+      other.password == password &&
+      other.bootstrapToken == bootstrapToken &&
+      other.clientId == clientId &&
+      other.clientMode == clientMode &&
+      other.role == role &&
+      _listEquals(other.scopes, scopes) &&
+      _listEquals(other.caps, caps) &&
+      _listEquals(other.commands, commands) &&
+      _mapEquals(other.permissions, permissions) &&
+      other.clientDisplayName == clientDisplayName;
+
+  @override
+  int get hashCode => Object.hash(
+    url,
+    token,
+    password,
+    bootstrapToken,
+    clientId,
+    clientMode,
+    role,
+    Object.hashAll(scopes),
+    Object.hashAll(caps),
+    Object.hashAll(commands),
+    Object.hashAllUnordered(
+      permissions.entries.map((entry) => Object.hash(entry.key, entry.value)),
+    ),
+    clientDisplayName,
+  );
+}
+
 String canonicalMobileClientId() {
   if (Platform.isAndroid) return 'openclaw-android';
   if (Platform.isIOS) return 'openclaw-ios';
@@ -394,6 +516,53 @@ enum GatewayConnectionPhase {
   disconnected,
 }
 
+/// 把网关返回的原始错误码归类到 UI 可处理的恢复枚举。
+///
+/// 与 [GatewayErrorCode] 同处一个文件：调用方只需要协议层这一个 import，
+/// 不必为此再去依赖 runtime。
+GatewayErrorCode gatewayErrorCodeFromRaw(String code) {
+  final normalized = code.toUpperCase();
+  if (normalized.contains('PAIRING_REQUIRED')) {
+    return GatewayErrorCode.pairingRequired;
+  }
+  if (normalized.contains('NOT_PAIRED')) {
+    return GatewayErrorCode.deviceNotPaired;
+  }
+  if (normalized.contains('NOT_APPROVED') ||
+      normalized.contains('NOT APPROVED')) {
+    return GatewayErrorCode.deviceNotApproved;
+  }
+  if (normalized.contains('PROTOCOL')) return GatewayErrorCode.protocolMismatch;
+  if (normalized.contains('RATE_LIMIT')) {
+    return GatewayErrorCode.authRateLimited;
+  }
+  if (normalized.contains('BOOTSTRAP')) {
+    return GatewayErrorCode.authBootstrapTokenInvalid;
+  }
+  if (normalized.contains('DEVICE_TOKEN')) {
+    return GatewayErrorCode.authDeviceTokenMismatch;
+  }
+  if (normalized.contains('TOKEN_MISMATCH')) {
+    return GatewayErrorCode.authTokenMismatch;
+  }
+  if (normalized.contains('SCOPE')) return GatewayErrorCode.authScopeMismatch;
+  if (normalized.contains('UNAUTHORIZED') ||
+      normalized.contains('AUTH_INVALID')) {
+    return GatewayErrorCode.authUnauthorized;
+  }
+  if (normalized.contains('AUTH_REQUIRED') ||
+      normalized.contains('TOKEN_MISSING')) {
+    return GatewayErrorCode.authRequired;
+  }
+  if (normalized.contains('DEVICE_IDENTITY')) {
+    return GatewayErrorCode.deviceIdentityRequired;
+  }
+  if (normalized.contains('DEVICE_AUTH')) {
+    return GatewayErrorCode.deviceAuthInvalid;
+  }
+  return GatewayErrorCode.serverError;
+}
+
 class GatewayMissingScopeErrorDetails {
   final String missingScope;
   final List<String> requiredScopes;
@@ -417,6 +586,14 @@ bool _listEquals(List<String> a, List<String> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
     if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+bool _mapEquals<K, V>(Map<K, V> a, Map<K, V> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    if (b[entry.key] != entry.value) return false;
   }
   return true;
 }
@@ -577,6 +754,13 @@ class GatewaySession {
   final Duration challengeTimeout;
   final Duration defaultRequestTimeout;
 
+  /// 关闭旧 socket 的等待上限。
+  ///
+  /// dart:io 的 `WebSocket.close()` 要等对端回一个 close 帧才算完成，对端已经
+  /// 消失（进程被杀 / 掉线 / 休眠）时要靠它自己 5s 的收尾定时器才返回。这条
+  /// 会话只关心「别再从这个 socket 收数据」，不该被这段等待拖住。
+  static const Duration socketCloseTimeout = Duration(seconds: 2);
+
   GatewaySocket? _socket;
   StreamSubscription<dynamic>? _subscription;
   final Map<String, _PendingRequest> _pending = {};
@@ -592,6 +776,7 @@ class GatewaySession {
   GatewayAuthSource _lastAuthSource = GatewayAuthSource.none;
   bool _shouldReconnect = true;
   bool _listening = false;
+  bool _attemptInFlight = false;
   double _tickIntervalMs = 30000;
 
   final Logger _log = Logger('GatewaySession');
@@ -622,13 +807,11 @@ class GatewaySession {
 
   /// Whether a connection attempt is actively in progress.
   ///
-  /// `reconnecting` is only a scheduled state, not an active attempt. It must
-  /// not be included here, otherwise the timer callback in `_scheduleReconnect`
-  /// calls `connect()` and gets queued as a waiter forever instead of starting
-  /// the next socket attempt.
-  bool get isConnecting =>
-      _state == GatewaySessionState.connecting ||
-      _state == GatewaySessionState.authenticating;
+  /// 这里用「尝试是否在飞」而不是从 [_state] 推导：重连尝试期间 `_state` 是
+  /// `reconnecting`（对 UI 有意义），按状态推导会得出 false，于是
+  /// [_scheduleReconnect] 的定时器回调会误判「已经有尝试在跑」，并发的
+  /// `connect()` 也不会合并成同一个 waiter。
+  bool get isConnecting => _attemptInFlight;
 
   int get generation => _generation;
 
@@ -638,13 +821,14 @@ class GatewaySession {
 
   Future<void> connect() async {
     if (connected && _socket != null) return;
-    if (isConnecting) {
+    if (_attemptInFlight) {
       final waiter = Completer<void>();
       _connectWaiters.add(waiter);
       return waiter.future;
     }
 
     final generation = ++_generation;
+    _attemptInFlight = true;
     _state =
         _state == GatewaySessionState.disconnected ||
                 _state == GatewaySessionState.reconnecting
@@ -652,14 +836,15 @@ class GatewaySession {
             : GatewaySessionState.connecting;
     _shouldReconnect = true;
     _cancelReconnect();
-    await _disposeSocket(failPending: true);
+    // 旧 socket 只摘不等：它的 close 可能要等好几秒，重连不该被拖住。
+    await _disposeSocket(waitForClose: false);
     _challenge = Completer<String>();
     // 失败路径会在没人 await 的情况下用错误结束 challenge（例如握手前的
     // socket.ready 抛错）。挂一个空监听，避免变成未处理的异步异常。
     _challenge!.future.ignore();
 
     try {
-      await () async {
+      final hello = await () async {
         final socket = socketFactory.connect(
           Uri.parse(url),
           timeout: connectTimeout,
@@ -668,23 +853,36 @@ class GatewaySession {
         _listen(socket, generation);
         await socket.ready;
         _state = GatewaySessionState.authenticating;
-        await _sendConnect(generation);
+        return _sendConnect(generation);
       }().timeout(connectTimeout);
 
       if (!_isCurrent(generation)) return;
+      // 顺序很关键：**先翻状态，再推 hello 快照**。
+      // 订阅者（GatewayRepository）收到快照的那一刻就会读 `connected` 来判定
+      // 「这次握手算不算连上」。若此时还是 authenticating，它会认为会话尚未
+      // 就绪而丢弃这份 hello —— 于是断线之后 socket 明明自己连回来了，UI 却
+      // 永远停在「正在自动重连」。首次连接因为 `_doConnect` 有兜底看不出来，
+      // 只有自愈路径会踩到。
       _state = GatewaySessionState.ready;
       _backoff = retryPolicy.initialDelay;
       _lastSeq = null;
       _startTickWatchdog(generation);
+      pushHandler(GatewayPushSnapshot(hello));
       _completeConnectWaiters();
     } catch (error, stack) {
       if (_isCurrent(generation)) {
-        await _disposeSocket(failPending: true);
+        await _disposeSocket(waitForClose: false);
         _completeConnectWaiters(error, stack);
         disconnectHandler?.call(error.toString());
-        _scheduleReconnect();
       }
+      // 不管这次尝试还算不算「当前」，都不能让重连断档：
+      // - generation 被 `_handleDisconnect` 顶掉时，它已经排过一次，这里被
+      //   `_reconnectTimer?.isActive` 挡掉；
+      // - 被 `shutdown()` 顶掉时 `_shouldReconnect` 已是 false，自然不排。
+      _scheduleReconnect();
       Error.throwWithStackTrace(error, stack);
+    } finally {
+      _attemptInFlight = false;
     }
   }
 
@@ -695,7 +893,7 @@ class GatewaySession {
     _cancelReconnect();
     _tickTimer?.cancel();
     _tickTimer = null;
-    await _disposeSocket(failPending: true, shutdown: true);
+    await _disposeSocket(shutdown: true);
     _completeConnectWaiters();
     _state = GatewaySessionState.idle;
   }
@@ -717,7 +915,7 @@ class GatewaySession {
     _tickTimer?.cancel();
     _tickTimer = null;
     ++_generation;
-    await _disposeSocket(failPending: true);
+    await _disposeSocket(waitForClose: false);
     _state = GatewaySessionState.disconnected;
     await connect();
   }
@@ -877,6 +1075,8 @@ class GatewaySession {
 
   void _handleRaw(dynamic raw, int generation) {
     if (!_isCurrent(generation)) return;
+    // 任何一帧都证明对端还活着，不只是 tick 事件。
+    _lastTick = clock();
     final decoded = raw is String ? raw : utf8.decode(raw as List<int>);
     final frame = jsonDecode(decoded);
     if (frame is! Map) return;
@@ -905,13 +1105,12 @@ class GatewaySession {
           }
           _lastSeq = seq;
         }
-        if (event == 'tick') _lastTick = clock();
         if (event != null)
           pushHandler(GatewayPushEvent(event, map['payload'], seq: seq));
     }
   }
 
-  Future<void> _sendConnect(int generation) async {
+  Future<HelloOk> _sendConnect(int generation) async {
     final options =
         connectOptions ??
         const GatewayConnectOptions(
@@ -1024,23 +1223,35 @@ class GatewaySession {
       (response['payload'] as Map).cast<String, dynamic>(),
     );
     final tick = hello.policy['tickIntervalMs'];
-    if (tick is num) _tickIntervalMs = tick.toDouble();
-    _lastTick = clock();
-    pushHandler(GatewayPushSnapshot(hello));
+    if (tick is num && tick > 0) _tickIntervalMs = tick.toDouble();
+    // 快照不在这里推：调用方要先翻到 ready，订阅者才认这份 hello。
+    return hello;
   }
 
+  /// tick 看门狗。
+  ///
+  /// 为什么需要它：TCP 半开（对端进程被杀、Wi-Fi 掉线、机器休眠）时 socket
+  /// 既不会报错也不会 EOF，`_state` 会一直停在 ready —— 只要当下没有请求在
+  /// 飞，App 就会永远显示「已连接」，也就谈不上自动重连。这里拿「对端静默
+  /// 时长」当死亡判据：超过两个 tick 周期没有任何一帧到达，就判掉线，交给
+  /// 退避重连把连接重开。
+  ///
+  /// 检查周期取 **一个** tick（而不是两个）：阈值既然是两个 tick，按两个
+  /// tick 去查就总要等到第二个检查点才动手，判死时间被无谓地拉长一倍。
   void _startTickWatchdog(int generation) {
     _tickTimer?.cancel();
-    _tickTimer = Timer.periodic(
-      Duration(milliseconds: (_tickIntervalMs * 2).toInt()),
-      (_) {
-        if (!_isCurrent(generation) || !connected || _lastTick == null) return;
-        if (clock().difference(_lastTick!).inMilliseconds >
-            _tickIntervalMs * 2) {
-          _handleDisconnect('gateway tick missed', generation);
-        }
-      },
-    );
+    _lastTick = clock();
+    final tickMs = _tickIntervalMs > 0 ? _tickIntervalMs : 30000.0;
+    final checkMs = tickMs < 1 ? 1 : tickMs.round();
+    final deadlineMs = tickMs * 2;
+    _tickTimer = Timer.periodic(Duration(milliseconds: checkMs), (_) {
+      if (!_isCurrent(generation) || !connected) return;
+      final last = _lastTick;
+      if (last == null) return;
+      if (clock().difference(last).inMilliseconds >= deadlineMs) {
+        _handleDisconnect('gateway tick missed', generation);
+      }
+    });
   }
 
   void _handleDisconnect(String reason, int generation) {
@@ -1054,6 +1265,9 @@ class GatewaySession {
     _tickTimer?.cancel();
     _tickTimer = null;
     _failPending(StateError('gateway connection closed: $reason'));
+    // 立刻把旧 socket 摘掉。留着它的话，下一次 connect() 会在它的 close()
+    // 上等（对端已消失时最长 5s），重连被白白推迟。
+    unawaited(_disposeSocket(waitForClose: false));
     disconnectHandler?.call(reason);
     _scheduleReconnect();
   }
@@ -1073,7 +1287,10 @@ class GatewaySession {
     _state = GatewaySessionState.reconnecting;
     _reconnectTimer = Timer(delay, () async {
       _reconnectTimer = null;
-      if (!_shouldReconnect || connected || isConnecting) return;
+      if (!_shouldReconnect || connected) return;
+      // 不在这里判 `isConnecting` 并直接 return：万一真有一次尝试还在飞，
+      // 直接返回会让重连就此断档。交给 connect() 自己合并成 waiter，
+      // 那次尝试无论成败都会收尾并（失败时）再排一次。
       try {
         await connect();
       } catch (error) {
@@ -1082,21 +1299,40 @@ class GatewaySession {
     });
   }
 
+  /// 摘掉当前 socket。
+  ///
+  /// [waitForClose] 默认 true（主动 shutdown 时用）；**重连路径一律传 false**：
+  /// 取消订阅之后旧 socket 已经不会再投递任何东西，没必要等它的 close 完成。
   Future<void> _disposeSocket({
-    required bool failPending,
+    bool failPending = true,
+    bool waitForClose = true,
     bool shutdown = false,
   }) async {
-    await _subscription?.cancel();
+    final subscription = _subscription;
     _subscription = null;
     _listening = false;
-    _failPending(
-      StateError(
-        shutdown ? 'gateway session shutdown' : 'gateway socket replaced',
-      ),
-    );
+    if (failPending) {
+      _failPending(
+        StateError(
+          shutdown ? 'gateway session shutdown' : 'gateway socket replaced',
+        ),
+      );
+    }
     final socket = _socket;
     _socket = null;
-    if (socket != null) await socket.close();
+    await subscription?.cancel();
+    if (socket == null) return;
+    final closing = _closeSocket(socket);
+    if (waitForClose) await closing;
+  }
+
+  /// 关闭一条已经不属于本会话的 socket，超时与报错一律吞掉。
+  Future<void> _closeSocket(GatewaySocket socket) async {
+    try {
+      await socket.close().timeout(socketCloseTimeout);
+    } catch (error) {
+      _log.fine('gateway socket close ignored: $error');
+    }
   }
 
   void _failPending(Object error) {

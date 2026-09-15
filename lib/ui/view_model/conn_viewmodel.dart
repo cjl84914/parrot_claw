@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
+import 'package:parrot_app/data/repository/server_repository.dart';
+import 'package:parrot_app/data/service/gateway_scope_store.dart';
+import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/data/service/openclaw_protocol.dart';
 
 class ConnViewModel extends ChangeNotifier {
@@ -12,10 +16,15 @@ class ConnViewModel extends ChangeNotifier {
 
   final GatewayRepository _gatewayRepository;
 
+  final ServerRepository _serverRepository;
+
   String? get disconnectReason => _gatewayRepository.disconnectReason;
 
-  ConnViewModel({required GatewayRepository gatewayRepository})
-    : _gatewayRepository = gatewayRepository {
+  ConnViewModel({
+    required GatewayRepository gatewayRepository,
+    required ServerRepository serverRepository,
+  }) : _gatewayRepository = gatewayRepository,
+       _serverRepository = serverRepository {
     _gatewayRepository.addListener(_notify);
   }
 
@@ -29,7 +38,20 @@ class ConnViewModel extends ChangeNotifier {
   /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
   /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
   Future<void> connect() async {
-    await _gatewayRepository.connect();
+    final config = _serverRepository.selectedServer;
+    if (config == null) {
+      notifyListeners();
+      return;
+    }
+    final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
+    await _gatewayRepository.connect(
+      GatewayConnectConfig(
+        url: config.wsUrl,
+        token: config.isTokenAuth ? config.token : null,
+        password: config.isPasswordAuth ? config.password : null,
+        scopes: storedScopes ?? openClawOperatorScopes,
+      ),
+    );
   }
 
   /// 主动断开连接（保留服务器配置，可随时重新连接）。

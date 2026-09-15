@@ -4,8 +4,8 @@ import 'package:parrot_app/data/repository/gateway_repository.dart';
 
 /// Skill 管理的界面状态。
 ///
-/// 状态与操作都由 [GatewayRepository] 持有（它复用全局共享的 OpenClawRuntime
-/// 会话），本 ViewModel 只做转发与变更通知，写法与 ConnViewModel 保持一致。
+/// 状态与操作都由 [GatewayRepository] 持有（它自己持有网关会话），
+/// 本 ViewModel 只做转发与变更通知，写法与 ConnViewModel 保持一致。
 class SkillViewModel extends ChangeNotifier {
   SkillViewModel({required GatewayRepository gatewayRepository})
     : _gatewayRepository = gatewayRepository {

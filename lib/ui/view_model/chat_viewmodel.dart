@@ -62,10 +62,6 @@ class ChatViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  String buildMediaUrl(String srcUrl) {
-    return _gatewayRepository.buildMediaUrl(srcUrl);
-  }
-
   void subscribeSessionMessage() {}
 
   void unsubscribeSessionMessage() {}

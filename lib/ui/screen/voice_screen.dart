@@ -349,8 +349,8 @@ class _VoiceScreenState extends State<VoiceScreen> {
         // 字幕区域：位于屏幕中部和底部按钮上方
         if (_isShowSubtitle)
           Positioned(
-            left: 20.w,
-            right: 20.w,
+            left: 20,
+            right: 20,
             top: screenHeight * 0.4,
             bottom: 110.h,
             child: _buildSubtitle(),
@@ -362,7 +362,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
 
   Widget _buildSubtitle() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
@@ -380,7 +380,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
           _lastTextContent,
           style: AppTextStyles.bodyMedium.copyWith(
             color: Colors.white,
-            fontSize: 16.sp,
+            fontSize: 14,
             height: 1.6,
           ),
         ),
@@ -416,7 +416,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
         Text(
           '对话模式',
           style: AppTextStyles.titleLarge.copyWith(
-            fontSize: 18.sp,
+            fontSize: 18,
             color: AppColors.textSecondary,
           ),
         ),
@@ -427,7 +427,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
               '',
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(
-                fontSize: 14.sp,
+                fontSize: 14,
                 color: AppColors.textTertiary,
               ),
             ),
