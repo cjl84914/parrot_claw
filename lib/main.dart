@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -43,7 +44,7 @@ import 'package:parrot_app/ui/view_model/setup_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setup_model_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/setting_viewmodel.dart';
 import 'package:parrot_app/util/asr_util.dart';
-import 'package:parrot_app/util/flutter_tts_util.dart';
+import 'package:parrot_app/util/edge_tts_util.dart';
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -73,8 +74,8 @@ void main() async {
   await storageService.init();
 
   final prefs = await SharedPreferences.getInstance();
-  await FlutterTTSUtil().initSetting();
-  await ASRUtil().init();
+  unawaited(EdgeTTSUtil().initSetting());
+  unawaited(ASRUtil().init());
 
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     // Must add this line.
@@ -114,14 +115,17 @@ List<SingleChildWidget> providersLocal(
   StorageService storageService,
 ) {
   final openClawServices = OpenClawServiceFactory.create();
+  final preferencesService = SharedPreferencesService(prefs);
+  // 本地 TTS 参数只在设置页改动的那一刻生效，这里补一次「启动时应用」，
+  // 否则重启后 Edge 会回到默认音色和默认语速。
+  final settingRepository = SettingRepository(
+    preferencesService: preferencesService,
+  )..applySavedSetting();
 
   return [
     Provider.value(value: storageService),
-    Provider(create: (context) => SharedPreferencesService(prefs)),
-    ChangeNotifierProvider(
-      create:
-          (context) => SettingRepository(preferencesService: context.read()),
-    ),
+    Provider<SharedPreferencesService>.value(value: preferencesService),
+    ChangeNotifierProvider.value(value: settingRepository),
     ChangeNotifierProvider(
       create: (context) => ServerRepository(context.read<StorageService>()),
     ),

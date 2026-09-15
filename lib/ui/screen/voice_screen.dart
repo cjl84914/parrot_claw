@@ -13,9 +13,8 @@ import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/util/asr_util.dart';
-import 'package:parrot_app/util/flutter_tts_util.dart';
+import 'package:parrot_app/util/edge_tts_util.dart';
 import 'package:parrot_app/util/string_util.dart';
-import 'package:parrot_app/util/tts_util.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
@@ -91,30 +90,28 @@ class _VoiceScreenState extends State<VoiceScreen> {
     }
 
     if (Platform.isAndroid) {
-      await TTSUtil().setSpeakerOn(speakerOn);
+      await EdgeTTSUtil().setSpeakerOn(speakerOn);
     }
     if (Platform.isIOS) {
-      // await _flutterTTSUtil.configureIosAudioSession(speakerOn: speakerOn);
     }
   }
 
   void _connect() async {
     _pendingRunSubscription = widget.viewModel.pendingRunEvents?.listen((
       lastTextContent,
-    ) {
+    ) async {
       if (lastTextContent.isNotEmpty) {
         _lastTextContent = lastTextContent;
+        final text = StringUtil.cleanTextForTts(lastTextContent);
         if (widget.viewModel.isOpenclawTTS()) {
-          widget.viewModel.sendTalkSpeak(
-            StringUtil.cleanTextForTts(lastTextContent),
-          );
+          // 网关侧 TTS：音频由 voiceEvents 回推，这里只发文本。
+          widget.viewModel.sendTalkSpeak(text);
         } else {
-          //flutterTTS的iOS和Macos只能输出audio/x-caf格式
-          if (Platform.isIOS || Platform.isMacOS) {
-            _flutterTTsSpeak(StringUtil.cleanTextForTts(lastTextContent));
-          } else {
-            _localSpeak(StringUtil.cleanTextForTts(lastTextContent));
-          }
+          // 本地 TTS 统一走 Edge 在线合成。
+          // 原实现按平台分流（iOS/macOS/Windows 用 flutter_tts、其余用 sherpa），
+          // 是因为 flutter_tts 在 iOS/macOS 只能输出 caf；Edge 全平台统一输出
+          // PCM/WAV，分流已无必要。
+          await _edgeSpeak(text);
         }
       }
     });
@@ -135,31 +132,19 @@ class _VoiceScreenState extends State<VoiceScreen> {
     // });
   }
 
-  Future<void> _localSpeak(String text) async {
-    final audioBase64 = await FlutterTTSUtil().getTtsAudioBase64(text);
-    _speak(audioBase64);
-  }
-
-  Future<void> _flutterTTsSpeak(String text) async {
-    FlutterTTSUtil().setCallbacks(
-      onComplete: () async {
-        print('flutter tts complete');
-        await _configureInitialAudio();
-        await ASRUtil().resume(); //恢复ASR
-      },
-    );
-    //不是打断模式，暂停ASR
-    if (!widget.viewModel.settingRepository.isTTSAbort) {
-      await ASRUtil().pause();
+  /// 本地 TTS：Edge 在线合成成 PCM/WAV → 播放 → 喂数字人口型。
+  Future<void> _edgeSpeak(String text) async {
+    try {
+      final audioBase64 = await EdgeTTSUtil().getTtsAudioBase64(text);
+      await _speak(audioBase64);
+    } on Object catch (error) {
+      // 合成失败（断网、服务端变更）不该把页面打挂，提示由 EdgeTTSUtil 负责弹。
+      debugPrint('Edge TTS 合成失败: $error');
     }
-    setState(() {
-      _isPendding = false;
-    });
-    FlutterTTSUtil().speak(text);
   }
 
   Future<void> _speak(String audioBase64) async {
-    TTSUtil().setCallbacks(
+    EdgeTTSUtil().setCallbacks(
       onComplete: () async {
         await _configureInitialAudio();
         await ASRUtil().resume(); //恢复ASR
@@ -173,30 +158,14 @@ class _VoiceScreenState extends State<VoiceScreen> {
       setState(() {
         _isPendding = false;
       });
-      await TTSUtil().playBase64(audioBase64);
+      await EdgeTTSUtil().playBase64(audioBase64);
       if (widget.viewModel.settingRepository.isShowFace) {
-        _live2dController.speak('data:audio/wav;base64,$audioBase64');
+        // Edge 给的是 mp3，而 Live2D 的 _wavFileHandler 只认 RIFF/WAVE，
+        // 所以走转码路径：WebView 里用 Web Audio 解码成 PCM 再拼 WAV。
+        _live2dController.speakEncodedAudio(
+          'data:${EdgeTTSUtil().audioMimeType};base64,$audioBase64',
+        );
       }
-    }
-  }
-
-  Future<void> _speakUrl(String audioUrl) async {
-    TTSUtil().setCallbacks(
-      onComplete: () async {
-        await _configureInitialAudio();
-        await ASRUtil().resume(); //恢复ASR
-      },
-    );
-    //不是打断模式，暂停ASR
-    if (!widget.viewModel.settingRepository.isTTSAbort) {
-      await ASRUtil().pause();
-    }
-    setState(() {
-      _isPendding = false;
-    });
-    await TTSUtil().playUrl(audioUrl);
-    if (widget.viewModel.settingRepository.isShowFace) {
-      _live2dController.speak(audioUrl);
     }
   }
 
@@ -235,6 +204,8 @@ class _VoiceScreenState extends State<VoiceScreen> {
   void dispose() {
     widget.viewModel.unsubscribeSessionMessage();
     ASRUtil().stop();
+    // 离开页面时停掉正在播/正在合成的语音（EdgeTTSUtil 是全局单例，不在这里 dispose）。
+    unawaited(EdgeTTSUtil().stop());
     _eventSubscription?.cancel();
     _pendingRunSubscription?.cancel();
     _eventVoiceSubscription?.cancel();

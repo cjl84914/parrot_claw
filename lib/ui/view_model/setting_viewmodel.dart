@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
-import 'package:parrot_app/util/flutter_tts_util.dart';
 
 class SettingViewmodel extends ChangeNotifier {
   SettingRepository _settingRepository;
@@ -34,12 +33,13 @@ class SettingViewmodel extends ChangeNotifier {
     return _settingRepository.getLanguages();
   }
 
-  Future<dynamic> getEngines() async {
-    return _settingRepository.getEngines();
+  Future<dynamic> getVoices() async {
+    return _settingRepository.getVoices();
   }
 
-  Future<dynamic> setEngine(dynamic selectedEngine) async {
-    return _settingRepository.setEngine(selectedEngine);
+  /// [voice] 是 Edge 音色的 shortName（如 `zh-CN-YunyangNeural`）。
+  Future<dynamic> setVoice(String voice) async {
+    return _settingRepository.setVoice(voice);
   }
 
   Future<dynamic> setLanguage(dynamic selectLanguage) async {

@@ -23,7 +23,7 @@ import 'package:parrot_app/ui/widget/composer_action_bar.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/ui/widget/voice_input_button.dart';
 import 'package:parrot_app/util/asr_util.dart';
-import 'package:parrot_app/util/flutter_tts_util.dart';
+import 'package:parrot_app/util/edge_tts_util.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
@@ -646,7 +646,7 @@ class _ChatScreenState extends State<ChatScreen>
           title: '朗读',
           icon: CupertinoIcons.speaker_2,
           onTap: () {
-            FlutterTTSUtil().speak(StringUtil.cleanTextForTts(message.text));
+            EdgeTTSUtil().speak(StringUtil.cleanTextForTts(message.text));
           },
         ),
       // PullDownMenuItem(

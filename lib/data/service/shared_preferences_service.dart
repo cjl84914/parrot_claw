@@ -13,7 +13,13 @@ class SharedPreferencesService {
   final _isOpenclawTTSKey = 'isOpenclawTTS';
   final _isSpeakerOnKey = 'isSpeakerOn';
   final _isShowFaceKey = 'isShowFace';
-  final _flutterTTSKey = '_flutterTTS';
+
+  /// 本地 TTS 参数（音色/语速/音调/音量）。
+  ///
+  /// 特意没有沿用旧的 `_flutterTTS` key：那套数值是 flutter_tts 的语义
+  /// （音调 0.5~2.0、语速 0~1.0），直接读进来当 Edge 的 Hz / 倍率用会跑偏，
+  /// 换新 key 等于自动丢弃旧值、回到默认。
+  final _edgeTTSKey = '_edgeTTS';
 
   bool getIsTTSAbort() => _prefs.getBool(_isTTSAbortKey) ?? false;
 
@@ -24,10 +30,10 @@ class SharedPreferencesService {
   Future<bool> saveIsOpenclawTTSKey(bool v) =>
       _prefs.setBool(_isOpenclawTTSKey, v);
 
-  String? getFlutterTTSSetting() => _prefs.getString(_flutterTTSKey);
+  String? getEdgeTTSSetting() => _prefs.getString(_edgeTTSKey);
 
-  Future<bool> saveFlutterTTSSetting(String v) =>
-      _prefs.setString(_flutterTTSKey, v);
+  Future<bool> saveEdgeTTSSetting(String v) =>
+      _prefs.setString(_edgeTTSKey, v);
 
   bool getIsSpeakerOn() => _prefs.getBool(_isSpeakerOnKey) ?? false;
 
