@@ -27,7 +27,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
   bool _handling = false;
   GatewayPairingRequest? pairing;
-  String? _lastPayload;
 
   /// 官方移动端 bootstrap 静默放行要求 canonical client id；
   /// node-host 只对 node-only profile 静默，兑默认双角色码会被踢进人工审批。
@@ -61,14 +60,12 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
   }
 
-
   // ─────────────────────────────────────────────
   // 主流程
   // ─────────────────────────────────────────────
 
   Future<void> _handlePayload(String payload) async {
     _handling = true;
-    _lastPayload = payload;
     try {
       pairing = GatewayPairingRequest.fromSetupCode(payload);
       if (pairing == null) {
@@ -82,7 +79,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      await _showHandshakeError(error.toString());
+      await _showHandshakeError(error);
     }
   }
 
@@ -109,7 +106,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       ),
     );
     if (!bootstrapResult.ok) {
-      await _showHandshakeError(bootstrapResult.error!.message);
+      await _showHandshakeError(bootstrapResult.error!);
       return false;
     }
 
@@ -145,7 +142,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       ),
     );
     if (!operatorResult.ok) {
-      await _showHandshakeError(operatorResult.error!.message);
+      await _showHandshakeError(operatorResult.error!);
       return false;
     }
 
@@ -169,18 +166,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
     // 与这里这条用完即弃的探测会话无关，所以直接跳转即可。
     if (mounted) context.go(Routes.index);
     return true;
-  }
-
-  /// 桌面批准后重试：同一 bootstrapToken 重新走完整 node → operator 流程。
-  Future<void> _retryPairing() async {
-    final payload = _lastPayload;
-    if (payload == null || pairing == null) return;
-    try {
-      await _handlePayload(payload);
-    } catch (error) {
-      if (!mounted) return;
-      await _showHandshakeError(error.toString());
-    }
   }
 
   Future<void> _saveConfig(ServerConfig config) async {
@@ -213,11 +198,12 @@ class _QrScanScreenState extends State<QrScanScreen> {
   List<String> _scopesFromEntry(Map<String, dynamic> entry) {
     final raw = entry['scopes'];
     if (raw is List) {
-      final scopes = raw
-          .whereType<String>()
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      final scopes =
+          raw
+              .whereType<String>()
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
       if (scopes.isNotEmpty) return scopes;
     }
     // 服务端未逐条回带 scopes 时，回退到默认受限集合（与 QR profile 一致）。
@@ -229,52 +215,35 @@ class _QrScanScreenState extends State<QrScanScreen> {
     _handling = false;
   }
 
-  Future<void> _showHandshakeError(String message) async {
-    MySnackBar.showError(context, message);
+  Future<void> _showHandshakeError(error) async {
+    if (error is GatewayResponseError) {
+      if (gatewayErrorCodeFromRaw(error.code) ==
+          GatewayErrorCode.deviceNotPaired) {
+        final details = GatewayErrorDetails.fromJson(error.details);
+        await context.push(Routes.gatewayPairing, extra: details.requestId);
+      } else {
+        MySnackBar.showError(context, error.message);
+      }
+    }
+    await Future.delayed(const Duration(seconds: 2));
     await _resetForRescan();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('扫码添加网关'), elevation: 0),
-      body: Column(
+      appBar: AppBar(title: const Text('扫码连接网关'), elevation: 0),
+      body: Stack(
+        alignment: Alignment.center,
         children: [
-          // 扫描区域
-          Expanded(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                MobileScanner(controller: _controller, onDetect: _onDetect),
-                // 扫描框
-                Container(
-                  width: 220,
-                  height: 220,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 2),
-                    borderRadius: BorderRadius.circular(AppRadius.large),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 底部说明
+          MobileScanner(controller: _controller, onDetect: _onDetect),
+          // 扫描框
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Column(
-              children: [
-                // Icon(
-                //   Icons.qr_code_scanner,
-                //   size: 28,
-                //   color: AppColors.textSecondary,
-                // ),
-                // const SizedBox(height: 8),
-                // Text(
-                //   '将其他设备的网关配置二维码对准扫描框',
-                //   style: AppTextStyles.caption,
-                // ),
-              ],
+            width: 220,
+            height: 220,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 2),
+              borderRadius: BorderRadius.circular(AppRadius.large),
             ),
           ),
         ],
