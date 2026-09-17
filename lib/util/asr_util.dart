@@ -77,6 +77,14 @@ class ASRUtil {
 
   RecordState? _recordState;
 
+  // 「麦克风不可用」指纹检测。
+  // record_windows 在 Reader 报错时只 printf，不向 Dart 上报（见 record_readercallback.cpp），
+  // 因此只能靠状态特征判定：进入 record → 一帧音频都没收到 → 自己变成 stop。
+  bool _sawRecordState = false; // 本次录音是否进入过 record 状态
+  bool _gotAudioData = false; // 本次录音是否收到过音频帧
+  bool _userRequestedStop = false; // 本次 stop 是否由 App 主动发起
+  bool _micUnavailableNotified = false; // 本次启动已提示过，避免反复弹框
+
   Future init() async {
     try {
       if (isInitialized || _isIniting) return;
@@ -87,6 +95,19 @@ class ASRUtil {
       _recordSub = _audioRecorder.onStateChanged().listen((recordState) {
         _recordState = recordState;
         _log.info(_recordState);
+
+        if (recordState == RecordState.record) {
+          _sawRecordState = true;
+        } else if (recordState == RecordState.stop) {
+          final failedSilently =
+              _sawRecordState && !_gotAudioData && !_userRequestedStop;
+          _sawRecordState = false;
+          if (failedSilently && !_micUnavailableNotified) {
+            _micUnavailableNotified = true;
+            _reportError(kMicDeviceUnavailable);
+          }
+        }
+
         _listenerCallback?.call(recordState);
       });
 
@@ -153,6 +174,11 @@ class ASRUtil {
       await initialized;
       await stop();
 
+      // 每次启动录音前重置指纹检测状态
+      _sawRecordState = false;
+      _gotAudioData = false;
+      _userRequestedStop = false;
+
       if (_initError != null) {
         _reportError('语音引擎未初始化成功：$_initError');
         return false;
@@ -209,6 +235,7 @@ class ASRUtil {
       final stream = await _audioRecorder.startStream(config);
       stream.listen(
         (data) {
+          _gotAudioData = true;
           final samplesFloat32 = convertBytesToFloat32(
             Uint8List.fromList(data),
           );
@@ -271,6 +298,8 @@ class ASRUtil {
   }
 
   Future<void> stop() async {
+    // 标记为主动停止，避免被「麦克风不可用」指纹检测误判
+    _userRequestedStop = true;
     await _audioRecorder.stop();
 
     final vad = _vad;

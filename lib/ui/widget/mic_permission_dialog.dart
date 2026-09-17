@@ -5,18 +5,19 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// 麦克风不可用时的提示弹框。
 ///
-/// Windows 的「允许桌面应用访问你的麦克风」被关闭时，MediaFoundation 会枚举到
-/// 0 个采集设备，表现为「未检测到可用麦克风输入设备」。这是权限问题而不是硬件问题，
-/// 所以给一个直接跳到系统麦克风隐私设置页的入口。
+/// 触发场景（都表现为「设备能打开但读不到音频」）：Windows 未允许桌面应用使用麦克风、
+/// 麦克风被其他程序独占、设备被拔掉/切换、音频驱动异常等。文案因此保持中性，
+/// 同时提供直达系统麦克风隐私设置页的入口。
 Future<void> showMicDeviceDialog(
   BuildContext context, {
-  String message = '未检测到可用麦克风输入设备',
+  String message =
+      '没有收到麦克风音频。可能是系统未允许桌面应用使用麦克风，也可能是麦克风被其他程序占用或设备异常。',
 }) {
   final canOpenSettings = Platform.isWindows || Platform.isMacOS;
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('未检测到麦克风'),
+      title: const Text('麦克风无法使用'),
       content: Text(message),
       actions: [
         TextButton(
