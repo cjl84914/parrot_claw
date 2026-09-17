@@ -42,10 +42,14 @@ class SettingRepository extends ChangeNotifier {
 
   String? get voice => _voice;
 
-  bool _isSpeakerOn = false;
+  /// 语音页「语音播放」开关（静音），默认开启。
+  ///
+  /// 只决定要不要出声：关掉后不播放语音、也不驱动数字人口型，ASR 照常聆听。
+  /// 音频路由不归它管，语音页一律默认外放（见 `VoiceScreen._configureInitialAudio`）。
+  bool _isVoicePlayOn = true;
   bool _isShowFace = false;
 
-  bool get isSpeakerOn => _isSpeakerOn;
+  bool get isVoicePlayOn => _isVoicePlayOn;
 
   bool get isShowFace => _isShowFace;
 
@@ -53,7 +57,7 @@ class SettingRepository extends ChangeNotifier {
     : _preferencesService = preferencesService {
     _isTTSAbort = _preferencesService.getIsTTSAbort();
     _isOpenclawTTS = _preferencesService.getIsOpenclawTTS();
-    _isSpeakerOn = _preferencesService.getIsSpeakerOn();
+    _isVoicePlayOn = _preferencesService.getIsVoicePlayOn();
     _isShowFace = _preferencesService.getIsShowFace();
     _restoreSetting();
   }
@@ -96,11 +100,12 @@ class SettingRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool switchSpeaker() {
-    _isSpeakerOn = !_isSpeakerOn;
-    _preferencesService.saveIsSpeakerOn(_isSpeakerOn);
+  /// 切换「是否播放语音」，返回切换后的状态。
+  bool switchVoicePlay() {
+    _isVoicePlayOn = !_isVoicePlayOn;
+    _preferencesService.saveIsVoicePlayOn(_isVoicePlayOn);
     notifyListeners();
-    return _isSpeakerOn;
+    return _isVoicePlayOn;
   }
 
   void switchShowFace() {

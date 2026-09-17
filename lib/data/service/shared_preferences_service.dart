@@ -11,7 +11,7 @@ class SharedPreferencesService {
 
   final _isTTSAbortKey = 'isTTSAbort';
   final _isOpenclawTTSKey = 'isOpenclawTTS';
-  final _isSpeakerOnKey = 'isSpeakerOn';
+  final _isVoicePlayOnKey = 'isVoicePlayOn';
   final _isShowFaceKey = 'isShowFace';
 
   /// 本地 TTS 参数（音色/语速/音调/音量）。
@@ -35,9 +35,14 @@ class SharedPreferencesService {
   Future<bool> saveEdgeTTSSetting(String v) =>
       _prefs.setString(_edgeTTSKey, v);
 
-  bool getIsSpeakerOn() => _prefs.getBool(_isSpeakerOnKey) ?? false;
+  /// 语音页「语音播放」开关（静音开关），默认开启。
+  ///
+  /// 特意没有沿用旧的 `isSpeakerOn` key：那个 key 存的是「外放 / 听筒」路由
+  /// 偏好（默认 false = 听筒），语义已经作废，换新 key 等于自动回到默认「开启」。
+  bool getIsVoicePlayOn() => _prefs.getBool(_isVoicePlayOnKey) ?? true;
 
-  Future<bool> saveIsSpeakerOn(bool v) => _prefs.setBool(_isSpeakerOnKey, v);
+  Future<bool> saveIsVoicePlayOn(bool v) =>
+      _prefs.setBool(_isVoicePlayOnKey, v);
 
   bool getIsShowFace() => _prefs.getBool(_isShowFaceKey) ?? false;
 

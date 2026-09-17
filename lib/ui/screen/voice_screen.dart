@@ -62,19 +62,17 @@ class _VoiceScreenState extends State<VoiceScreen> {
       return;
     }
 
-    final speakerOn = widget.viewModel.settingRepository.isSpeakerOn;
     try {
       final session = await AudioSession.instance;
       await session.configure(
         AudioSessionConfiguration(
           avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          // 一律走外放：语音页的「语音播放」开关只管要不要出声，
+          // 不再改音频路由（进页面即默认外放，各平台一致）。
           avAudioSessionCategoryOptions:
-              speakerOn
-                  ? AVAudioSessionCategoryOptions.allowBluetooth |
-                      AVAudioSessionCategoryOptions.defaultToSpeaker |
-                      AVAudioSessionCategoryOptions.mixWithOthers
-                  : AVAudioSessionCategoryOptions.allowBluetooth |
-                      AVAudioSessionCategoryOptions.mixWithOthers,
+              AVAudioSessionCategoryOptions.allowBluetooth |
+              AVAudioSessionCategoryOptions.defaultToSpeaker |
+              AVAudioSessionCategoryOptions.mixWithOthers,
           avAudioSessionMode: AVAudioSessionMode.voiceChat,
           androidAudioAttributes: const AndroidAudioAttributes(
             usage: AndroidAudioUsage.voiceCommunication,
@@ -91,9 +89,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
     }
 
     if (Platform.isAndroid) {
-      await EdgeTTSUtil().setSpeakerOn(speakerOn);
-    }
-    if (Platform.isIOS) {
+      await EdgeTTSUtil().setSpeakerOn(true);
     }
   }
 
@@ -103,6 +99,8 @@ class _VoiceScreenState extends State<VoiceScreen> {
     ) async {
       if (lastTextContent.isNotEmpty) {
         _lastTextContent = lastTextContent;
+        // 静音时只更新字幕：不请求网关合成、也不本地合成，省掉一次无用的往返。
+        if (!widget.viewModel.settingRepository.isVoicePlayOn) return;
         final text = StringUtil.cleanTextForTts(lastTextContent);
         if (widget.viewModel.isOpenclawTTS()) {
           // 网关侧 TTS：音频由 voiceEvents 回推，这里只发文本。
@@ -145,6 +143,16 @@ class _VoiceScreenState extends State<VoiceScreen> {
   }
 
   Future<void> _speak(String audioBase64) async {
+    // 静音：不出声、不驱动数字人口型，也不去暂停 ASR（聆听该一直开着）。
+    if (!widget.viewModel.settingRepository.isVoicePlayOn) {
+      if (mounted) {
+        setState(() {
+          _isPendding = false;
+        });
+      }
+      return;
+    }
+
     EdgeTTSUtil().setCallbacks(
       onComplete: () async {
         await _configureInitialAudio();
@@ -237,17 +245,22 @@ class _VoiceScreenState extends State<VoiceScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // 扬声器开关
+                    // 语音播放开关（静音）：只决定要不要出声，不改音频路由。
                     _buildIconButton(
                       icon:
-                          widget.viewModel.settingRepository.isSpeakerOn
+                          widget.viewModel.settingRepository.isVoicePlayOn
                               ? Icons.volume_up
                               : Icons.volume_off,
                       color: Colors.white,
                       iconColor: AppColors.textSecondary,
                       onTap: () async {
-                        widget.viewModel.settingRepository.switchSpeaker();
-                        await _configureInitialAudio();
+                        widget.viewModel.settingRepository.switchVoicePlay();
+                        if (!widget.viewModel.settingRepository.isVoicePlayOn) {
+                          // 切到静音：立刻停掉正在播放/正在合成的语音，
+                          // 并把播放期间被暂停的 ASR 恢复回来。
+                          await EdgeTTSUtil().stop();
+                          await ASRUtil().resume();
+                        }
 
                         if (mounted) {
                           setState(() {});

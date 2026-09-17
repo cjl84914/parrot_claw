@@ -3,8 +3,6 @@
 > 覆盖 OpenClaw 配置、Flutter 开发、ComfyUI 集成等常见问题。
 > 持续更新中。
 
----
-
 ## 目录
 
 - [Gateway & 连接](#gateway--连接)
@@ -12,8 +10,6 @@
 - [TTS & 语音](#tts--语音)
 - [ComfyUI & 生图](#comfyui--生图)
 - [部署 & 构建](#部署--构建)
-
----
 
 ## Gateway & 连接
 
@@ -63,8 +59,6 @@ openclaw gateway restart
 ```bash
 openclaw logs --follow
 ```
-
----
 
 ## Flutter 开发
 
@@ -147,8 +141,6 @@ await flutterTts.setIosAudioCategory(
 <true/>
 ```
 
----
-
 ## TTS & 语音
 
 ### Q：Edge-TTS 安装了但找不到命令？
@@ -220,30 +212,6 @@ _asrUtil.setCallbacks(
 - **设备性能** — 旧设备上 ASR 初始化较慢，等待 2-3 秒后再试
 - **模型损坏** — 重新下载 model.int8.onnx 文件替换
 
-### Q：Live2D 朗读时没有声音或播放异常？
-
-Live2D 的 WebView 播放音频只兼容 **44100Hz、16-bit、单声道 PCM WAV** 格式。不符合此格式的音频可能无法播放或出现杂音。
-
-如果使用 Edge-TTS + `tts-wrapper.sh` 方案，wrapper 脚本已用 ffmpeg 做了转码，会自动满足要求。
-
-如果直接使用 edge-tts 输出（绕过 wrapper），需要确认采样率：
-
-```bash
-# 查看音频信息
-ffprobe /path/to/audio.wav
-# 确认：Sample Rate = 44100 Hz, Channels = 1 (mono)
-```
-
-如格式不符，用 ffmpeg 转码：
-
-```bash
-ffmpeg -y -i input.wav -acodec pcm_s16le -ar 44100 -ac 1 output.wav
-```
-
-> 口型同步（lip sync）需要 Live2D 模型本身包含口型参数，音频格式正确只是前提条件。
-
----
-
 ## ComfyUI & 生图
 
 ### Q：生成图片提示连接被拒绝？
@@ -267,8 +235,6 @@ curl http://<comfyui-ip>:8188/
 - 检查 ComfyUI 工作流中的模型配置
 
 详细配置见 [ComfyUI 使用指南](comfyui-usage.md)。
-
----
 
 ## 部署 & 构建
 
@@ -296,15 +262,12 @@ flutter build ios --release
 
 需要 macOS + Xcode，以及有效的 Apple Developer 证书。
 
-### Q：Windows 能构建吗？
+### Q：如何构建 Windows 版本？
 
-项目依赖 `window_manager` 和 `flutter_inappwebview`，Windows 理论上支持，但当前 Windows 版本打包仍在路线图中，尚未发布经过完整验证的安装包。
-
-### Q：环境变量怎么配？
-
-项目使用 `flutter_dotenv`，在项目根目录创建 `.env` 文件：
-
-```env
-DEBUG=false
-# 其他配置...
+```bash
+flutter build windows --release
 ```
+
+构建产物在 `build\windows\x64\runner\Release\`，可执行文件为 `parrotClaw.exe`。
+
+需要 Windows 上安装 **Visual Studio**（勾选「使用 C++ 的桌面开发」工作负载）。

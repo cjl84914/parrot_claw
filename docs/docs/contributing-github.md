@@ -1,26 +1,24 @@
-# 贡献指南
+# GitHub 贡献指南
 
-> 欢迎参与 ParrotClaw 项目！当前项目托管在 [Gitee](https://gitee.com/alexcai/parrot_claw)，GitHub 镜像与自动化构建仍在规划中。
-
----
+> 欢迎参与 ParrotClaw 项目！本页介绍通过 [GitHub](https://github.com/cjl84914/parrot_claw) 参与贡献的完整流程。
 
 ## 贡献流程
 
 ### 1. Fork 项目
 
-在 [项目主页](https://gitee.com/alexcai/parrot_claw) 点击右上角的 Fork 按钮，将仓库 fork 到你的 Gitee 账号下。
+在 [GitHub 项目主页](https://github.com/cjl84914/parrot_claw) 点击右上角的 Fork 按钮，将仓库 fork 到你的 GitHub 账号下。
 
 ### 2. 克隆到本地
 
 ```bash
-git clone https://gitee.com/<你的用户名>/parrot_claw.git
+git clone https://github.com/<你的用户名>/parrot_claw.git
 cd parrot_claw
 ```
 
 ### 3. 添加上游仓库
 
 ```bash
-git remote add upstream https://gitee.com/alexcai/parrot_claw.git
+git remote add upstream https://github.com/cjl84914/parrot_claw.git
 ```
 
 ### 4. 创建功能分支
@@ -54,9 +52,7 @@ git push origin feat/your-feature-name
 
 ### 7. 发起 Pull Request
 
-在 Gitee 上进入你的 fork 仓库，点击"Pull Request" → "新建 Pull Request"，选择你的分支，目标分支为 `alexcai/parrot_claw` 的 `main` 分支。填写变更说明后提交。
-
----
+在 GitHub 上进入你的 fork 仓库，切换到你的分支后点击「Contribute」→「Open pull request」，目标分支为 `cjl84914/parrot_claw` 的 `main` 分支。填写变更说明后提交。
 
 ## 注意事项
 

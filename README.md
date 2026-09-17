@@ -17,9 +17,9 @@
 ## 演示图
 
 <div align="center">
-  <img src="./docs/public/images/screen1.jpg" width="300" alt="屏幕截图 1">
+  <img src="./docs/public/images/screen1.webp" width="300" alt="屏幕截图 1">
   &nbsp;&nbsp;&nbsp;
-  <img src="./docs/public/images/screen2.jpg" width="300" alt="屏幕截图 2">
+  <img src="./docs/public/images/screen2.webp" width="300" alt="屏幕截图 2">
 </div>
 
 ---
@@ -154,7 +154,7 @@ Email: 121237385@qq.com
 
 欢迎通过提交 [Pull Request](https://gitee.com/alexcai/parrot_claw/pulls) 参与项目。
 
-贡献指南：[`docs/docs/contributing.md`](docs/docs/contributing.md)
+贡献指南：[`docs/docs/contributing-gitee.md`](docs/docs/contributing-gitee.md)（Gitee）/ [`docs/docs/contributing-github.md`](docs/docs/contributing-github.md)（GitHub）
 
 
 ## 附录
@@ -164,7 +164,8 @@ Email: 121237385@qq.com
 - [`docs/docs/openclaw-setup.md`](docs/docs/openclaw-setup.md) — OpenClaw 安装、Gateway 连接等
 - [`docs/docs/flutter-tips.md`](docs/docs/flutter-tips.md) — Flutter 项目架构、插件使用
 - [`docs/docs/faq.md`](docs/docs/faq.md) — 常见问题
-- [`docs/docs/contributing.md`](docs/docs/contributing.md) — 贡献指南
+- [`docs/docs/contributing-gitee.md`](docs/docs/contributing-gitee.md) — Gitee 贡献指南
+- [`docs/docs/contributing-github.md`](docs/docs/contributing-github.md) — GitHub 贡献指南
 - [`docs/docs/getting-started.md`](docs/docs/getting-started.md) — 快速开始
 
 ---

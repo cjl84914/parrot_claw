@@ -17,8 +17,8 @@ class SettingViewmodel extends ChangeNotifier {
     _settingRepository.setOpenclawTTS(isOpenclawTTS);
   }
 
-  Future<dynamic> switchSpeaker() async {
-    _settingRepository.switchSpeaker();
+  Future<dynamic> switchVoicePlay() async {
+    _settingRepository.switchVoicePlay();
   }
 
   Future<dynamic> switchShowFace() async {
