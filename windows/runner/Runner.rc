@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "parrot_web" "\0"
+            VALUE "CompanyName", "geetion" "\0"
+            VALUE "FileDescription", "parrotClaw" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "parrot_web" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "parrot_web.exe" "\0"
-            VALUE "ProductName", "parrot_web" "\0"
+            VALUE "InternalName", "parrotClaw" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2025 geetion.inc. All rights reserved." "\0"
+            VALUE "OriginalFilename", "parrotClaw.exe" "\0"
+            VALUE "ProductName", "parrotClaw" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
