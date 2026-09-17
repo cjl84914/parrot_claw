@@ -11,6 +11,7 @@ import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
+import 'package:parrot_app/ui/widget/mic_permission_dialog.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/util/asr_util.dart';
 import 'package:parrot_app/util/edge_tts_util.dart';
@@ -187,7 +188,10 @@ class _VoiceScreenState extends State<VoiceScreen> {
       },
       onTextResult: (String text) => _sendMessage(text),
       onError: (String error) {
-        if (mounted) {
+        if (!mounted) return;
+        if (error == ASRUtil.kMicDeviceUnavailable) {
+          showMicDeviceDialog(context);
+        } else {
           MySnackBar.showError(context, error);
         }
       },

@@ -21,6 +21,10 @@ class ASRUtil {
   final Logger _log = Logger('ASRUtil');
   static final ASRUtil _instance = ASRUtil._internal();
 
+  /// 设备枚举为空时的统一文案。UI 侧据此弹出「跳到设置」引导框，
+  /// 不要在这里改动文案（Windows 上这通常意味着麦克风隐私权限被关闭）。
+  static const String kMicDeviceUnavailable = '未检测到可用麦克风输入设备';
+
   factory ASRUtil() => _instance;
 
   ASRUtil._internal();
@@ -169,7 +173,7 @@ class ASRUtil {
         final devices = await _audioRecorder.listInputDevices();
         _log.info('录音输入设备: $devices');
         if (devices.isEmpty) {
-          _reportError('未检测到可用的麦克风输入设备，请检查系统默认输入设备');
+          _reportError(kMicDeviceUnavailable);
           return false;
         }
       } catch (e) {

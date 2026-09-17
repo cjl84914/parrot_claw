@@ -20,6 +20,7 @@ import 'package:parrot_app/ui/screen/voice_screen.dart';
 import 'package:parrot_app/ui/view_model/chat_viewmodel.dart';
 import 'package:parrot_app/ui/widget/hive_chat_controller.dart';
 import 'package:parrot_app/ui/widget/composer_action_bar.dart';
+import 'package:parrot_app/ui/widget/mic_permission_dialog.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
 import 'package:parrot_app/ui/widget/voice_input_button.dart';
 import 'package:parrot_app/util/asr_util.dart';
@@ -99,7 +100,10 @@ class _ChatScreenState extends State<ChatScreen>
       onTextResult: (String text) => _sendMessage(text),
       // 录音/初始化失败不再静默：直接在聊天页提示原因（如 Windows 麦克风权限）
       onError: (String error) {
-        if (mounted) {
+        if (!mounted) return;
+        if (error == ASRUtil.kMicDeviceUnavailable) {
+          showMicDeviceDialog(context);
+        } else {
           MySnackBar.showError(context, error);
         }
       },

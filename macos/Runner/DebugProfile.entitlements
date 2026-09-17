@@ -12,9 +12,5 @@
 	<array>
 		<string>/</string>
 	</array>
-	<key>com.apple.security.files.user-selected.read-only</key>
-    <true/>
-	<key>com.apple.security.device.audio-input</key>
-    <true/>
 </dict>
 </plist>
