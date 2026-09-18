@@ -244,7 +244,7 @@ curl http://<comfyui-ip>:8188/
 flutter build macos --release
 ```
 
-构建产物在 `build/macos/Build/Products/Release/parrot_app.app`。
+构建产物在 `build/macos/Build/Products/Release/ParrotClaw.app`。
 
 ### Q：如何构建 Android 版本？
 

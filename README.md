@@ -5,9 +5,11 @@
 <h4 align="center">为一人公司和内容设计师打造的AI数字员工</h4>
 <p align="center">
  <a href="https://parrot.geetion.com"><img src="https://img.shields.io/badge/官网-parrot.geetion.com-orange.svg"></a>
- <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.3-brightgreen.svg"></a>
+ <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.6-brightgreen.svg"></a>
  <a href="https://gitee.com/alexcai/parrot_claw/LICENSE"><img src="https://img.shields.io/github/license/mashape/apistatus.svg"></a>
 </p>
+
+<p align="center"><a href="README.en.md">English</a> | <strong>中文</strong></p>
 
 > 私有化部署 · 对话式交互
 > 永久开源
@@ -89,7 +91,7 @@ ParrotClaw App（Flutter 交互层）
 
 ## 当前版本
 
-- App 版本：`1.0.3`
+- App 版本：`1.0.6`
 - Flutter SDK：`3.47.1`
 
 ## 路线图
