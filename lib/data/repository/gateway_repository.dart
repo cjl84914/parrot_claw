@@ -331,16 +331,6 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
-  // String buildMediaUrl(String sourcePath) {
-  //   final encodedPath = Uri.encodeComponent(sourcePath);
-  //   final url = '${_gatewayConfig!
-  //       .url}/__openclaw__/assistant-media?token=${_gatewayConfig!
-  //       .token}&source=$encodedPath';
-  //   _log.info(url);
-  //   return url;
-  // }
-
-
   /// 处理来自会话的推送。
   ///
   /// [pending] 为 true 表示这条推送来自尚未接管的候选会话：只缓存 hello，

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:parrot_app/data/model/message.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
+import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/data/repository/setting_repository.dart';
 
 class ChatViewModel extends ChangeNotifier {
@@ -47,14 +48,17 @@ class ChatViewModel extends ChangeNotifier {
   bool isTTSAbort() => _settingRepository.isTTSAbort;
 
   final GatewayRepository _gatewayRepository;
+  final ServerRepository _serverRepository;
 
   String? get disconnectReason => _gatewayRepository.disconnectReason;
 
   ChatViewModel({
     required SettingRepository settingRepository,
     required GatewayRepository gatewayRepository,
+    required ServerRepository serverRepository,
   }) : _settingRepository = settingRepository,
-        _gatewayRepository = gatewayRepository {
+        _gatewayRepository = gatewayRepository,
+        _serverRepository = serverRepository{
     _gatewayRepository.addListener(_notify);
   }
 
@@ -99,6 +103,19 @@ class ChatViewModel extends ChangeNotifier {
       model: model,
       thinkingLevel: thinkingLevel,
     );
+  }
+
+  /// 把媒体 source 解析成可访问的 URL：
+  /// - 已是 http(s) → 原样返回
+  /// - 本地路径（OpenClaw 产出的文件）→ 走网关的 assistant-media 接口
+  String resolveMediaUrl(BuildContext context, String source) {
+    final uri = Uri.tryParse(source);
+    final isHttp =
+        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+    if (isHttp) return source;
+    final server = _serverRepository.selectedServer;
+    if (server != null) return server.buildMediaUrl(source);
+    return source; // 兜底
   }
 
   @override

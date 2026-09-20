@@ -164,6 +164,7 @@ List<SingleChildWidget> providersLocal(
           (context) => ChatViewModel(
             gatewayRepository: context.read(),
             settingRepository: context.read(),
+            serverRepository: context.read(),
           ),
     ),
     ChangeNotifierProvider(

@@ -110,11 +110,11 @@ ParrotClaw App（Flutter 交互层）
 - [x] 会话管理
 - [x] 兼容官方二维码
 - [x] Skill管理
+- [x] 英文 README DOCS
+- [x] 数字人生成案例
 - [ ] 定时任务
 - [ ] Agent配置
-- [ ] 英文 README DOCS
 - [ ] 文生视频 / 图生视频
-- [ ] 数字人案例
 - [ ] FaceFusion 案例
 
 ---

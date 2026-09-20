@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/message.dart' hide ChatMessage;
+import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
@@ -128,6 +129,25 @@ class _ChatScreenState extends State<ChatScreen>
     _chatController.dispose();
     ASRUtil().stop();
     super.dispose();
+  }
+
+  /// 打开图片/文件/视频；用 externalApplication 调系统默认应用（macOS 关键）
+  Future<void> _openMedia(BuildContext context, String source) async {
+    final url = widget.viewModel.resolveMediaUrl(context, source);
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme.isEmpty) return;
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开：$url')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('打开失败：$e')));
+      }
+    }
   }
 
   Message _toUiMessage(model.ChatMessage m) {
@@ -303,9 +323,7 @@ class _ChatScreenState extends State<ChatScreen>
                               required bool isSentByMe,
                               MessageGroupStatus? groupStatus,
                             }) => GestureDetector(
-                              onTap: () {
-                                launchUrl(Uri.parse(message.source));
-                              },
+                              onTap: () => _openMedia(context, message.source),
                               child: FlyerChatImageMessage(
                                 message: message,
                                 index: index,
@@ -452,9 +470,7 @@ class _ChatScreenState extends State<ChatScreen>
                               required bool isSentByMe,
                               MessageGroupStatus? groupStatus,
                             }) => GestureDetector(
-                              onTap: () {
-                                launchUrl(Uri.parse(message.source));
-                              },
+                              onTap: () => _openMedia(context, message.source),
                               child: FlyerChatFileMessage(
                                 message: message,
                                 index: index,
