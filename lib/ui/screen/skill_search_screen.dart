@@ -467,6 +467,52 @@ String skillBadge(String name) {
   return letters.isEmpty ? 'S' : letters.join();
 }
 
+/// 下载量这类计数的展示文案：按三位加分隔符（`12345` → `12,345`）。
+///
+/// 故意不做「1.2万」那种缩写 —— 弹窗里位置够，缩写反而让用户自己换算。
+/// 负数只是防御性处理，正常不会出现。
+String formatStatCount(int value) {
+  final digits = value.abs().toString();
+  final buffer = StringBuffer();
+  for (var index = 0; index < digits.length; index++) {
+    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(digits[index]);
+  }
+  return value < 0 ? '-$buffer' : buffer.toString();
+}
+
+/// 安全审核结论的展示文案。
+///
+/// 认不出来的结论（[ClawHubSecurityVerdict.unknown]）直接把网关的原文摆出来 ——
+/// 这里唯一不能做的事就是兜底成「通过」。
+String securityVerdictLabel(ClawHubSecurityAudit audit) => switch (audit
+    .verdict) {
+  ClawHubSecurityVerdict.clean => '通过',
+  ClawHubSecurityVerdict.suspicious => '可疑',
+  ClawHubSecurityVerdict.blocked => '已拦截',
+  ClawHubSecurityVerdict.unknown => audit.rawVerdict ?? '未知',
+};
+
+/// 结论对应的颜色：通过=绿、可疑=琥珀、已拦截=红、未知=灰。
+Color _securityVerdictColor(ClawHubSecurityVerdict verdict) =>
+    switch (verdict) {
+      ClawHubSecurityVerdict.clean => _Palette.green,
+      ClawHubSecurityVerdict.suspicious => _Palette.amber,
+      ClawHubSecurityVerdict.blocked => _Palette.red,
+      ClawHubSecurityVerdict.unknown => _Palette.muted,
+    };
+
+/// 「最近更新」这类时间点的展示文案：`2026-05-11`。
+///
+/// 用绝对日期而不是「3 个月前」：审核弹窗是要用户做判断的地方，相对时间会
+/// 随时间漂移，也让人没法核对版本发布时间。时区在这里一次性换算成本地。
+String formatStatDate(DateTime value) {
+  final local = value.toLocal();
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return '${local.year}-$month-$day';
+}
+
 class _BadgeAvatar extends StatelessWidget {
   const _BadgeAvatar({required this.text});
 
@@ -498,7 +544,7 @@ class _BadgeAvatar extends StatelessWidget {
 
 /// 行尾状态按钮 —— 是按钮不是开关，所以用矩形圆角而不是胶囊。
 enum _TileState {
-  review('审核'),
+  review('查看'),
   install('安装'),
   loading('加载中'),
   installing('安装中'),
@@ -617,19 +663,51 @@ class _ReviewDialog extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 18),
-            _MetaLine(label: '版本', value: review.version),
-            const SizedBox(height: 12),
-            _MetaLine(label: '发布者', value: review.author),
-            const SizedBox(height: 18),
-            const Text(
-              'Gateway 会在下载前向 ClawHub 校验此具体版本。审查结果会显示在安装结果中。'
-              '被阻止的版本或无法进行安全校验将阻止安装。',
-              style: TextStyle(
-                color: _Palette.muted,
-                fontSize: 12.5,
-                height: 1.55,
+            if (review.securityAudit != null)
+              _MetaLine(
+                label: '安全审核',
+                value: securityVerdictLabel(review.securityAudit!),
+                valueColor: _securityVerdictColor(
+                  review.securityAudit!.verdict,
+                ),
               ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (review.downloads != null)
+                  Expanded(
+                    child: _MetaLine(
+                      label: '下载',
+                      value: formatStatCount(review.downloads!),
+                    ),
+                  ),
+                if (review.updatedAt != null)
+                  Expanded(
+                    child: _MetaLine(
+                      label: '最近更新',
+                      value: formatStatDate(review.updatedAt!),
+                    ),
+                  ),
+              ],
             ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _MetaLine(label: '版本', value: review.version)),
+                Expanded(child: _MetaLine(label: '发布者', value: review.author)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            // const Text(
+            //   'Gateway 会在下载前向 ClawHub 校验此具体版本。审查结果会显示在安装结果中。'
+            //   '被阻止的版本或无法进行安全校验将阻止安装。',
+            //   style: TextStyle(
+            //     color: _Palette.muted,
+            //     fontSize: 12.5,
+            //     height: 1.55,
+            //   ),
+            // ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -659,10 +737,13 @@ class _ReviewDialog extends StatelessWidget {
 
 /// 元数据一行：标签在上、值在下。
 class _MetaLine extends StatelessWidget {
-  const _MetaLine({required this.label, required this.value});
+  const _MetaLine({required this.label, required this.value, this.valueColor});
 
   final String label;
   final String value;
+
+  /// 值的颜色；缺省用标题色。安全审核靠它把「通过 / 可疑 / 已拦截」区分开。
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -681,8 +762,8 @@ class _MetaLine extends StatelessWidget {
         const SizedBox(height: 3),
         Text(
           value,
-          style: const TextStyle(
-            color: _Palette.title,
+          style: TextStyle(
+            color: valueColor ?? _Palette.title,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -824,4 +905,7 @@ abstract final class _Palette {
   static const grey = Color(0xFF6E6E73);
   static const amber = Color(0xFFFFD60A);
   static const red = Color(0xFFFF6B66);
+
+  /// 安全审核「通过」用的绿：比 [amber] / [red] 低饱和一点，避免在纯黑底上发飘。
+  static const green = Color(0xFF30D158);
 }

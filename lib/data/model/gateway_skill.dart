@@ -221,6 +221,9 @@ class GatewayClawHubInstallReview {
     this.summary,
     required this.version,
     required this.author,
+    this.downloads,
+    this.securityAudit,
+    this.updatedAt,
   });
 
   final String slug;
@@ -228,6 +231,23 @@ class GatewayClawHubInstallReview {
   final String? summary;
   final String version;
   final String author;
+
+  /// ClawHub 上的下载次数（详情响应里的 `skill.stats.downloads`）。
+  ///
+  /// 老网关的详情响应不带 `stats`，这里就是 null —— 弹窗据此**不显示**这一项。
+  /// 用 0 顶替会把「网关没说」渲染成「没人下载过」，比不显示更糟。
+  final int? downloads;
+
+  /// ClawHub 的安全审核结论（详情响应里的 `moderation` 块）。
+  ///
+  /// 没有 `moderation` 时是 null（老网关 / 尚未审核），弹窗同样不显示这一项 ——
+  /// 缺数据时摆一个「通过」出来，等于替网关做它没做的背书。
+  final ClawHubSecurityAudit? securityAudit;
+
+  /// 技能记录的最近更新时间（`skill.updatedAt`，epoch 毫秒）。
+  ///
+  /// 缺失时退回 `latestVersion.createdAt`：发布新版本本身就是一次更新。
+  final DateTime? updatedAt;
 
   /// 解析 `skills.detail` 的响应；返回 null 表示网关没给出可安装的版本。
   ///
@@ -240,6 +260,10 @@ class GatewayClawHubInstallReview {
     final skill = _asObject(json['skill']);
     final latestVersion = _asObject(json['latestVersion']);
     final owner = _asObject(json['owner']);
+    // `stats` 挂在 `skill` 下面；个别版本会挪到顶层，两个位置都认。
+    final stats = _asObject(skill?['stats']) ?? _asObject(json['stats']);
+    final moderation =
+        _asObject(json['moderation']) ?? _asObject(skill?['moderation']);
     final version =
         _nonEmptyString(latestVersion?['version']) ?? fallback.version;
     if (version == null) return null;
@@ -265,9 +289,81 @@ class GatewayClawHubInstallReview {
       summary: _nonEmptyString(skill?['summary']) ?? fallback.summary,
       version: version,
       author: author,
+      downloads: _asInt(stats?['downloads']),
+      securityAudit: ClawHubSecurityAudit.fromJson(moderation),
+      updatedAt:
+          _asDateTime(skill?['updatedAt']) ??
+          _asDateTime(latestVersion?['createdAt']),
     );
   }
 }
+
+/// ClawHub 对某个技能的安全审核结论（详情响应的 `moderation.verdict`）。
+enum ClawHubSecurityVerdict {
+  /// `clean`：审核通过，没有任何可疑或恶意标记。
+  clean,
+
+  /// 被标记可疑，但还没到拦截的程度 —— 展示成警告色，让用户自己决定。
+  suspicious,
+
+  /// 已被判定为恶意 / 被阻止安装。
+  blocked,
+
+  /// 网关给了没见过的结论。**必须**单独成一档：认不出来就按「未知」展示，
+  /// 一旦兜底成 [clean]，等于替网关说它没说过的话。
+  unknown,
+}
+
+/// 归一化后的安全审核结论。
+class ClawHubSecurityAudit {
+  const ClawHubSecurityAudit({required this.verdict, this.rawVerdict});
+
+  final ClawHubSecurityVerdict verdict;
+
+  /// 网关给的原始 verdict 文案，只在 [verdict] 为
+  /// [ClawHubSecurityVerdict.unknown] 时用来兜底展示（显示原文好过显示「未知」）。
+  final String? rawVerdict;
+
+  /// 解析 `moderation` 块；没有该块（老网关 / 尚未审核）时返回 null。
+  static ClawHubSecurityAudit? fromJson(Map<String, dynamic>? moderation) {
+    if (moderation == null) return null;
+    final rawVerdict = _nonEmptyString(moderation['verdict']);
+    // 两个布尔标记优先于 verdict 文案：网关真正用来拦安装的是它们，
+    // verdict 只是它们的可读概括，两者冲突时以标记为准（宁可显示得更严重）。
+    if (moderation['isMalwareBlocked'] == true) {
+      return ClawHubSecurityAudit(
+        verdict: ClawHubSecurityVerdict.blocked,
+        rawVerdict: rawVerdict,
+      );
+    }
+    if (moderation['isSuspicious'] == true) {
+      return ClawHubSecurityAudit(
+        verdict: ClawHubSecurityVerdict.suspicious,
+        rawVerdict: rawVerdict,
+      );
+    }
+    if (rawVerdict == null) return null;
+    return ClawHubSecurityAudit(
+      verdict: _securityVerdictOf(rawVerdict),
+      rawVerdict: rawVerdict,
+    );
+  }
+}
+
+/// `moderation.verdict` 文案 → 归一化结论。
+///
+/// 只认 ClawHub 的审核词表（clean / suspicious / malicious 及其同义写法），
+/// 其余一律 [ClawHubSecurityVerdict.unknown]。
+ClawHubSecurityVerdict _securityVerdictOf(String verdict) =>
+    switch (verdict.trim().toLowerCase()) {
+      'clean' || 'pass' || 'passed' || 'ok' || 'safe' || 'approved' =>
+        ClawHubSecurityVerdict.clean,
+      'suspicious' || 'review' || 'flagged' || 'warn' || 'warning' =>
+        ClawHubSecurityVerdict.suspicious,
+      'malware' || 'malicious' || 'unsafe' || 'blocked' || 'rejected' =>
+        ClawHubSecurityVerdict.blocked,
+      _ => ClawHubSecurityVerdict.unknown,
+    };
 
 class _ClawHubSkillReference {
   const _ClawHubSkillReference(this.slug, this.ownerHandle);
@@ -302,6 +398,25 @@ String? _canonicalClawHubReference({
 
 Map<String, dynamic>? _asObject(Object? value) =>
     value is Map ? value.cast<String, dynamic>() : null;
+
+/// 计数类字段（下载 / 安装 / 星标）—— 网关可能给 int、double 或字符串，
+/// 认不出来就返回 null，交给调用方决定「不显示」而不是显示成 0。
+int? _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  final text = value?.toString().trim();
+  if (text == null || text.isEmpty) return null;
+  return num.tryParse(text)?.toInt();
+}
+
+/// ClawHub 的时间戳一律是 epoch 毫秒；非正数或认不出来时返回 null。
+///
+/// 返回 UTC 时间，展示层再 `toLocal()` —— 时区换算只做一次，别在解析里做。
+DateTime? _asDateTime(Object? value) {
+  final millis = _asInt(value);
+  if (millis == null || millis <= 0) return null;
+  return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+}
 
 String? _nonEmptyString(Object? value) {
   final text = value?.toString().trim();

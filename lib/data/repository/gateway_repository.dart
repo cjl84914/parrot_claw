@@ -22,25 +22,12 @@ class GatewayRepository extends ChangeNotifier {
   List<GatewaySessionEntry> get sessions => List.unmodifiable(_sessions);
 
   final messageController = StreamController<ChatMessage>.broadcast();
-
-  Stream<ChatMessage>? get messageEvents => messageController.stream;
-
   final sessionUpdateController =
-  StreamController<List<ChatMessage>>.broadcast();
-
-  Stream<List<ChatMessage>>? get sessionUpdateEvents =>
-      sessionUpdateController.stream;
-
+      StreamController<List<ChatMessage>>.broadcast();
   final messageFinalController = StreamController<String>.broadcast();
-
-  Stream<String>? get pendingRunEvents => messageFinalController.stream;
-
   final voiceController = StreamController<dynamic>.broadcast();
-
-  Stream<dynamic>? get voiceEvents => voiceController.stream;
-
   final StreamController<GatewayPush> _pushes =
-  StreamController<GatewayPush>.broadcast();
+      StreamController<GatewayPush>.broadcast();
 
   /// 会话的原始推送流（snapshot / event）。
   ///
@@ -50,7 +37,7 @@ class GatewayRepository extends ChangeNotifier {
   Stream<GatewayPush> get pushes => _pushes.stream;
 
   final StreamController<SessionMessage> _sessionMessageController =
-  StreamController<SessionMessage>.broadcast();
+      StreamController<SessionMessage>.broadcast();
 
   Stream<SessionMessage> get sessionMessageStream =>
       _sessionMessageController.stream;
@@ -127,13 +114,8 @@ class GatewayRepository extends ChangeNotifier {
 
   String? disconnectReason;
 
-  GatewayRepository({
-    GatewaySessionFactory? sessionFactory,
-  }) :
-        _sessionFactory = sessionFactory ?? defaultGatewaySessionFactory{
-
-  }
-
+  GatewayRepository({GatewaySessionFactory? sessionFactory})
+    : _sessionFactory = sessionFactory ?? defaultGatewaySessionFactory {}
 
   void _onServerChanged() {
     _log.info('Server configuration changed, auto connecting...');
@@ -154,13 +136,14 @@ class GatewayRepository extends ChangeNotifier {
   /// 若不串行化，并发的 connect() 会互相取消订阅、configure 短路返回，
   /// 导致首次握手被提前标记成功或最终超时显示"连接失败"。
   Future<void> connect(GatewayConnectConfig config) async {
-    if (_connected && _gatewayConfig == config) {
-      return;
-    }
+    // if (_connected && _gatewayConfig == config) {
+    //   return;
+    // }
     await _doConnect(config);
   }
 
-  Future<void> _doConnect(GatewayConnectConfig config, {
+  Future<void> _doConnect(
+    GatewayConnectConfig config, {
     bool reconnecting = false,
   }) async {
     _manualDisconnect = false;
@@ -188,13 +171,13 @@ class GatewayRepository extends ChangeNotifier {
     } catch (e) {
       _log.warning('Connect failed in ViewModel: $e');
       // if (_session?.connected ?? false) {
-        // 旧会话仍然健康：这次切换失败不该让 UI 掉到「未连接」——
-        // 连接其实还在，只是新目标没连上。
-        _isConnecting = false;
-        _isReconnecting = false;
-        _connected = true;
-        disconnectReason = null;
-        notifyListeners();
+      // 旧会话仍然健康：这次切换失败不该让 UI 掉到「未连接」——
+      // 连接其实还在，只是新目标没连上。
+      _isConnecting = false;
+      _isReconnecting = false;
+      _connected = true;
+      disconnectReason = null;
+      notifyListeners();
       // }
     }
   }
@@ -284,7 +267,8 @@ class GatewayRepository extends ChangeNotifier {
   ///
   /// 见 [probeGateway]：探测与正式连接共用同一套 scopes 决策。
   Future<GatewayOperationResult<HelloOk>> probeServer(
-      GatewayConnectConfig config,) async {
+    GatewayConnectConfig config,
+  ) async {
     final result = await probeGateway(config);
     if (!result.ok) {
       _log.warning('Gateway probe failed: ${result.error}');
@@ -324,8 +308,8 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _initializeSessionData() async {
     try {
-      _sessionKey ??= await mainSessionKey();
-      await beginHistoryLoad();
+      _sessionKey = await mainSessionKey();
+      notifyListeners();
     } catch (error) {
       _log.warning('Failed to initialize main session: $error');
     }
@@ -339,7 +323,9 @@ class GatewayRepository extends ChangeNotifier {
   void _handlePush(GatewayPush push, {bool pending = false}) {
     if (push is GatewayPushSnapshot) {
       _hello = push.snapshot;
-      if (!pending) _markConnected(push.snapshot.snapshot.health);
+      _log.info('snapshot:${_hello?.snapshot.sessiondefaults.toString()}');
+      // if (!pending) _markConnected(push.snapshot.snapshot.health);
+      beginHistoryLoad();
     } else if (push is GatewayPushEvent) {
       _handleGatewayEvent(push.event, push.payload);
     }
@@ -412,7 +398,8 @@ class GatewayRepository extends ChangeNotifier {
   /// 向当前会话发起一次协议请求。
   ///
   /// 不在协议目录里的方法名会被本地拒绝，避免把拼错的请求打到网关。
-  Future<Map<String, dynamic>> requestKnown(String method, {
+  Future<Map<String, dynamic>> requestKnown(
+    String method, {
     Map<String, dynamic>? params,
     Duration? timeout,
   }) {
@@ -426,7 +413,8 @@ class GatewayRepository extends ChangeNotifier {
     return _request(method, params: params, timeout: timeout);
   }
 
-  Future<Map<String, dynamic>> _request(String method, {
+  Future<Map<String, dynamic>> _request(
+    String method, {
     Map<String, dynamic>? params,
     Duration? timeout,
   }) {
@@ -442,10 +430,8 @@ class GatewayRepository extends ChangeNotifier {
   /// 优先用握手快照里的默认值，缺失时才回读一次 config。
   Future<String> mainSessionKey({Duration? timeout}) async {
     final cached =
-    _hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
-    if (cached != null && cached
-        .trim()
-        .isNotEmpty) return cached;
+        _hello?.snapshot.sessiondefaults?['mainSessionKey']?.toString();
+    if (cached != null && cached.trim().isNotEmpty) return cached;
     final data = await requestKnown('config.get', timeout: timeout);
     final scope = ((data['config'] as Map?)?['session'] as Map?)?['scope'];
     return scope?.toString().trim() == 'global' ? 'global' : 'main';
@@ -519,55 +505,57 @@ class GatewayRepository extends ChangeNotifier {
     }
     _isHistoryLoading = true;
     notifyListeners();
-    final Map<String, dynamic> json = await requestKnown(
-      'chat.history',
-      params: {'sessionKey': sessionKey!},
-    );
+    try {
+      final Map<String, dynamic> json = await requestKnown(
+        'chat.history',
+        params: {'sessionKey': sessionKey!},
+      );
 
-    final sessionInfo = json['sessionInfo'];
-    final sessionInfoMap =
-    sessionInfo is Map
-        ? sessionInfo.cast<String, dynamic>()
-        : const <String, dynamic>{};
-    _thinkingOptions = sessionInfoMap['thinkingOptions'] as List? ?? const [];
-    _modelDefault = sessionInfoMap['model'] as String?;
-    _log.info(json);
+      final sessionInfo = json['sessionInfo'];
+      final sessionInfoMap =
+          sessionInfo is Map
+              ? sessionInfo.cast<String, dynamic>()
+              : const <String, dynamic>{};
+      _thinkingOptions = sessionInfoMap['thinkingOptions'] as List? ?? const [];
+      _modelDefault = sessionInfoMap['model'] as String?;
+      _log.info(json);
 
-    final messagesList = json['messages'] as List<dynamic>? ?? [];
-    final List<ChatMessage> messages = [];
-    for (final item in messagesList) {
-      final obj = item as Map<String, dynamic>;
-      final role = obj['role'] as String? ?? 'user';
-      if (role != 'user' && role != 'assistant') {
-        continue;
+      final messagesList = json['messages'] as List<dynamic>? ?? [];
+      final List<ChatMessage> messages = [];
+      for (final item in messagesList) {
+        final obj = item as Map<String, dynamic>;
+        final role = obj['role'] as String? ?? 'user';
+        if (role != 'user' && role != 'assistant') {
+          continue;
+        }
+
+        final contentList = _parseChatMessageContents(obj);
+        if (contentList.isNotEmpty) {
+          final ts = obj['timestamp'] as int?;
+          // 提取 ID (参考 Kotlin 和原有逻辑)
+          final openclaw = obj['__openclaw'] as Map<String, dynamic>?;
+          final id =
+              obj['id'] as String? ??
+              openclaw?['id']?.toString() ??
+              'msg_${DateTime.now().microsecondsSinceEpoch}';
+          messages.add(
+            ChatMessage(
+              id: id,
+              role: role,
+              content: contentList,
+              timestamp: ts,
+              idempotencyKey: obj['idempotencyKey'] as String?,
+            ),
+          );
+        }
       }
-
-      final contentList = _parseChatMessageContents(obj);
-      if (contentList.isNotEmpty) {
-        final ts = obj['timestamp'] as int?;
-        // 提取 ID (参考 Kotlin 和原有逻辑)
-        final openclaw = obj['__openclaw'] as Map<String, dynamic>?;
-        final id =
-            obj['id'] as String? ??
-                openclaw?['id']?.toString() ??
-                'msg_${DateTime
-                    .now()
-                    .microsecondsSinceEpoch}';
-        messages.add(
-          ChatMessage(
-            id: id,
-            role: role,
-            content: contentList,
-            timestamp: ts,
-            idempotencyKey: obj['idempotencyKey'] as String?,
-          ),
-        );
-      }
+      sessionUpdateController.add(messages);
+      _isHistoryLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isHistoryLoading = false;
+      _log.severe(e);
     }
-
-    sessionUpdateController.add(messages);
-    _isHistoryLoading = false;
-    notifyListeners();
   }
 
   /// 主动断开：关闭会话并停止自动重连。
@@ -582,6 +570,7 @@ class GatewayRepository extends ChangeNotifier {
     _connected = false;
     _isConnecting = false;
     _isReconnecting = false;
+    _isHistoryLoading = false;
     disconnectReason = null;
     notifyListeners();
     await _shutdownSession();
@@ -604,7 +593,8 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sendChatMessage(String text, {
+  Future<void> sendChatMessage(
+    String text, {
     List<OutgoingAttachment> attachments = const [],
   }) async {
     _log.info('sendMessage: $text');
@@ -613,9 +603,7 @@ class GatewayRepository extends ChangeNotifier {
       return;
     }
     _runId =
-    'chat_${DateTime
-        .now()
-        .millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
+        'chat_${DateTime.now().millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
     notifyListeners();
     if (attachments.isEmpty) {
       // 2. 乐观更新：创建并显示用户消息
@@ -623,9 +611,7 @@ class GatewayRepository extends ChangeNotifier {
         id: uuid.v4(),
         role: 'user',
         content: [ChatMessageContent(type: 'text', text: message)],
-        timestamp: DateTime
-            .now()
-            .millisecondsSinceEpoch,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
         idempotencyKey: _runId,
       );
       messageController.add(userMessage);
@@ -644,9 +630,7 @@ class GatewayRepository extends ChangeNotifier {
               fileName: a.fileName,
             ),
           ],
-          timestamp: DateTime
-              .now()
-              .millisecondsSinceEpoch,
+          timestamp: DateTime.now().millisecondsSinceEpoch,
           idempotencyKey: _runId,
         );
         messageController.add(userMessage);
@@ -664,17 +648,16 @@ class GatewayRepository extends ChangeNotifier {
           'idempotencyKey': _runId,
           if (attachments.isNotEmpty)
             'attachments':
-            attachments
-                .map(
-                  (a) =>
-              {
-                'type': a.type,
-                'content': a.base64,
-                'mimeType': a.mimeType,
-                'fileName': a.fileName,
-              },
-            )
-                .toList(),
+                attachments
+                    .map(
+                      (a) => {
+                        'type': a.type,
+                        'content': a.base64,
+                        'mimeType': a.mimeType,
+                        'fileName': a.fileName,
+                      },
+                    )
+                    .toList(),
         },
       );
     } catch (error) {
@@ -740,17 +723,11 @@ class GatewayRepository extends ChangeNotifier {
           'includeGlobal': includeGlobal,
           'includeUnknown': includeUnknown,
           if (limit != null) 'limit': limit,
-          if (search
-              ?.trim()
-              .isNotEmpty == true) 'search': search!.trim(),
+          if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
           if (archived) 'archived': true,
-          if (agentId
-              ?.trim()
-              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          if (agentId?.trim().isNotEmpty == true) 'agentId': agentId!.trim(),
           if (activeMinutes != null) 'activeMinutes': activeMinutes,
-          if (spawnedBy
-              ?.trim()
-              .isNotEmpty == true)
+          if (spawnedBy?.trim().isNotEmpty == true)
             'spawnedBy': spawnedBy!.trim(),
           if (offset != null) 'offset': offset,
           if (configuredAgentsOnly != null)
@@ -777,15 +754,11 @@ class GatewayRepository extends ChangeNotifier {
         'sessions.create',
         params: {
           'key': key,
-          if (agentId
-              ?.trim()
-              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          if (agentId?.trim().isNotEmpty == true) 'agentId': agentId!.trim(),
           if (label != null) 'label': label,
           if (parentSessionKey != null) 'parentSessionKey': parentSessionKey,
           if (worktree != null) 'worktree': worktree,
-          if (worktreeBaseRef
-              ?.trim()
-              .isNotEmpty == true)
+          if (worktreeBaseRef?.trim().isNotEmpty == true)
             'worktreeBaseRef': worktreeBaseRef!.trim(),
         },
       ),
@@ -809,7 +782,7 @@ class GatewayRepository extends ChangeNotifier {
       throw ArgumentError.value(label, 'label', '标签不能为空');
     }
     final session = _sessions.cast<GatewaySessionEntry?>().firstWhere(
-          (item) => item?.key == sessionKey,
+      (item) => item?.key == sessionKey,
       orElse: () => null,
     );
     final success = await _patchSessionLabel(
@@ -837,9 +810,7 @@ class GatewayRepository extends ChangeNotifier {
         'sessions.patch',
         params: {
           'key': sessionKey,
-          if (agentId
-              ?.trim()
-              .isNotEmpty == true) 'agentId': agentId!.trim(),
+          if (agentId?.trim().isNotEmpty == true) 'agentId': agentId!.trim(),
           'label': label,
         },
       );
@@ -859,9 +830,7 @@ class GatewayRepository extends ChangeNotifier {
       'sessions.delete',
       params: {
         'key': sessionKey,
-        if (agentId
-            ?.trim()
-            .isNotEmpty == true) 'agentId': agentId!.trim(),
+        if (agentId?.trim().isNotEmpty == true) 'agentId': agentId!.trim(),
         'deleteTranscript': true,
       },
     );
@@ -892,16 +861,10 @@ class GatewayRepository extends ChangeNotifier {
             );
             final List<String> mediaUrls = result.mediaUrls ?? [];
             for (String url in mediaUrls) {
-              final fileName = url
-                  .split('/')
-                  .last;
+              final fileName = url.split('/').last;
               final String type = _mediaType(url);
               contentList.add(
-                ChatMessageContent(
-                  type: type,
-                  text: url,
-                  fileName: fileName,
-                ),
+                ChatMessageContent(type: type, text: url, fileName: fileName),
               );
             }
           }
@@ -948,9 +911,7 @@ class GatewayRepository extends ChangeNotifier {
             type: 'image',
             mimeType: el['mimeType'] as String?,
             fileName: el['fileName'] as String?,
-            base64: b64
-                .trim()
-                .isEmpty ? null : b64,
+            base64: b64.trim().isEmpty ? null : b64,
           );
         } else {
           return ChatMessageContent(type: 'text', text: el['url'] as String?);
@@ -963,13 +924,13 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _handleAgentEvent(dynamic payload) async {
     if (payload == null) return;
-    _log.info(payload);
+    // _log.info(payload);
     final stream = payload['stream'] as String?;
     final data = payload['data'];
     final runId = payload['runId'] as String?;
     switch (stream) {
       case 'assistant':
-      // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
+        // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
         final text = data?['text'] as String?;
         if (text != null && text.isNotEmpty) {
           _pushStreamingMessage(text, runId);
@@ -977,9 +938,7 @@ class GatewayRepository extends ChangeNotifier {
         final mediaUrlsRaw = data['mediaUrls'] as List<dynamic>?;
         if (mediaUrlsRaw != null && mediaUrlsRaw.isNotEmpty) {
           for (String mediaUrl in mediaUrlsRaw) {
-            final fileName = mediaUrl
-                .split('/')
-                .last;
+            final fileName = mediaUrl.split('/').last;
             final type = _mediaType(mediaUrl);
             final message = ChatMessage(
               id: uuid.v4(),
@@ -991,16 +950,14 @@ class GatewayRepository extends ChangeNotifier {
                   fileName: fileName,
                 ),
               ],
-              timestamp: DateTime
-                  .now()
-                  .millisecondsSinceEpoch,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
             );
             messageController.add(message);
           }
         }
         break;
       case 'tool':
-      // 3. 处理工具调用状态 (start/result)
+        // 3. 处理工具调用状态 (start/result)
         final phase = data?['phase'] as String?;
         final name = data?['name'] as String?;
         final toolCallId = data?['toolCallId'] as String?;
@@ -1015,19 +972,19 @@ class GatewayRepository extends ChangeNotifier {
           // 可在此发送事件通知 UI 移除工具执行状态
         }
         break;
-    // case 'item':
-    //   final message = ChatMessage(
-    //     id: runId!,
-    //     role: 'assistant',
-    //     content: [
-    //       ChatMessageContent(
-    //         type: 'toolCall',
-    //         text: data?['data'] as String?,
-    //       ),
-    //     ],
-    //     timestamp: DateTime.now().millisecondsSinceEpoch,
-    //   );
-    //   messageController.add(message);
+      // case 'item':
+      //   final message = ChatMessage(
+      //     id: runId!,
+      //     role: 'assistant',
+      //     content: [
+      //       ChatMessageContent(
+      //         type: 'toolCall',
+      //         text: data?['data'] as String?,
+      //       ),
+      //     ],
+      //     timestamp: DateTime.now().millisecondsSinceEpoch,
+      //   );
+      //   messageController.add(message);
       case 'error':
         break;
     }
@@ -1056,10 +1013,7 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   String _mediaType(String mediaUrl) {
-    final extension = '.${mediaUrl
-        .split('.')
-        .last
-        .toLowerCase()}';
+    final extension = '.${mediaUrl.split('.').last.toLowerCase()}';
     const imageExts = {
       '.png',
       '.jpg',
@@ -1093,20 +1047,18 @@ class GatewayRepository extends ChangeNotifier {
     final previous = _streamingMessages[key];
     final isContinuation =
         previous != null &&
-            (text == previous.text || text.startsWith(previous.text));
+        (text == previous.text || text.startsWith(previous.text));
     final state =
-    isContinuation
-        ? previous
-        : _StreamingMessageState(id: uuid.v4(), text: text);
+        isContinuation
+            ? previous
+            : _StreamingMessageState(id: uuid.v4(), text: text);
 
     _streamingMessages[key] = state.copyWith(text: text);
     final message = ChatMessage(
       id: state.id,
       role: 'assistant',
       content: [ChatMessageContent(type: 'text', text: text)],
-      timestamp: DateTime
-          .now()
-          .millisecondsSinceEpoch,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
       idempotencyKey: runId,
     );
     messageController.add(message);
@@ -1168,7 +1120,7 @@ class GatewayRepository extends ChangeNotifier {
 
       _log.info(
         'Successfully updated session config: '
-            'model=$model, thinkingLevel=$thinkingLevel',
+        'model=$model, thinkingLevel=$thinkingLevel',
       );
     } catch (e) {
       _log.warning('setSessionConfig failed: $e');
@@ -1185,9 +1137,7 @@ class GatewayRepository extends ChangeNotifier {
       await requestKnown(
         'device.pair.setupCode',
         params: {
-          if (publicUrl
-              ?.trim()
-              .isNotEmpty == true)
+          if (publicUrl?.trim().isNotEmpty == true)
             'publicUrl': publicUrl!.trim(),
           'includeQr': true,
         },
@@ -1302,15 +1252,15 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _reloadSkills() async {
     _skills =
-        GatewaySkillsStatus
-            .fromJson(
+        GatewaySkillsStatus.fromJson(
           await requestKnown('skills.status'),
-        )
-            .skills;
+        ).skills;
   }
 
-  Future<bool> _runSkillOperation(String operation,
-      Future<void> Function() action,) async {
+  Future<bool> _runSkillOperation(
+    String operation,
+    Future<void> Function() action,
+  ) async {
     _skillsLoading = true;
     _skillsError = null;
     _lastSkillOperation = null;
@@ -1391,9 +1341,9 @@ class GatewayRepository extends ChangeNotifier {
   bool get clawHubCanInstall {
     final scopes = _hello?.auth['scopes'];
     if (scopes is! List) return false;
-    return scopes
-        .whereType<String>()
-        .any((scope) => scope.trim() == 'operator.admin');
+    return scopes.whereType<String>().any(
+      (scope) => scope.trim() == 'operator.admin',
+    );
   }
 
   /// 搜索序号：只让最新一次搜索的结果落地，旧响应直接丢弃。
@@ -1409,10 +1359,8 @@ class GatewayRepository extends ChangeNotifier {
   bool get clawHubSkillsAvailable {
     final methods = _hello?.features['methods'];
     if (methods is! List) return false;
-    final advertised = methods
-        .whereType<String>()
-        .map((method) => method.trim())
-        .toSet();
+    final advertised =
+        methods.whereType<String>().map((method) => method.trim()).toSet();
     return _clawHubGatewayMethods.every(advertised.contains);
   }
 
@@ -1455,10 +1403,7 @@ class GatewayRepository extends ChangeNotifier {
     try {
       final response = await requestKnown(
         'skills.search',
-        params: {
-          if (normalized.isNotEmpty) 'query': normalized,
-          'limit': 25,
-        },
+        params: {if (normalized.isNotEmpty) 'query': normalized, 'limit': 25},
       );
       final results = GatewayClawHubSkillSummary.listFromSearchResponse(
         response,
@@ -1484,7 +1429,8 @@ class GatewayRepository extends ChangeNotifier {
   /// 对应 Android `reviewClawHubSkillInstallFromGateway`：用搜索结果自带的
   /// reference 去读详情，所以「审核的发布者」与「安装的发布者」是同一个。
   Future<bool> reviewClawHubSkillInstallFromGateway(
-      GatewayClawHubSkillSummary skill,) async {
+    GatewayClawHubSkillSummary skill,
+  ) async {
     final reference = skill.reference;
     final reviewSeq = ++_clawHubReviewSeq;
     if (!_connected) {
@@ -1514,9 +1460,7 @@ class GatewayRepository extends ChangeNotifier {
       if (reviewSeq != _clawHubReviewSeq) return false;
       _clawHubReviewingSlug = null;
       _clawHubInstallReview = review;
-      _clawHubError = review == null
-          ? 'ClawHub 没有为 $reference 返回可安装的版本'
-          : null;
+      _clawHubError = review == null ? 'ClawHub 没有为 $reference 返回可安装的版本' : null;
       return review != null;
     } catch (error) {
       if (reviewSeq != _clawHubReviewSeq) return false;
@@ -1569,9 +1513,10 @@ class GatewayRepository extends ChangeNotifier {
     // 同一条结果重复点击直接吞掉，别打两次网关。
     if (!_clawHubInstallingSlugs.add(normalized)) return false;
     final trimmedVersion = version?.trim();
-    final attemptedVersion = (trimmedVersion == null || trimmedVersion.isEmpty)
-        ? null
-        : trimmedVersion;
+    final attemptedVersion =
+        (trimmedVersion == null || trimmedVersion.isEmpty)
+            ? null
+            : trimmedVersion;
     _clawHubInstallReview = null;
     _clawHubError = null;
     _clawHubMessage = null;
@@ -1601,17 +1546,21 @@ class GatewayRepository extends ChangeNotifier {
       return true;
     } on TimeoutException {
       if (await _refreshAndConfirmClawHubInstall(
-          normalized, attemptedVersion)) {
+        normalized,
+        attemptedVersion,
+      )) {
         _clawHubMessage = '已安装 $normalized';
         return true;
       }
       _clawHubError =
-      '$normalized 的安装结果未知。请重新连接、刷新技能列表后重试；'
+          '$normalized 的安装结果未知。请重新连接、刷新技能列表后重试；'
           '网关会安全地接续仍在进行的同一次安装。';
       return false;
     } on GatewayResponseError catch (error) {
       if (await _refreshAndConfirmClawHubInstall(
-          normalized, attemptedVersion)) {
+        normalized,
+        attemptedVersion,
+      )) {
         _clawHubMessage = '已安装 $normalized';
         return true;
       }
@@ -1633,8 +1582,10 @@ class GatewayRepository extends ChangeNotifier {
   ///
   /// 带版本时要求引用与版本都对上；不带版本说明来源是「只能直接安装」的，
   /// 只能按网关记录的原始引用比对。
-  Future<bool> _refreshAndConfirmClawHubInstall(String slug,
-      String? version,) async {
+  Future<bool> _refreshAndConfirmClawHubInstall(
+    String slug,
+    String? version,
+  ) async {
     if (!await _refreshSkillsQuietly()) return false;
     final skills = _skills;
     if (version != null) {
@@ -1658,8 +1609,7 @@ class GatewayRepository extends ChangeNotifier {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  static String _formatClawHubInstallMessage(String message,
-      String? warning,) =>
+  static String _formatClawHubInstallMessage(String message, String? warning) =>
       (warning == null || warning.isEmpty) ? message : '$message\n\n$warning';
 
   // ==================== Cron 管理 ====================
@@ -1699,14 +1649,12 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
     try {
       _cronJobs =
-          GatewayCronList
-              .fromJson(
+          GatewayCronList.fromJson(
             await requestKnown(
               'cron.list',
               params: {'includeDisabled': includeDisabled},
             ),
-          )
-              .jobs;
+          ).jobs;
       return true;
     } catch (error) {
       _cronError = error.toString();
@@ -1725,14 +1673,12 @@ class GatewayRepository extends ChangeNotifier {
     notifyListeners();
     try {
       _cronRuns =
-          GatewayCronRuns
-              .fromJson(
+          GatewayCronRuns.fromJson(
             await requestKnown(
               'cron.runs',
               params: {'id': _requireJobId(jobId), 'limit': limit},
             ),
-          )
-              .entries;
+          ).entries;
       return true;
     } catch (error) {
       _cronError = error.toString();
@@ -1776,21 +1722,14 @@ class GatewayRepository extends ChangeNotifier {
   /// 删除任务：本地直接摘掉对应条目，避免多打一次列表请求。
   Future<bool> removeCronJob(String jobId) =>
       _runCronOperation('remove', () async {
-        await requestKnown(
-          'cron.remove',
-          params: {'id': _requireJobId(jobId)},
-        );
+        await requestKnown('cron.remove', params: {'id': _requireJobId(jobId)});
         _cronJobs = _cronJobs
             .where((job) => job.id != jobId.trim())
             .toList(growable: false);
       });
 
   Future<void> _reloadCronJobs() async {
-    _cronJobs = GatewayCronList
-        .fromJson(
-      await requestKnown('cron.list'),
-    )
-        .jobs;
+    _cronJobs = GatewayCronList.fromJson(await requestKnown('cron.list')).jobs;
   }
 
   /// 任务 ID 不能为空 —— 空 ID 打到网关只会换来一个含糊的服务端错误。
@@ -1802,8 +1741,10 @@ class GatewayRepository extends ChangeNotifier {
     return normalized;
   }
 
-  Future<bool> _runCronOperation(String operation,
-      Future<void> Function() action,) async {
+  Future<bool> _runCronOperation(
+    String operation,
+    Future<void> Function() action,
+  ) async {
     if (_cronLoading) return false;
     _cronLoading = true;
     _cronError = null;

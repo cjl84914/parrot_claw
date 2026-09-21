@@ -100,8 +100,6 @@ ParrotClaw App（Flutter 交互层）
 - [x] 知识问答助手
 - [x] 语音合成（TTS）
 - [x] 数字人集成（Live2D）
-- [x] 文生图 / 图生图
-- [x] 音乐生成（AceStep 文生曲）
 - [x] 会议记录助手（录音 → 纪要）
 - [x] 开源到 GitHub
 - [x] 配置 GitHub Actions
@@ -114,7 +112,10 @@ ParrotClaw App（Flutter 交互层）
 - [x] 数字人生成案例
 - [ ] 定时任务
 - [ ] Agent配置
-- [ ] 文生视频 / 图生视频
+- [ ] 文生图 / 图生图
+- [ ] 音乐生成（AceStep 文生曲）
+- [ ] 文生视频 
+- [ ] 图生视频
 - [ ] FaceFusion 案例
 
 ---

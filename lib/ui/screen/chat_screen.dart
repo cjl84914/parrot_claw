@@ -804,9 +804,6 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _init() async {
-    widget.viewModel.beginHistoryLoad();
-    // widget.viewModel.listModels();
-    // widget.viewModel.subscribeSessionMessage();
     _eventSubscription = widget.viewModel.messageEvents?.listen((
       chatMsg,
     ) async {
@@ -820,15 +817,15 @@ class _ChatScreenState extends State<ChatScreen>
         _chatController.insertMessage(uiMsg);
       }
     });
-
     _eventSessionUpdateSubscription = widget.viewModel.sessionUpdateEvents
         ?.listen((messages) {
           _chatController.setMessages(messages.map(_toUiMessage).toList());
         });
-
     _pendingRunSubscription = widget.viewModel.pendingRunEvents?.listen(
       (lastTextContent) {},
     );
+    await Future.delayed(Duration(seconds: 1));
+    widget.viewModel.beginHistoryLoad();
   }
 
   Future<void> _addTyping() async {
