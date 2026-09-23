@@ -217,6 +217,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
         switch (index) {
           case 0:
             _closeDrawer(context);
+            widget.viewModel.switchSession(null);
             context.go(Routes.index);
           case 2:
             _closeDrawer(context);

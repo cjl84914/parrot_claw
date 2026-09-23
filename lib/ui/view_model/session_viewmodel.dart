@@ -29,7 +29,7 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> switchSession(String key) async {
+  Future<void> switchSession(String? key) async {
     await _gatewayRepository.switchSession(key);
   }
 

@@ -80,8 +80,8 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void initState() {
     super.initState();
+    _init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _init();
       _initTalk();
     });
   }
@@ -143,13 +143,15 @@ class _ChatScreenState extends State<ChatScreen>
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('无法打开：$url')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法打开：$url')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('打开失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('打开失败：$e')));
       }
     }
   }
@@ -221,7 +223,9 @@ class _ChatScreenState extends State<ChatScreen>
     if (messages.isNotEmpty) return messages;
 
     // 没有可渲染的正文与媒体时，保留原来的兜底文案。
-    final fallback = switch (m.content.isEmpty ? 'text' : m.content.first.type) {
+    final fallback = switch (m.content.isEmpty
+        ? 'text'
+        : m.content.first.type) {
       'text' => '',
       'toolCall' => 'Tool Call',
       _ => '未知内容',
@@ -803,7 +807,7 @@ class _ChatScreenState extends State<ChatScreen>
                     final base64Content = base64Encode(bytes);
                     final attachment = OutgoingAttachment(
                       base64: base64Content,
-                      mimeType: file.xFile.mimeType??'',
+                      mimeType: file.xFile.mimeType ?? '',
                       fileName: file.name,
                       type: 'file',
                     );
@@ -915,15 +919,11 @@ class _ChatScreenState extends State<ChatScreen>
     });
     _eventSessionUpdateSubscription = widget.viewModel.sessionUpdateEvents
         ?.listen((messages) {
-          _chatController.setMessages(
-            messages.expand(_toUiMessages).toList(),
-          );
+          _chatController.setMessages(messages.expand(_toUiMessages).toList());
         });
     _pendingRunSubscription = widget.viewModel.pendingRunEvents?.listen(
       (lastTextContent) {},
     );
-    await Future.delayed(const Duration(seconds: 1));
-    widget.viewModel.beginHistoryLoad();
   }
 
   Future<void> _addTyping() async {

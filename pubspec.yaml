@@ -54,6 +54,7 @@ dependencies:
   url_launcher: ^6.3.2
   baidu_mob_stat:
     git: https://gitee.com/alexcai/baidumobstat-flutter.git
+#    path: ../baidumobstat-flutter
   file_picker: ^9.2.3
   flutter_spinkit: ^5.2.2
 

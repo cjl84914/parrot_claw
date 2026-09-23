@@ -264,11 +264,8 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: Routes.index,
           pageBuilder: (context, state) {
-            // final serverRepository = context.watch<ServerRepository>();
-            // final selectedServer = serverRepository.selectedServer;
             return NoTransitionPage(
               child: ChatScreen(
-                // key: ValueKey(selectedServer?.id ?? 'no-selected-server'),
                 viewModel: context.read(),
               ),
             );

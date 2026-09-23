@@ -12,7 +12,6 @@ class ChatViewModel extends ChangeNotifier {
   Stream<List<ChatMessage>>? get sessionUpdateEvents =>
       _gatewayRepository.sessionUpdateController.stream;
 
-
   Stream<String>? get pendingRunEvents => _gatewayRepository.messageFinalController.stream;
 
   Stream<dynamic>? get voiceEvents => _gatewayRepository.voiceController.stream;
@@ -69,10 +68,6 @@ class ChatViewModel extends ChangeNotifier {
   void subscribeSessionMessage() {}
 
   void unsubscribeSessionMessage() {}
-
-  Future<void> beginHistoryLoad() async {
-    await _gatewayRepository.beginHistoryLoad();
-  }
 
   Future<void> sendChatMessage(
     String text, {

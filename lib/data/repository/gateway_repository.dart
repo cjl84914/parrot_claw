@@ -276,23 +276,7 @@ class GatewayRepository extends ChangeNotifier {
     return result;
   }
 
-  /// 把底层异常转成用户能看懂的一行原因。
-  String _describeConnectError(Object error) {
-    final text = error.toString();
-    if (error is GatewayResponseError) {
-      return '${error.code}: ${error.message}';
-    }
-    if (text.contains('Connection refused') ||
-        text.contains('SocketException')) {
-      return '无法连接到网关，请确认 OpenClaw Gateway 正在运行';
-    }
-    if (text.contains('TimeoutException') || text.contains('timed out')) {
-      return '连接网关超时';
-    }
-    return text;
-  }
-
-  void _markConnected(dynamic health) {
+  Future _markConnected(dynamic health) async{
     if (!(_session?.connected ?? false)) return;
     if (_connected && !_isConnecting) return;
     _isConnecting = false;
@@ -301,7 +285,8 @@ class GatewayRepository extends ChangeNotifier {
     disconnectReason = null; // 连接成功时清空断开原因，避免 UI 残留"已断开连接"
     _isHistoryLoading = false;
     notifyListeners();
-    unawaited(_initializeSessionData());
+    await _initializeSessionData();
+    unawaited(beginHistoryLoad());
     unawaited(listSessions());
     unawaited(listModels());
   }
@@ -325,7 +310,7 @@ class GatewayRepository extends ChangeNotifier {
       _hello = push.snapshot;
       _log.info('snapshot:${_hello?.snapshot.sessiondefaults.toString()}');
       if (!pending) _markConnected(push.snapshot.snapshot.health);
-      beginHistoryLoad();
+      // beginHistoryLoad();
     } else if (push is GatewayPushEvent) {
       _handleGatewayEvent(push.event, push.payload);
     }
@@ -698,9 +683,9 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
-  Future<void> switchSession(String key) async {
-    _sessionKey = key;
-    await beginHistoryLoad();
+  Future<void> switchSession(String? key) async {
+    _sessionKey = key ?? _sessionKey;
+    unawaited(beginHistoryLoad());
   }
 
   /// 从 Gateway 获取完整会话列表，并同步更新 ViewModel 状态。
