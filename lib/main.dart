@@ -56,26 +56,13 @@ import 'ui/view_model/chat_viewmodel.dart';
 
 void main() async {
   Logger.root.level = kDebugMode ? Level.ALL : Level.OFF;
-  // 连接/重连这类问题只能靠日志定位，之前没有任何 onRecord 监听，
-  // 所有 _log.info/warning 都被丢弃了。这里统一打到控制台。
-  if (kDebugMode) {
-    Logger.root.onRecord.listen((record) {
-      debugPrint(
-        '[${record.level.name}] ${record.loggerName}: ${record.message}',
-      );
-    });
-  }
-
   WidgetsFlutterBinding.ensureInitialized();
-  // await dotenv.load(fileName: '.env');
   // to store the database in.
   final storageService = StorageService();
   await storageService.init();
-
   final prefs = await SharedPreferences.getInstance();
   unawaited(EdgeTTSUtil().initSetting());
   unawaited(ASRUtil().init());
-
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     // Must add this line.
     await windowManager.ensureInitialized();
@@ -277,11 +264,11 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: Routes.index,
           pageBuilder: (context, state) {
-            final serverRepository = context.watch<ServerRepository>();
-            final selectedServer = serverRepository.selectedServer;
+            // final serverRepository = context.watch<ServerRepository>();
+            // final selectedServer = serverRepository.selectedServer;
             return NoTransitionPage(
               child: ChatScreen(
-                key: ValueKey(selectedServer?.id ?? 'no-selected-server'),
+                // key: ValueKey(selectedServer?.id ?? 'no-selected-server'),
                 viewModel: context.read(),
               ),
             );

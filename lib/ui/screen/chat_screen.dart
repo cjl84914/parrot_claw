@@ -154,7 +154,13 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  Message _toUiMessage(model.ChatMessage m) {
+  /// 把一条网关消息转成聊天页的 UI 消息。
+  ///
+  /// 一条网关消息可能同时带正文和媒体（助手回复正文 + `MEDIA:` 附件），而 UI 的
+  /// `Message` 一次只能表达一种内容，所以这里返回列表：正文合并成一个文本气泡，
+  /// 每个媒体各自成一个气泡。此前只取 `content.first`，而媒体又排在正文之前，
+  /// 于是文件卡片把回复文字整个挤掉了。
+  List<Message> _toUiMessages(model.ChatMessage m) {
     String authorId = m.role; // 直接映射 role: user, assistant, system
     if (authorId == 'user') authorId = 'me';
 
@@ -162,68 +168,73 @@ class _ChatScreenState extends State<ChatScreen>
       m.timestamp ?? DateTime.now().millisecondsSinceEpoch,
     );
 
-    // 寻找媒体内容（支持 base64）
-    final mediaContent =
-        m.content.isEmpty ? ChatMessageContent() : m.content.first;
-    final contentType = mediaContent.type;
-    // 寻找文本内容
+    final messages = <Message>[];
+
+    // 正文：把所有 text 内容块合并成一个气泡，顺序保持在媒体之前。
     final textContent = m.content
         .where((c) => c.type == 'text')
         .map((c) => c.text ?? '')
+        .where((text) => text.isNotEmpty)
         .join('\n');
+    if (textContent.isNotEmpty) {
+      messages.add(
+        TextMessage(
+          id: m.id,
+          authorId: authorId,
+          text: textContent,
+          createdAt: createdAt,
+          status: MessageStatus.seen,
+        ),
+      );
+    }
 
-    if (contentType == 'text') {
-      if (m.role == 'assistant') {
-        return TextMessage(
-          id: m.id,
-          authorId: authorId,
-          text: textContent,
-          createdAt: createdAt,
-          status: MessageStatus.seen,
+    // 媒体：每个带来源的内容块各自成一个气泡（同一条消息里可能有多个附件）。
+    for (final media in m.content) {
+      final source = media.text;
+      if (media.type == 'text' || source == null || source.isEmpty) continue;
+      final id = '${m.id}#media${messages.length}';
+      if (media.type == 'image') {
+        messages.add(
+          ImageMessage(
+            id: id,
+            authorId: authorId,
+            size: 0,
+            createdAt: createdAt,
+            source: source,
+          ),
         );
-      } else if (m.role == 'user') {
-        return TextMessage(
-          id: m.id,
-          authorId: authorId,
-          text: textContent,
-          createdAt: createdAt,
-          status: MessageStatus.seen,
-        );
-      }
-      // else if (m.role == 'toolResult') {
-      //   return TextMessage(
-      //     id: m.id,
-      //     authorId: authorId,
-      //     text: 'Tool Output:$textContent',
-      //   );
-      // }
-    } else if (contentType == 'toolCall') {
-      return TextMessage(id: m.id, authorId: authorId, text: 'Tool Call');
-    } else if (contentType == 'image') {
-      if (mediaContent.text != null) {
-        return ImageMessage(
-          id: m.id,
-          authorId: authorId,
-          size: 0,
-          createdAt: createdAt,
-          source: mediaContent.text!,
-        );
-      }
-    } else if (contentType == 'file' ||
-        contentType == 'video' ||
-        contentType == 'audio') {
-      if (mediaContent.text != null) {
-        return FileMessage(
-          id: m.id,
-          authorId: authorId,
-          createdAt: createdAt,
-          source: mediaContent.text!,
-          name: mediaContent.fileName ?? 'file',
+      } else if (media.type == 'file' ||
+          media.type == 'video' ||
+          media.type == 'audio') {
+        messages.add(
+          FileMessage(
+            id: id,
+            authorId: authorId,
+            createdAt: createdAt,
+            source: source,
+            name: media.fileName ?? 'file',
+          ),
         );
       }
     }
 
-    return TextMessage(id: m.id, authorId: authorId, text: '未知内容');
+    if (messages.isNotEmpty) return messages;
+
+    // 没有可渲染的正文与媒体时，保留原来的兜底文案。
+    final fallback = switch (m.content.isEmpty ? 'text' : m.content.first.type) {
+      'text' => '',
+      'toolCall' => 'Tool Call',
+      _ => '未知内容',
+    };
+    return [
+      TextMessage(
+        id: m.id,
+        authorId: authorId,
+        text: fallback,
+        createdAt: createdAt,
+        status: MessageStatus.seen,
+      ),
+    ];
   }
 
   @override
@@ -890,24 +901,28 @@ class _ChatScreenState extends State<ChatScreen>
     _eventSubscription = widget.viewModel.messageEvents?.listen((
       chatMsg,
     ) async {
-      final uiMsg = _toUiMessage(chatMsg);
+      // 一条网关消息可能拆成多个 UI 气泡（正文 + 附件），逐个插入 / 更新。
       final existingMessages = _chatController.messages;
-      final index = existingMessages.indexWhere((m) => m.id == uiMsg.id);
-      if (index != -1) {
-        _chatController.updateMessage(existingMessages[index], uiMsg);
-      } else {
-        _removeTyping();
-        _chatController.insertMessage(uiMsg);
+      for (final uiMsg in _toUiMessages(chatMsg)) {
+        final index = existingMessages.indexWhere((m) => m.id == uiMsg.id);
+        if (index != -1) {
+          _chatController.updateMessage(existingMessages[index], uiMsg);
+        } else {
+          _removeTyping();
+          _chatController.insertMessage(uiMsg);
+        }
       }
     });
     _eventSessionUpdateSubscription = widget.viewModel.sessionUpdateEvents
         ?.listen((messages) {
-          _chatController.setMessages(messages.map(_toUiMessage).toList());
+          _chatController.setMessages(
+            messages.expand(_toUiMessages).toList(),
+          );
         });
     _pendingRunSubscription = widget.viewModel.pendingRunEvents?.listen(
       (lastTextContent) {},
     );
-    await Future.delayed(Duration(seconds: 1));
+    await Future.delayed(const Duration(seconds: 1));
     widget.viewModel.beginHistoryLoad();
   }
 

@@ -854,22 +854,34 @@ class GatewayRepository extends ChangeNotifier {
         final ChatMessageContent? chatMessageContent = _parseChatMessageContent(
           e,
         );
-        if (chatMessageContent != null) {
-          if (obj['role'] == 'assistant') {
-            final SplitMediaResult result = splitMediaFromOutput(
-              chatMessageContent.text!,
-            );
-            final List<String> mediaUrls = result.mediaUrls ?? [];
-            for (String url in mediaUrls) {
-              final fileName = url.split('/').last;
-              final String type = _mediaType(url);
-              contentList.add(
-                ChatMessageContent(type: type, text: url, fileName: fileName),
-              );
-            }
+        if (chatMessageContent == null) continue;
+        if (obj['role'] == 'assistant') {
+          // `text` 允许为空：图片块只带 base64 时 [_parseChatMessageContent]
+          // 不填 text，这里断言非空会让整条历史加载失败（调用方在 try 里，
+          // 抛一次异常就把所有消息都丢了）。
+          final SplitMediaResult result = splitMediaFromOutput(
+            chatMessageContent.text ?? '',
+          );
+          final List<String> mediaUrls = result.mediaUrls ?? const [];
+          // 正文排在媒体前面，与网关内容顺序一致（文本在前、MEDIA: 指令在后），
+          // UI 据此先渲染文字气泡、再渲染文件卡片。
+          if (result.text.isNotEmpty) {
+            // 用剥离过 MEDIA: 行的 result.text，否则正文里会露出原始路径。
+            contentList.add(chatMessageContent.copyWith(text: result.text));
+          } else if (mediaUrls.isEmpty) {
+            // 既没有可见文本也没抽出媒体：保留原内容块，行为与改动前一致。
+            contentList.add(chatMessageContent);
           }
-          contentList.add(chatMessageContent);
+          for (String url in mediaUrls) {
+            final fileName = url.split('/').last;
+            final String type = _mediaType(url);
+            contentList.add(
+              ChatMessageContent(type: type, text: url, fileName: fileName),
+            );
+          }
+          continue;
         }
+        contentList.add(chatMessageContent);
       }
       return contentList;
     }
