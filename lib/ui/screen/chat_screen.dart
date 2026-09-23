@@ -386,69 +386,56 @@ class _ChatScreenState extends State<ChatScreen>
                               index: index,
                             ),
                         composerBuilder:
-                            (context) => _wrapFileDrop(
-                              Composer(
-                                key: _composerKey,
-                                textEditingController: _textEditingController,
-                                padding: const EdgeInsets.only(
-                                  left: 12,
-                                  top: 8,
-                                  bottom: 4,
-                                  right: 12,
-                                ),
-                                backgroundColor: ChatColors.dark().surface,
-                                topWidget: ComposerActionBar(
-                                  buttons: [
-                                    ComposerActionButton(
-                                      visible: true,
-                                      icon: Icons.delete_sweep,
-                                      title: 'Clear',
-                                      onPressed: _resetConversation,
-                                    ),
-                                    ComposerActionButton(
-                                      visible: true,
-                                      icon: Icons.stop_circle_rounded,
-                                      title: 'Abort ',
-                                      onPressed: () => _abortMessage(),
-                                      color:
-                                          widget.viewModel.runId != ''
-                                              ? AppColors.secondary
-                                              : Colors.grey,
-                                    ),
-                                    ComposerActionButton(
-                                      key: _modelButtonKey,
-                                      visible: true,
-                                      icon: Icons.psychology_outlined,
-                                      title: widget.viewModel.model ?? '模型',
-                                      onPressed:
-                                          () => _showModelOptions(context),
-                                      color: Colors.grey,
-                                    ),
-                                    ComposerActionButton(
-                                      visible: true,
-                                      icon:
-                                          _inputMode == InputMode.Voice
-                                              ? Icons.keyboard_alt_outlined
-                                              : Icons.mic_outlined,
-                                      title: 'MIC',
-                                      onPressed: () {
-                                        if (_inputMode == InputMode.Voice) {
-                                          _inputMode = InputMode.Text;
-                                        } else if (_inputMode ==
-                                            InputMode.Text) {
-                                          _textEditingController.clear();
-                                          FocusManager.instance.primaryFocus
-                                              ?.unfocus();
-                                          _inputMode = InputMode.Voice;
-                                        }
-                                        setState(() {});
-                                      },
-                                      color: Colors.grey,
-                                    ),
-                                  ],
-                                ),
-                                sendOnEnter: true,
-                                // sendButtonHidden: true,
+                            (context) => CustomComposer(
+                              key: _composerKey,
+                              textEditingController: _textEditingController,
+                              topWidget: ComposerActionBar(
+                                buttons: [
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon: Icons.delete_sweep,
+                                    title: 'Clear',
+                                    onPressed: _resetConversation,
+                                  ),
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon: Icons.stop_circle_rounded,
+                                    title: 'Abort ',
+                                    onPressed: () => _abortMessage(),
+                                    color:
+                                        widget.viewModel.runId != ''
+                                            ? AppColors.secondary
+                                            : Colors.grey,
+                                  ),
+                                  ComposerActionButton(
+                                    key: _modelButtonKey,
+                                    visible: true,
+                                    icon: Icons.psychology_outlined,
+                                    title: widget.viewModel.model ?? '模型',
+                                    onPressed: () => _showModelOptions(context),
+                                    color: Colors.grey,
+                                  ),
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon:
+                                        _inputMode == InputMode.Voice
+                                            ? Icons.keyboard_alt_outlined
+                                            : Icons.mic_outlined,
+                                    title: 'MIC',
+                                    onPressed: () {
+                                      if (_inputMode == InputMode.Voice) {
+                                        _inputMode = InputMode.Text;
+                                      } else if (_inputMode == InputMode.Text) {
+                                        _textEditingController.clear();
+                                        FocusManager.instance.primaryFocus
+                                            ?.unfocus();
+                                        _inputMode = InputMode.Voice;
+                                      }
+                                      setState(() {});
+                                    },
+                                    color: Colors.grey,
+                                  ),
+                                ],
                               ),
                             ),
                         // linkPreviewBuilder: (context, message, isSentByMe) {
@@ -881,13 +868,13 @@ class _ChatScreenState extends State<ChatScreen>
 
     final inserted = cleaned.map(_quotePathIfNeeded).join(' ');
     final current = _textEditingController.text;
-    final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
-    final next = '$current$separator$inserted ';
+    // final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
+    // final next = '$current$separator$inserted ';
 
-    _textEditingController.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: next.length),
-    );
+    // _textEditingController.value = TextEditingValue(
+    //   text: next,
+    //   selection: TextSelection.collapsed(offset: next.length),
+    // );
 
     // 语音模式下输入框是隐藏的，贴完路径切回文本模式，否则用户看不到。
     if (_inputMode == InputMode.Voice) {
@@ -1048,6 +1035,171 @@ class _ChatScreenState extends State<ChatScreen>
     } catch (error) {
       if (!mounted) return;
       MySnackBar.showError(context, error.toString());
+    }
+  }
+}
+
+class CustomComposer extends StatefulWidget {
+  final Widget? topWidget;
+  final bool isStreaming;
+  final VoidCallback? onStop;
+  final TextEditingController textEditingController;
+
+  const CustomComposer({
+    super.key,
+    this.topWidget,
+    this.isStreaming = false,
+    required this.textEditingController,
+    this.onStop,
+  });
+
+  @override
+  State<CustomComposer> createState() => _CustomComposerState();
+}
+
+class _CustomComposerState extends State<CustomComposer> {
+  final _key = GlobalKey();
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.onKeyEvent = _handleKeyEvent;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // Check for Shift+Enter
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.enter &&
+        HardwareKeyboard.instance.isShiftPressed) {
+      _handleSubmitted(widget.textEditingController.text);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  @override
+  void dispose() {
+    // _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    final onAttachmentTap = context.read<OnAttachmentTapCallback?>();
+    final theme = context.select(
+      (ChatTheme t) => (
+        bodyMedium: t.typography.bodyMedium,
+        onSurface: t.colors.onSurface,
+        surfaceContainerHigh: t.colors.surfaceContainerHigh,
+        surfaceContainerLow: t.colors.surfaceContainerLow,
+      ),
+    );
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: ClipRect(
+        child: Container(
+          key: _key,
+          color: theme.surfaceContainerLow,
+          child: Column(
+            children: [
+              if (widget.topWidget != null) widget.topWidget!,
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: bottomSafeArea,
+                ).add(const EdgeInsets.all(8.0)),
+                child: Row(
+                  children: [
+                    onAttachmentTap != null
+                        ? IconButton(
+                          icon: const Icon(Icons.attachment),
+                          color: theme.onSurface.withValues(alpha: 0.5),
+                          onPressed: onAttachmentTap,
+                        )
+                        : const SizedBox.shrink(),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: widget.textEditingController,
+                        decoration: InputDecoration(
+                          hintText: '说点什么...',
+                          hintStyle: theme.bodyMedium.copyWith(
+                            color: theme.onSurface.withValues(alpha: 0.5),
+                          ),
+                          border: const OutlineInputBorder(
+                            borderSide: BorderSide.none,
+                            borderRadius: BorderRadius.all(Radius.circular(24)),
+                          ),
+                          filled: true,
+                          fillColor: theme.surfaceContainerHigh.withValues(
+                            alpha: 0.8,
+                          ),
+                          hoverColor: Colors.transparent,
+                        ),
+                        style: theme.bodyMedium.copyWith(
+                          color: theme.onSurface,
+                        ),
+                        onSubmitted: _handleSubmitted,
+                        textInputAction: TextInputAction.newline,
+                        autocorrect: true,
+                        autofocus: false,
+                        textCapitalization: TextCapitalization.sentences,
+                        focusNode: _focusNode,
+                        minLines: 1,
+                        maxLines: 3,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon:
+                          widget.isStreaming
+                              ? const Icon(Icons.stop_circle)
+                              : const Icon(Icons.send),
+                      color: theme.onSurface.withValues(alpha: 0.5),
+                      onPressed:
+                          widget.isStreaming
+                              ? widget.onStop
+                              : () => _handleSubmitted(widget.textEditingController.text),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _measure() {
+    if (!mounted) return;
+
+    final renderBox = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      final height = renderBox.size.height;
+      final bottomSafeArea = MediaQuery.of(context).padding.bottom;
+
+      context.read<ComposerHeightNotifier>().setHeight(height - bottomSafeArea);
+    }
+  }
+
+  void _handleSubmitted(String text) {
+    if (text.isNotEmpty) {
+      context.read<OnMessageSendCallback?>()?.call(text);
+      widget.textEditingController.clear();
     }
   }
 }
