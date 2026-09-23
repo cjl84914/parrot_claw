@@ -30,7 +30,6 @@ import 'package:parrot_app/util/edge_tts_util.dart';
 import 'package:parrot_app/util/string_util.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_down_button/pull_down_button.dart';
-import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -66,58 +65,15 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription? _eventSessionUpdateSubscription;
   StreamSubscription? _pendingRunSubscription;
 
-  InputMode _inputMode = InputMode.Text;
-
   final GlobalKey _composerKey = GlobalKey();
   final GlobalKey _modelButtonKey = GlobalKey();
 
-  final _textEditingController = TextEditingController();
   bool isLive2dShow = false;
-
-  /// 桌面端：是否有文件正被拖到输入框上方（用于显示高亮反馈）。
-  bool _isFileDragging = false;
 
   @override
   void initState() {
     super.initState();
     _init();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initTalk();
-    });
-  }
-
-  void _initTalk() {
-    ASRUtil().setCallbacks(
-      onStateChanged: (RecordState recordState) {
-        // if (mounted) {
-        //   if (recordState == RecordState.record) {
-        //     setState(() {
-        //       _isRecording = true;
-        //     });
-        //   }
-        //   if (recordState == RecordState.stop) {
-        //     setState(() {
-        //       _isRecording = false;
-        //     });
-        //   }
-        // }
-      },
-      onTextResult: (String text) => _sendMessage(text),
-      // 录音/初始化失败不再静默：直接在聊天页提示原因（如 Windows 麦克风权限）
-      onError: (String error) {
-        if (!mounted) return;
-        if (error == ASRUtil.kMicDeviceUnavailable) {
-          showMicDeviceDialog(context);
-        } else {
-          MySnackBar.showError(context, error);
-        }
-      },
-      initCallback: () {
-        // setState(() {
-        //   _isAsrInited = true;
-        // });
-      },
-    );
   }
 
   @override
@@ -131,7 +87,6 @@ class _ChatScreenState extends State<ChatScreen>
     _pendingRunSubscription?.cancel();
     _eventSessionUpdateSubscription?.cancel();
     _chatController.dispose();
-    ASRUtil().stop();
     super.dispose();
   }
 
@@ -262,6 +217,8 @@ class _ChatScreenState extends State<ChatScreen>
               actions: [
                 Container(
                   margin: const EdgeInsets.only(right: 8),
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.white.withOpacity(0.5)),
                     borderRadius: BorderRadius.circular(8),
@@ -277,7 +234,11 @@ class _ChatScreenState extends State<ChatScreen>
                         });
                       }
                     },
-                    icon: const Icon(Icons.phone_outlined, size: 24),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 36,
+                      height: 36,
+                    ),
+                    icon: const Icon(Icons.phone_outlined, size: 18),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -388,7 +349,6 @@ class _ChatScreenState extends State<ChatScreen>
                         composerBuilder:
                             (context) => CustomComposer(
                               key: _composerKey,
-                              textEditingController: _textEditingController,
                               topWidget: ComposerActionBar(
                                 buttons: [
                                   ComposerActionButton(
@@ -413,26 +373,6 @@ class _ChatScreenState extends State<ChatScreen>
                                     icon: Icons.psychology_outlined,
                                     title: widget.viewModel.model ?? '模型',
                                     onPressed: () => _showModelOptions(context),
-                                    color: Colors.grey,
-                                  ),
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon:
-                                        _inputMode == InputMode.Voice
-                                            ? Icons.keyboard_alt_outlined
-                                            : Icons.mic_outlined,
-                                    title: 'MIC',
-                                    onPressed: () {
-                                      if (_inputMode == InputMode.Voice) {
-                                        _inputMode = InputMode.Text;
-                                      } else if (_inputMode == InputMode.Text) {
-                                        _textEditingController.clear();
-                                        FocusManager.instance.primaryFocus
-                                            ?.unfocus();
-                                        _inputMode = InputMode.Voice;
-                                      }
-                                      setState(() {});
-                                    },
                                     color: Colors.grey,
                                   ),
                                 ],
@@ -601,33 +541,8 @@ class _ChatScreenState extends State<ChatScreen>
                     );
                   },
                 ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 12,
-                  child: Container(
-                    width: MediaQuery.of(context).size.width,
-                    height: 60,
-                    padding: EdgeInsets.only(left: 48),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Visibility(
-                            visible: _inputMode == InputMode.Voice,
-                            child: VoiceInputButton(
-                              startRecording: () {
-                                ASRUtil().start();
-                              },
-                              stopRecording: () {
-                                ASRUtil().stop();
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                // 「按住说话」不再浮在输入框上方：录音按钮已收进 CustomComposer，
+                // 与输入框、发送键同一行（见 _CustomComposerState._inputMode）。
               ],
             ),
           ),
@@ -813,81 +728,6 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  /// 桌面端把输入框包成文件拖入区：拖入时高亮提示，松手后把文件绝对路径
-  /// 追加进输入框（只贴路径，不做上传）。
-  ///
-  /// 移动端没有拖拽语义，直接原样返回。
-  Widget _wrapFileDrop(Widget child) {
-    if (!kIsDesktop) return child;
-
-    return DropTarget(
-      onDragEntered: (_) {
-        if (mounted) setState(() => _isFileDragging = true);
-      },
-      onDragExited: (_) {
-        if (mounted) setState(() => _isFileDragging = false);
-      },
-      onDragDone: (detail) {
-        if (mounted) setState(() => _isFileDragging = false);
-        _insertDroppedPaths(detail.files.map((f) => f.path).toList());
-      },
-      child: Stack(
-        children: [
-          child,
-          if (_isFileDragging)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
-                    border: Border.all(color: AppColors.primary, width: 2),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '松开鼠标，把文件路径插入输入框',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// 把拖入的文件路径追加到输入框末尾。
-  ///
-  /// 含空格或 shell 特殊字符的路径会用双引号包住，方便 agent 直接当参数用。
-  void _insertDroppedPaths(List<String> paths) {
-    final cleaned = paths.where((p) => p.trim().isNotEmpty).toList();
-    if (cleaned.isEmpty) return;
-
-    final inserted = cleaned.map(_quotePathIfNeeded).join(' ');
-    final current = _textEditingController.text;
-    // final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
-    // final next = '$current$separator$inserted ';
-
-    // _textEditingController.value = TextEditingValue(
-    //   text: next,
-    //   selection: TextSelection.collapsed(offset: next.length),
-    // );
-
-    // 语音模式下输入框是隐藏的，贴完路径切回文本模式，否则用户看不到。
-    if (_inputMode == InputMode.Voice) {
-      setState(() => _inputMode = InputMode.Text);
-    }
-  }
-
-  /// 路径含空格/引号等字符时加双引号，避免被当成多个参数。
-  String _quotePathIfNeeded(String path) {
-    if (!RegExp(r'''[\s"'$`&()\[\]{};|<>*?!]''').hasMatch(path)) return path;
-    return '"${path.replaceAll('"', r'\"')}"';
-  }
-
   void _init() async {
     _eventSubscription = widget.viewModel.messageEvents?.listen((
       chatMsg,
@@ -1043,13 +883,11 @@ class CustomComposer extends StatefulWidget {
   final Widget? topWidget;
   final bool isStreaming;
   final VoidCallback? onStop;
-  final TextEditingController textEditingController;
 
   const CustomComposer({
     super.key,
     this.topWidget,
     this.isStreaming = false,
-    required this.textEditingController,
     this.onStop,
   });
 
@@ -1061,23 +899,160 @@ class _CustomComposerState extends State<CustomComposer> {
   final _key = GlobalKey();
   late final FocusNode _focusNode;
 
+  /// 输入框控制器跟着 composer 一起生灭：ChatScreen 不再持有它，
+  /// 拖拽贴路径之类的操作也就能就地读写，不用再把 controller 传出去。
+  final _controller = TextEditingController();
+
+  /// 输入模式：文本 ⇄ 语音。语音模式下输入框让位给「按住说话」按钮，
+  /// 录音与 ASR 都由本组件自己管，不再由 ChatScreen 透传回调。
+  InputMode _inputMode = InputMode.Text;
+
+  /// 桌面端：是否有文件正被拖到输入框上方（用于显示高亮反馈）。
+  bool _isFileDragging = false;
+
   @override
   void initState() {
     super.initState();
     _focusNode = FocusNode();
     _focusNode.onKeyEvent = _handleKeyEvent;
+    _initTalk();
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
   }
 
-  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    // Check for Shift+Enter
-    if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.enter &&
-        HardwareKeyboard.instance.isShiftPressed) {
-      _handleSubmitted(widget.textEditingController.text);
-      return KeyEventResult.handled;
+  /// 注册 ASR 回调。识别结果直接走 [_handleSubmitted]（等价于用户点发送），
+  /// 失败提示也用本组件的 context —— 所以外面不需要再传任何回调进来。
+  void _initTalk() {
+    ASRUtil().setCallbacks(
+      onTextResult: _handleSubmitted,
+      // 录音/初始化失败不再静默：就地提示原因（如 Windows 麦克风权限）
+      onError: (String error) {
+        if (!mounted) return;
+        if (error == ASRUtil.kMicDeviceUnavailable) {
+          showMicDeviceDialog(context);
+        } else {
+          MySnackBar.showError(context, error);
+        }
+      },
+    );
+  }
+
+  /// 文本 ⇄ 语音切换。切到语音前清空并收起键盘，避免键盘挡住「按住说话」。
+  void _toggleInputMode() {
+    if (_inputMode == InputMode.Voice) {
+      setState(() => _inputMode = InputMode.Text);
+    } else {
+      _controller.clear();
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() => _inputMode = InputMode.Voice);
     }
-    return KeyEventResult.ignored;
+    // 输入区高度变了，重新量一次，否则聊天列表底部会留白或被挡。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  void _startRecording() {
+    // ASRUtil 是单例、setCallbacks 全局覆盖，VoiceScreen（手机语音通话页 /
+    // 桌面 Live2D 面板）也会注册同一套回调；从那边退出后回调仍指向已销毁的
+    // 页面，识别结果就丢了。所以每次开始录音前重新认领一次，保证结果回到本输入框。
+    _initTalk();
+    ASRUtil().start();
+  }
+
+  void _stopRecording() {
+    ASRUtil().stop();
+  }
+
+  /// 桌面端把输入框包成文件拖入区：拖入时高亮提示，松手后把文件绝对路径
+  /// 追加进输入框（只贴路径，不做上传）。
+  ///
+  /// 移动端没有拖拽语义，直接原样返回。
+  Widget _wrapFileDrop(Widget child) {
+    if (!kIsDesktop) return child;
+
+    return DropTarget(
+      onDragEntered: (_) {
+        if (mounted) setState(() => _isFileDragging = true);
+      },
+      onDragExited: (_) {
+        if (mounted) setState(() => _isFileDragging = false);
+      },
+      onDragDone: (detail) {
+        if (mounted) setState(() => _isFileDragging = false);
+        _insertDroppedPaths(detail.files.map((f) => f.path).toList());
+      },
+      child: Stack(
+        children: [
+          child,
+          if (_isFileDragging)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    border: Border.all(color: AppColors.primary, width: 2),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '松开鼠标，把文件路径插入输入框',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 把拖入的文件路径追加到输入框末尾。
+  ///
+  /// 含空格或 shell 特殊字符的路径会用双引号包住，方便 agent 直接当参数用。
+  void _insertDroppedPaths(List<String> paths) {
+    final cleaned = paths.where((p) => p.trim().isNotEmpty).toList();
+    if (cleaned.isEmpty) return;
+
+    final inserted = cleaned.map(_quotePathIfNeeded).join(' ');
+    final current = _controller.text;
+    final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
+    final next = '$current$separator$inserted ';
+
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+
+    // 语音模式下输入框是隐藏的，贴完路径切回文本模式，否则用户看不到。
+    if (_inputMode == InputMode.Voice) {
+      setState(() => _inputMode = InputMode.Text);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    }
+  }
+
+  /// 路径含空格/引号等字符时加双引号，避免被当成多个参数。
+  String _quotePathIfNeeded(String path) {
+    if (!RegExp(r'''[\s"'$`&()\[\]{};|<>*?!]''').hasMatch(path)) return path;
+    return '"${path.replaceAll('"', r'\"')}"';
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // 回车发送，Shift+回车换行（此前是反的：Shift+回车才会发送）。
+    // Shift+回车必须返回 ignored，把换行交回给 TextField 自己处理 ——
+    // 返回 handled 会连换行一起吃掉。
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    // 长按回车会连续触发 KeyDown，但首次发送后输入框已清空，
+    // _handleSubmitted 的空文本保护会让后续几次变成 no-op。
+    _handleSubmitted(_controller.text);
+    return KeyEventResult.handled;
   }
 
   @override
@@ -1088,7 +1063,8 @@ class _CustomComposerState extends State<CustomComposer> {
 
   @override
   void dispose() {
-    // _textController.dispose();
+    _controller.dispose();
+    ASRUtil().stop();
     _focusNode.dispose();
     super.dispose();
   }
@@ -1105,6 +1081,29 @@ class _CustomComposerState extends State<CustomComposer> {
         surfaceContainerLow: t.colors.surfaceContainerLow,
       ),
     );
+
+    // 「按住说话」条的底色（VoiceInputButton 内部硬编码了同一个值）。
+    // 语音模式下键盘按钮垫同款底色、紧贴录音条，两段连成一整条。
+    final voiceBarColor = ChatTheme.dark().colors.surface;
+    final isVoiceMode = _inputMode == InputMode.Voice;
+
+    // 发送/语音按钮的尺寸：桌面端压到 32（原来吃满 IconButton 默认的 48），
+    // 移动端仍保留 44 的触摸目标，别把可点区域缩到手指够不着。
+    final actionSize = kIsDesktop ? 32.0 : 44.0;
+    final actionIconSize = kIsDesktop ? 22.0 : 18.0;
+
+    // 关键：IconButton 外层有 _InputPadding，主题的 tapTargetSize 是 padded（默认）
+    // 时它会把占位强行撑到 48×48 —— 只设 constraints / iconSize 是没用的，
+    // 必须 shrinkWrap 才能真的缩到 actionSize。
+    final actionButtonStyle = IconButton.styleFrom(
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+
+    // 输入区固定高度：打字时不再向上顶。
+    // 原来 minLines:1 / maxLines:3 会让输入框随行数长高（实测 1 行 56、2 行 80、3 行 104，
+    // 每多一行 +24），整个 composer 跟着往上顶。定死成 48 后多行内容在框内滚动，
+    // 同时和语音条、右侧按钮同高 —— 切模式也不会跳。
+    const inputAreaHeight = 48.0;
 
     return Positioned(
       left: 0,
@@ -1127,52 +1126,116 @@ class _CustomComposerState extends State<CustomComposer> {
                         ? IconButton(
                           icon: const Icon(Icons.attachment),
                           color: theme.onSurface.withValues(alpha: 0.5),
+                          iconSize: actionIconSize,
                           onPressed: onAttachmentTap,
                         )
                         : const SizedBox.shrink(),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Expanded(
-                      child: TextField(
-                        controller: widget.textEditingController,
-                        decoration: InputDecoration(
-                          hintText: '说点什么...',
-                          hintStyle: theme.bodyMedium.copyWith(
-                            color: theme.onSurface.withValues(alpha: 0.5),
-                          ),
-                          border: const OutlineInputBorder(
-                            borderSide: BorderSide.none,
-                            borderRadius: BorderRadius.all(Radius.circular(24)),
-                          ),
-                          filled: true,
-                          fillColor: theme.surfaceContainerHigh.withValues(
-                            alpha: 0.8,
-                          ),
-                          hoverColor: Colors.transparent,
-                        ),
-                        style: theme.bodyMedium.copyWith(
-                          color: theme.onSurface,
-                        ),
-                        onSubmitted: _handleSubmitted,
-                        textInputAction: TextInputAction.newline,
-                        autocorrect: true,
-                        autofocus: false,
-                        textCapitalization: TextCapitalization.sentences,
-                        focusNode: _focusNode,
-                        minLines: 1,
-                        maxLines: 3,
-                      ),
+                      child:
+                          isVoiceMode
+                              ? SizedBox(
+                                height: inputAreaHeight,
+                                child: VoiceInputButton(
+                                  startRecording: _startRecording,
+                                  stopRecording: _stopRecording,
+                                ),
+                              )
+                              : _wrapFileDrop(
+                                SizedBox(
+                                  height: inputAreaHeight,
+                                  child: TextField(
+                                    controller: _controller,
+                                    decoration: InputDecoration(
+                                      hintText: '说点什么...',
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                      hintStyle: theme.bodyMedium.copyWith(
+                                        color: theme.onSurface.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
+                                      border: const OutlineInputBorder(
+                                        borderSide: BorderSide.none,
+                                        borderRadius: BorderRadius.all(
+                                          Radius.circular(24),
+                                        ),
+                                      ),
+                                      filled: true,
+                                      fillColor: theme.surfaceContainerHigh
+                                          .withValues(alpha: 0.8),
+                                      hoverColor: Colors.transparent,
+                                    ),
+                                    style: theme.bodyMedium.copyWith(
+                                      color: theme.onSurface,
+                                    ),
+                                    onSubmitted: _handleSubmitted,
+                                    textInputAction: TextInputAction.newline,
+                                    autocorrect: true,
+                                    autofocus: false,
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
+                                    focusNode: _focusNode,
+                                    minLines: 1,
+                                    maxLines: 3,
+                                  ),
+                                ),
+                              ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon:
-                          widget.isStreaming
-                              ? const Icon(Icons.stop_circle)
-                              : const Icon(Icons.send),
-                      color: theme.onSurface.withValues(alpha: 0.5),
-                      onPressed:
-                          widget.isStreaming
-                              ? widget.onStop
-                              : () => _handleSubmitted(widget.textEditingController.text),
+                    // 语音模式下说话即发送，发送键不再占位
+                    //（要中断生成还有上方工具栏的 Abort）。
+                    if (!isVoiceMode) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: widget.isStreaming ? '停止' : '发送',
+                        padding: EdgeInsets.zero,
+                        iconSize: actionIconSize,
+                        style: actionButtonStyle,
+                        icon:
+                            widget.isStreaming
+                                ? const Icon(Icons.stop_circle)
+                                : const Icon(Icons.send),
+                        color: theme.onSurface.withValues(alpha: 0.5),
+                        onPressed:
+                            widget.isStreaming
+                                ? widget.onStop
+                                : () => _handleSubmitted(_controller.text),
+                      ),
+                    ],
+                    // 语音开关：文本为空时才出现（已经在打字就不占位），
+                    // 语音模式下常驻以便切回键盘，并垫上录音条同款底色。
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _controller,
+                      builder: (context, value, _) {
+                        if (!isVoiceMode && value.text.isNotEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Container(
+                          height: inputAreaHeight,
+                          width: actionSize + 4,
+                          alignment: Alignment.center,
+                          color: isVoiceMode ? voiceBarColor : null,
+                          child: IconButton(
+                            tooltip: isVoiceMode ? '切换键盘输入' : '语音输入',
+                            padding: EdgeInsets.zero,
+                            iconSize: actionIconSize,
+                            style: actionButtonStyle,
+                            icon: Icon(
+                              isVoiceMode
+                                  ? Icons.keyboard_alt_outlined
+                                  : Icons.mic_outlined,
+                            ),
+                            color:
+                                isVoiceMode
+                                    ? Colors.white
+                                    : theme.onSurface.withValues(alpha: 0.5),
+                            onPressed: _toggleInputMode,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -1199,7 +1262,7 @@ class _CustomComposerState extends State<CustomComposer> {
   void _handleSubmitted(String text) {
     if (text.isNotEmpty) {
       context.read<OnMessageSendCallback?>()?.call(text);
-      widget.textEditingController.clear();
+      _controller.clear();
     }
   }
 }

@@ -94,7 +94,7 @@ dependencies:
   json_annotation: ^4.9.0
 
   window_manager: ^0.5.1
-  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview: ^6.2.0-beta.3
 
 #  video_player: ^2.11.1
 
