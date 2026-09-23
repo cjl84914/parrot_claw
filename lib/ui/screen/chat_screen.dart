@@ -349,6 +349,9 @@ class _ChatScreenState extends State<ChatScreen>
                         composerBuilder:
                             (context) => CustomComposer(
                               key: _composerKey,
+                              // 「打断」已从上方工具栏挪到输入行（发送键的位置），
+                              // 生成中与否由 composer 自己读 viewModel.runId 判断。
+                              viewModel: widget.viewModel,
                               topWidget: ComposerActionBar(
                                 buttons: [
                                   ComposerActionButton(
@@ -356,16 +359,6 @@ class _ChatScreenState extends State<ChatScreen>
                                     icon: Icons.delete_sweep,
                                     title: 'Clear',
                                     onPressed: _resetConversation,
-                                  ),
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon: Icons.stop_circle_rounded,
-                                    title: 'Abort ',
-                                    onPressed: () => _abortMessage(),
-                                    color:
-                                        widget.viewModel.runId != ''
-                                            ? AppColors.secondary
-                                            : Colors.grey,
                                   ),
                                   ComposerActionButton(
                                     key: _modelButtonKey,
@@ -881,14 +874,15 @@ class _ChatScreenState extends State<ChatScreen>
 
 class CustomComposer extends StatefulWidget {
   final Widget? topWidget;
-  final bool isStreaming;
-  final VoidCallback? onStop;
+
+  /// 生成中要就地显示「打断」按钮，判断依据是网关的 `runId`
+  ///（`runId != ''` 即有一次生成在跑），所以直接把 viewModel 传进来。
+  final ChatViewModel viewModel;
 
   const CustomComposer({
     super.key,
     this.topWidget,
-    this.isStreaming = false,
-    this.onStop,
+    required this.viewModel,
   });
 
   @override
@@ -916,6 +910,13 @@ class _CustomComposerState extends State<CustomComposer> {
     _focusNode = FocusNode();
     _focusNode.onKeyEvent = _handleKeyEvent;
     _initTalk();
+    // 输入框会随行数长高，高度一变就得重新上报，否则聊天列表底部留白不跟着变，
+    // 长高的 composer 会把最后一条消息盖住。（setHeight 只在真的变了才通知，不担心刷。）
+    _controller.addListener(_scheduleMeasure);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  void _scheduleMeasure() {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
   }
 
@@ -1063,6 +1064,7 @@ class _CustomComposerState extends State<CustomComposer> {
 
   @override
   void dispose() {
+    _controller.removeListener(_scheduleMeasure);
     _controller.dispose();
     ASRUtil().stop();
     _focusNode.dispose();
@@ -1087,10 +1089,13 @@ class _CustomComposerState extends State<CustomComposer> {
     final voiceBarColor = ChatTheme.dark().colors.surface;
     final isVoiceMode = _inputMode == InputMode.Voice;
 
+    // 生成中（网关侧有 runId 在跑）：发送键与录音/语音键都让位给「打断」按钮。
+    final isRunning = widget.viewModel.runId != '';
+
     // 发送/语音按钮的尺寸：桌面端压到 32（原来吃满 IconButton 默认的 48），
     // 移动端仍保留 44 的触摸目标，别把可点区域缩到手指够不着。
     final actionSize = kIsDesktop ? 32.0 : 44.0;
-    final actionIconSize = kIsDesktop ? 22.0 : 18.0;
+    final actionIconSize = kIsDesktop ? 18.0 : 22.0;
 
     // 关键：IconButton 外层有 _InputPadding，主题的 tapTargetSize 是 padded（默认）
     // 时它会把占位强行撑到 48×48 —— 只设 constraints / iconSize 是没用的，
@@ -1099,11 +1104,11 @@ class _CustomComposerState extends State<CustomComposer> {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
 
-    // 输入区固定高度：打字时不再向上顶。
-    // 原来 minLines:1 / maxLines:3 会让输入框随行数长高（实测 1 行 56、2 行 80、3 行 104，
-    // 每多一行 +24），整个 composer 跟着往上顶。定死成 48 后多行内容在框内滚动，
-    // 同时和语音条、右侧按钮同高 —— 切模式也不会跳。
-    const inputAreaHeight = 48.0;
+    // 输入框「单行」的高度：contentPadding 上下 12 + 14px 字型 ≈ 48（实测单行 48）。
+    // 语音条和右侧按钮按它对齐，所以切模式时高度不会跳。
+    // 注意：这只是对齐基准，**不是给输入框设的上限** —— 多行时输入框要跟着长高
+    //（实测 2 行 66、3 行 87），整个 composer 就该被顶上去。
+    const inputSingleLineHeight = 48.0;
 
     return Positioned(
       left: 0,
@@ -1125,26 +1130,28 @@ class _CustomComposerState extends State<CustomComposer> {
                     onAttachmentTap != null
                         ? IconButton(
                           icon: const Icon(Icons.attachment),
-                          color: theme.onSurface.withValues(alpha: 0.5),
+                          constraints: BoxConstraints.tightFor(
+                            width: actionSize,
+                            height: actionSize,
+                          ),
                           iconSize: actionIconSize,
+                          color: theme.onSurface.withValues(alpha: 0.5),
                           onPressed: onAttachmentTap,
                         )
                         : const SizedBox.shrink(),
                     const SizedBox(width: 4),
-                    Expanded(
-                      child:
-                          isVoiceMode
-                              ? SizedBox(
-                                height: inputAreaHeight,
-                                child: VoiceInputButton(
-                                  startRecording: _startRecording,
-                                  stopRecording: _stopRecording,
-                                ),
-                              )
-                              : _wrapFileDrop(
-                                SizedBox(
-                                  height: inputAreaHeight,
-                                  child: TextField(
+                      Expanded(
+                        child:
+                            isVoiceMode
+                                ? SizedBox(
+                                    height: inputSingleLineHeight,
+                                    child: VoiceInputButton(
+                                      startRecording: _startRecording,
+                                      stopRecording: _stopRecording,
+                                    ),
+                                  )
+                                : _wrapFileDrop(
+                                  TextField(
                                     controller: _controller,
                                     decoration: InputDecoration(
                                       hintText: '说点什么...',
@@ -1183,60 +1190,76 @@ class _CustomComposerState extends State<CustomComposer> {
                                     maxLines: 3,
                                   ),
                                 ),
-                              ),
-                    ),
-                    // 语音模式下说话即发送，发送键不再占位
-                    //（要中断生成还有上方工具栏的 Abort）。
-                    if (!isVoiceMode) ...[
+                      ),
+                    // 生成中：发送键换成「打断」（原先在上方工具栏的 Abort）。
+                    if (isRunning) ...[
                       const SizedBox(width: 4),
                       IconButton(
-                        tooltip: widget.isStreaming ? '停止' : '发送',
+                        tooltip: '打断',
                         padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tightFor(
+                          width: actionSize,
+                          height: actionSize,
+                        ),
                         iconSize: actionIconSize,
                         style: actionButtonStyle,
-                        icon:
-                            widget.isStreaming
-                                ? const Icon(Icons.stop_circle)
-                                : const Icon(Icons.send),
+                        icon: const Icon(Icons.stop),
+                        color: AppColors.secondary,
+                        onPressed: () => widget.viewModel.abortMessage(),
+                      ),
+                    ] else if (!isVoiceMode) ...[
+                      // 语音模式下说话即发送，发送键不再占位。
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: '发送',
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tightFor(
+                          width: actionSize,
+                          height: actionSize,
+                        ),
+                        iconSize: actionIconSize,
+                        style: actionButtonStyle,
+                        icon: const Icon(Icons.send),
                         color: theme.onSurface.withValues(alpha: 0.5),
-                        onPressed:
-                            widget.isStreaming
-                                ? widget.onStop
-                                : () => _handleSubmitted(_controller.text),
+                        onPressed: () => _handleSubmitted(_controller.text),
                       ),
                     ],
-                    // 语音开关：文本为空时才出现（已经在打字就不占位），
-                    // 语音模式下常驻以便切回键盘，并垫上录音条同款底色。
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _controller,
-                      builder: (context, value, _) {
-                        if (!isVoiceMode && value.text.isNotEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        return Container(
-                          height: inputAreaHeight,
-                          width: actionSize + 4,
-                          alignment: Alignment.center,
-                          color: isVoiceMode ? voiceBarColor : null,
-                          child: IconButton(
-                            tooltip: isVoiceMode ? '切换键盘输入' : '语音输入',
-                            padding: EdgeInsets.zero,
-                            iconSize: actionIconSize,
-                            style: actionButtonStyle,
-                            icon: Icon(
-                              isVoiceMode
-                                  ? Icons.keyboard_alt_outlined
-                                  : Icons.mic_outlined,
-                            ),
-                            color:
+                    // 语音开关（最右边这个切换模式的按钮）：文本为空时才出现
+                    //（已经在打字就不占位），语音模式下常驻以便切回键盘，
+                    // 并垫上录音条同款底色。
+                    // 生成中隐藏：这段位置让给左侧输入框自己撑开。
+                    if (!isRunning)
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _controller,
+                        builder: (context, value, _) {
+                          if (!isVoiceMode && value.text.isNotEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Container(
+                            height: inputSingleLineHeight,
+                            width: actionSize + 4,
+                            alignment: Alignment.center,
+                            color: isVoiceMode ? voiceBarColor : null,
+                            child: IconButton(
+                              tooltip: isVoiceMode ? '切换键盘输入' : '语音输入',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tightFor(
+                                width: actionSize,
+                                height: actionSize,
+                              ),
+                              iconSize: actionIconSize,
+                              style: actionButtonStyle,
+                              icon: Icon(
                                 isVoiceMode
-                                    ? Colors.white
-                                    : theme.onSurface.withValues(alpha: 0.5),
-                            onPressed: _toggleInputMode,
-                          ),
-                        );
-                      },
-                    ),
+                                    ? Icons.keyboard_alt_outlined
+                                    : Icons.mic_outlined,
+                              ),
+                              color: theme.onSurface.withValues(alpha: 0.5),
+                              onPressed: _toggleInputMode,
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),

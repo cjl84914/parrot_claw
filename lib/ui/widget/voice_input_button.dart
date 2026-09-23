@@ -102,7 +102,7 @@ class _VoiceInputButtonState extends State<VoiceInputButton> {
                           ? _isCancelling
                               ? Colors.red
                               : Colors.blue.shade700
-                          : Colors.white,
+                          :  Colors.white.withValues(alpha: 0.7),
                   fontSize: 16,
                   fontWeight:
                       _isRecording ? FontWeight.w500 : FontWeight.normal,
