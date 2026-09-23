@@ -324,7 +324,7 @@ class GatewayRepository extends ChangeNotifier {
     if (push is GatewayPushSnapshot) {
       _hello = push.snapshot;
       _log.info('snapshot:${_hello?.snapshot.sessiondefaults.toString()}');
-      // if (!pending) _markConnected(push.snapshot.snapshot.health);
+      if (!pending) _markConnected(push.snapshot.snapshot.health);
       beginHistoryLoad();
     } else if (push is GatewayPushEvent) {
       _handleGatewayEvent(push.event, push.payload);
@@ -924,12 +924,12 @@ class GatewayRepository extends ChangeNotifier {
 
   Future<void> _handleAgentEvent(dynamic payload) async {
     if (payload == null) return;
-    // _log.info(payload);
     final stream = payload['stream'] as String?;
     final data = payload['data'];
     final runId = payload['runId'] as String?;
     switch (stream) {
       case 'assistant':
+        _log.info(payload);
         // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
         final text = data?['text'] as String?;
         if (text != null && text.isNotEmpty) {

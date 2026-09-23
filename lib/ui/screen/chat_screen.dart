@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -72,6 +73,9 @@ class _ChatScreenState extends State<ChatScreen>
 
   final _textEditingController = TextEditingController();
   bool isLive2dShow = false;
+
+  /// 桌面端：是否有文件正被拖到输入框上方（用于显示高亮反馈）。
+  bool _isFileDragging = false;
 
   @override
   void initState() {
@@ -212,7 +216,6 @@ class _ChatScreenState extends State<ChatScreen>
         return FileMessage(
           id: m.id,
           authorId: authorId,
-          size: 0,
           createdAt: createdAt,
           source: mediaContent.text!,
           name: mediaContent.fileName ?? 'file',
@@ -368,66 +371,70 @@ class _ChatScreenState extends State<ChatScreen>
                               index: index,
                             ),
                         composerBuilder:
-                            (context) => Composer(
-                              key: _composerKey,
-                              textEditingController: _textEditingController,
-                              padding: const EdgeInsets.only(
-                                left: 12,
-                                top: 8,
-                                bottom: 4,
-                                right: 12,
+                            (context) => _wrapFileDrop(
+                              Composer(
+                                key: _composerKey,
+                                textEditingController: _textEditingController,
+                                padding: const EdgeInsets.only(
+                                  left: 12,
+                                  top: 8,
+                                  bottom: 4,
+                                  right: 12,
+                                ),
+                                backgroundColor: ChatColors.dark().surface,
+                                topWidget: ComposerActionBar(
+                                  buttons: [
+                                    ComposerActionButton(
+                                      visible: true,
+                                      icon: Icons.delete_sweep,
+                                      title: 'Clear',
+                                      onPressed: _resetConversation,
+                                    ),
+                                    ComposerActionButton(
+                                      visible: true,
+                                      icon: Icons.stop_circle_rounded,
+                                      title: 'Abort ',
+                                      onPressed: () => _abortMessage(),
+                                      color:
+                                          widget.viewModel.runId != ''
+                                              ? AppColors.secondary
+                                              : Colors.grey,
+                                    ),
+                                    ComposerActionButton(
+                                      key: _modelButtonKey,
+                                      visible: true,
+                                      icon: Icons.psychology_outlined,
+                                      title: widget.viewModel.model ?? '模型',
+                                      onPressed:
+                                          () => _showModelOptions(context),
+                                      color: Colors.grey,
+                                    ),
+                                    ComposerActionButton(
+                                      visible: true,
+                                      icon:
+                                          _inputMode == InputMode.Voice
+                                              ? Icons.keyboard_alt_outlined
+                                              : Icons.mic_outlined,
+                                      title: 'MIC',
+                                      onPressed: () {
+                                        if (_inputMode == InputMode.Voice) {
+                                          _inputMode = InputMode.Text;
+                                        } else if (_inputMode ==
+                                            InputMode.Text) {
+                                          _textEditingController.clear();
+                                          FocusManager.instance.primaryFocus
+                                              ?.unfocus();
+                                          _inputMode = InputMode.Voice;
+                                        }
+                                        setState(() {});
+                                      },
+                                      color: Colors.grey,
+                                    ),
+                                  ],
+                                ),
+                                sendOnEnter: true,
+                                // sendButtonHidden: true,
                               ),
-                              backgroundColor: ChatColors.dark().surface,
-                              topWidget: ComposerActionBar(
-                                buttons: [
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon: Icons.delete_sweep,
-                                    title: 'Clear',
-                                    onPressed: _resetConversation,
-                                  ),
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon: Icons.stop_circle_rounded,
-                                    title: 'Abort ',
-                                    onPressed: () => _abortMessage(),
-                                    color:
-                                        widget.viewModel.runId != ''
-                                            ? AppColors.secondary
-                                            : Colors.grey,
-                                  ),
-                                  ComposerActionButton(
-                                    key: _modelButtonKey,
-                                    visible: true,
-                                    icon: Icons.psychology_outlined,
-                                    title: widget.viewModel.model ?? '模型',
-                                    onPressed: () => _showModelOptions(context),
-                                    color: Colors.grey,
-                                  ),
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon:
-                                        _inputMode == InputMode.Voice
-                                            ? Icons.keyboard_alt_outlined
-                                            : Icons.mic_outlined,
-                                    title: 'MIC',
-                                    onPressed: () {
-                                      if (_inputMode == InputMode.Voice) {
-                                        _inputMode = InputMode.Text;
-                                      } else if (_inputMode == InputMode.Text) {
-                                        _textEditingController.clear();
-                                        FocusManager.instance.primaryFocus
-                                            ?.unfocus();
-                                        _inputMode = InputMode.Voice;
-                                      }
-                                      setState(() {});
-                                    },
-                                    color: Colors.grey,
-                                  ),
-                                ],
-                              ),
-                              sendOnEnter: true,
-                              // sendButtonHidden: true,
                             ),
                         // linkPreviewBuilder: (context, message, isSentByMe) {
                         //   // It's up to you to (optionally) implement the logic to avoid every
@@ -474,6 +481,7 @@ class _ChatScreenState extends State<ChatScreen>
                               child: FlyerChatFileMessage(
                                 message: message,
                                 index: index,
+                                receivedSizeTextStyle: TextStyle(fontSize: 0),
                               ),
                             ),
                         chatMessageBuilder: (
@@ -801,6 +809,81 @@ class _ChatScreenState extends State<ChatScreen>
         );
       },
     );
+  }
+
+  /// 桌面端把输入框包成文件拖入区：拖入时高亮提示，松手后把文件绝对路径
+  /// 追加进输入框（只贴路径，不做上传）。
+  ///
+  /// 移动端没有拖拽语义，直接原样返回。
+  Widget _wrapFileDrop(Widget child) {
+    if (!kIsDesktop) return child;
+
+    return DropTarget(
+      onDragEntered: (_) {
+        if (mounted) setState(() => _isFileDragging = true);
+      },
+      onDragExited: (_) {
+        if (mounted) setState(() => _isFileDragging = false);
+      },
+      onDragDone: (detail) {
+        if (mounted) setState(() => _isFileDragging = false);
+        _insertDroppedPaths(detail.files.map((f) => f.path).toList());
+      },
+      child: Stack(
+        children: [
+          child,
+          if (_isFileDragging)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    border: Border.all(color: AppColors.primary, width: 2),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '松开鼠标，把文件路径插入输入框',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 把拖入的文件路径追加到输入框末尾。
+  ///
+  /// 含空格或 shell 特殊字符的路径会用双引号包住，方便 agent 直接当参数用。
+  void _insertDroppedPaths(List<String> paths) {
+    final cleaned = paths.where((p) => p.trim().isNotEmpty).toList();
+    if (cleaned.isEmpty) return;
+
+    final inserted = cleaned.map(_quotePathIfNeeded).join(' ');
+    final current = _textEditingController.text;
+    final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
+    final next = '$current$separator$inserted ';
+
+    _textEditingController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+
+    // 语音模式下输入框是隐藏的，贴完路径切回文本模式，否则用户看不到。
+    if (_inputMode == InputMode.Voice) {
+      setState(() => _inputMode = InputMode.Text);
+    }
+  }
+
+  /// 路径含空格/引号等字符时加双引号，避免被当成多个参数。
+  String _quotePathIfNeeded(String path) {
+    if (!RegExp(r'''[\s"'$`&()\[\]{};|<>*?!]''').hasMatch(path)) return path;
+    return '"${path.replaceAll('"', r'\"')}"';
   }
 
   void _init() async {

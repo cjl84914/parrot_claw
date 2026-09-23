@@ -49,7 +49,6 @@ import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:parrot_app/ui/screen/live2d_screen.dart';
 import 'package:parrot_app/ui/screen/launch_screen.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'ui/screen/help_screen.dart';
