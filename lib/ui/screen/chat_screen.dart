@@ -151,8 +151,10 @@ class _ChatScreenState extends State<ChatScreen>
 
     // 媒体：每个带来源的内容块各自成一个气泡（同一条消息里可能有多个附件）。
     for (final media in m.content) {
-      final source = media.text;
-      if (media.type == 'text' || source == null || source.isEmpty) continue;
+      final rawSource = media.text;
+      if (media.type == 'text' || rawSource == null || rawSource.isEmpty) {
+        continue;
+      }
       final id = '${m.id}#media${messages.length}';
       if (media.type == 'image') {
         messages.add(
@@ -161,7 +163,7 @@ class _ChatScreenState extends State<ChatScreen>
             authorId: authorId,
             size: 0,
             createdAt: createdAt,
-            source: source,
+            source: _resolveImageSource(rawSource),
           ),
         );
       } else if (media.type == 'file' ||
@@ -172,7 +174,8 @@ class _ChatScreenState extends State<ChatScreen>
             id: id,
             authorId: authorId,
             createdAt: createdAt,
-            source: source,
+            // 文件卡片本身不读盘，点击时由 `_openMedia` 再解析一次。
+            source: rawSource,
             name: media.fileName ?? 'file',
           ),
         );
@@ -198,6 +201,36 @@ class _ChatScreenState extends State<ChatScreen>
         status: MessageStatus.seen,
       ),
     ];
+  }
+
+  /// 图片渲染用的 source —— 交给图片组件之前必须先过这里。
+  ///
+  /// `flyer_chat_image_message` 内部是 `cross_cache` 的
+  /// `CachedNetworkImage(message.source)`，而 `cross_cache` 只认四类 source：
+  /// `assets/`、`data:` URI、`http/https/blob`，**其余一律**先
+  /// `XFile(source).readAsBytes()` 读盘、再试 `base64Decode`，都失败就抛
+  /// `Invalid source: cannot be processed`（`cross_cache.dart` 的 `downloadAndSave`）。
+  ///
+  /// 网关给的 `MEDIA:` 路径是**网关那台机器上的绝对路径**：桌面端这个文件恰好
+  /// 就在本机，读盘蒙对了；移动端读不到盘 → 图片位置一片空白。
+  /// 所以：
+  /// - 本来就能直接加载的 → 原样返回；
+  /// - 本机真实存在的文件（桌面端、自己刚发出去的附件）→ 原样返回，走本地读盘；
+  /// - 其余（路径属于网关那台机器）→ 交给 ViewModel 转成 assistant-media URL。
+  ///
+  /// 注意「能否直接加载」不能只看 `uri.scheme` 非空：Windows 盘符路径
+  ///（`C:\...`）会被解析成 `scheme == 'c'`，所以这里逐个列出可加载的 scheme。
+  String _resolveImageSource(String source) {
+    final scheme = Uri.tryParse(source)?.scheme ?? '';
+    final loadableDirectly =
+        scheme == 'http' ||
+        scheme == 'https' ||
+        scheme == 'data' ||
+        scheme == 'blob' ||
+        source.startsWith('assets/');
+    if (loadableDirectly) return source;
+    if (File(source).existsSync()) return source;
+    return widget.viewModel.resolveMediaUrl(context, source);
   }
 
   @override
