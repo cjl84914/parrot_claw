@@ -68,6 +68,9 @@ class _ChatScreenState extends State<ChatScreen>
   final GlobalKey _composerKey = GlobalKey();
   final GlobalKey _modelButtonKey = GlobalKey();
 
+  /// 上一帧「生成中」与否，用来在 `runId` 由非空变空的那一刻收掉 typing 气泡。
+  bool _wasRunning = false;
+
   bool isLive2dShow = false;
 
   @override
@@ -83,6 +86,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    widget.viewModel.removeListener(_handleRunStateChanged);
     _eventSubscription?.cancel();
     _pendingRunSubscription?.cancel();
     _eventSessionUpdateSubscription?.cancel();
@@ -632,9 +636,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _abortMessage() async {
-    widget.viewModel.abortMessage();
-    await Future.delayed(const Duration(milliseconds: 500));
-    // _removeTyping();
+    // 「正在输入」气泡由 [_handleRunStateChanged] 在 run 结束时统一收掉：
+    // 打断后网关不会再推消息，这里若不管，typing 就会一直挂着。
+    await widget.viewModel.abortMessage();
   }
 
   void _handleAttachmentTap() async {
@@ -722,6 +726,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _init() async {
+    // run 结束（正常 final / 被中断 / 报错都会把 runId 清空）时收掉 typing。
+    // 打断这条路径网关不会再推消息，只能靠这里兜。
+    _wasRunning = widget.viewModel.runId != '';
+    widget.viewModel.addListener(_handleRunStateChanged);
     _eventSubscription = widget.viewModel.messageEvents?.listen((
       chatMsg,
     ) async {
@@ -746,6 +754,18 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// run 结束（`runId` 由非空变为空）时收掉「正在输入」气泡。
+  ///
+  /// 此前只在「收到新消息」时清 typing，而打断 / 报错这两条路径网关都不会再推
+  /// 消息，于是气泡会一直挂在那里 —— 典型表现是「打断后 Typing 不消失」。
+  /// 挂在 run 的生死上就同时覆盖 final / aborted / error 三种收尾。
+  void _handleRunStateChanged() {
+    final isRunning = widget.viewModel.runId != '';
+    final justStopped = _wasRunning && !isRunning;
+    _wasRunning = isRunning;
+    if (justStopped) unawaited(_removeTyping());
+  }
+
   Future<void> _addTyping() async {
     try {
       await _chatController.insertMessage(
@@ -763,11 +783,13 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _removeTyping() async {
-    final typingMessage = _chatController.messages.where(
-      (message) => message.metadata?['type'] == 'typing',
-    );
-    if (typingMessage.isNotEmpty) {
-      await _chatController.removeMessage(typingMessage.first);
+    // 全部清掉（不是只清第一个）：任何一次漏收都可能在列表里留下多余气泡。
+    final typingMessages =
+        _chatController.messages
+            .where((message) => message.metadata?['type'] == 'typing')
+            .toList();
+    for (final message in typingMessages) {
+      await _chatController.removeMessage(message);
     }
   }
 

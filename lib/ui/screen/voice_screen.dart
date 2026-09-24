@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_chat_ui/flutter_chat_ui.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:go_router/go_router.dart';
@@ -343,7 +344,13 @@ class _VoiceScreenState extends State<VoiceScreen> {
             bottom: 110.h,
             child: _buildSubtitle(),
           ),
-        if (_isPendding) SpinKitThreeBounce(size: 24, color: Colors.white),
+        if (_isPendding)
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              child: IsTypingIndicator(size: 22, color: Colors.white),
+            ),
+          ),
       ],
     );
   }

@@ -587,8 +587,11 @@ class GatewayRepository extends ChangeNotifier {
     if (message.isEmpty && attachments.isEmpty) {
       return;
     }
-    _runId =
+    // 本次 run 的身份：后面所有用到它的地方都读这个局部量，不要再读 `_runId` ——
+    // 下面的 await 期间用户可能又发了一条，`_runId` 会被新 run 覆盖。
+    final runId =
         'chat_${DateTime.now().millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
+    _runId = runId;
     notifyListeners();
     if (attachments.isEmpty) {
       // 2. 乐观更新：创建并显示用户消息
@@ -597,7 +600,7 @@ class GatewayRepository extends ChangeNotifier {
         role: 'user',
         content: [ChatMessageContent(type: 'text', text: message)],
         timestamp: DateTime.now().millisecondsSinceEpoch,
-        idempotencyKey: _runId,
+        idempotencyKey: runId,
       );
       messageController.add(userMessage);
     } else {
@@ -616,7 +619,7 @@ class GatewayRepository extends ChangeNotifier {
             ),
           ],
           timestamp: DateTime.now().millisecondsSinceEpoch,
-          idempotencyKey: _runId,
+          idempotencyKey: runId,
         );
         messageController.add(userMessage);
       }
@@ -630,7 +633,7 @@ class GatewayRepository extends ChangeNotifier {
         params: {
           'sessionKey': resolvedSessionKey,
           'message': message,
-          'idempotencyKey': _runId,
+          'idempotencyKey': runId,
           if (attachments.isNotEmpty)
             'attachments':
                 attachments
@@ -646,7 +649,8 @@ class GatewayRepository extends ChangeNotifier {
         },
       );
     } catch (error) {
-      if (_runId.isNotEmpty) {
+      // 只清掉「自己这一次」的 run：期间用户可能已经发了下一条，别把它踩掉。
+      if (_runId == runId) {
         _runId = '';
         notifyListeners();
       }
@@ -672,15 +676,25 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
+  /// 打断当前这一次 run。
+  ///
+  /// 关键：await 期间用户可能已经发出下一条消息，`_runId` 会被**新** run 覆盖。
+  /// 所以先把本次要打断的 runId 快照下来，收尾时只在「当前 run 还是它」时才
+  /// 清空 —— 否则会把紧接着发起的新 run 一起抹掉（表现为新回复明明在生成，
+  /// 输入行的「打断」按钮却不显示，且新 run 的 final 事件因 runId 不匹配被忽略）。
   Future<void> abortMessage() async {
-    if (_runId != '') {
-      await requestKnown(
-        'chat.abort',
-        params: {'sessionKey': sessionKey!, 'runId': _runId},
-      );
-      _runId = '';
-      notifyListeners();
-    }
+    final runId = _runId;
+    if (runId.isEmpty) return;
+    await requestKnown(
+      'chat.abort',
+      params: {'sessionKey': sessionKey!, 'runId': runId},
+    );
+    // 被中断这一次的流式占位要在这里清掉：它后续的 final/aborted 事件会因
+    // runId 已不匹配被忽略，不会再来清。
+    _clearStreamingMessages(runId);
+    if (_runId != runId) return;
+    _runId = '';
+    notifyListeners();
   }
 
   Future<void> switchSession(String? key) async {
