@@ -6,7 +6,6 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_connector.dart';
-import 'package:parrot_app/data/service/gateway_scope_store.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -34,13 +33,11 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
   /// 默认 QR（device.pair.setupCode）profile 授权的受限 operator scopes
   /// （BOOTSTRAP_HANDOFF_OPERATOR_SCOPES，无 admin/pairing）。
-  static const List<String> _operatorHandoffScopes = [
-    'operator.approvals',
-    'operator.questions',
-    'operator.read',
-    'operator.talk.secrets',
-    'operator.write',
-  ];
+  ///
+  /// 只在网关没有逐条回带 scopes 时用作兜底（见 [_scopesFromEntry]）。真正生效的
+  /// 是配对时记进 [ServerConfig.operatorScopes] 的那一份，连接时原样请求 ——
+  /// 设备令牌会话多要一个 scope 就会被网关拒掉。
+  static const List<String> _operatorHandoffScopes = openClawDeviceTokenScopes;
 
   /// 配对用的会话都是用完即弃的：每次 [probeGateway] 都会在返回前把它关掉，
   /// 因此这里不需要再手工收尾。
@@ -148,9 +145,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
     if (!mounted) return false;
 
-    // 持久化受限 scopes：冷启动重连复用，避免再触发 scope-upgrade 审批。
-    await GatewayScopeStore.saveOperatorScopes(p.wsUrl, operatorScopes);
-
     final config = ServerConfig(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: '${p.host}:${p.port}',
@@ -158,12 +152,23 @@ class _QrScanScreenState extends State<QrScanScreen> {
       port: p.port,
       useTLS: p.useTLS,
       token: operatorToken,
-      authMode: 'token',
+      // 关键：这份凭据是设备令牌而不是网关长效 token，网关只授权受限 scopes。
+      // 记成 device-token 后连接时会请求受限集合；而**具体是哪几个**只有网关
+      // 知道（请求超集会被 `device token scope mismatch` 拒掉），所以把这次
+      // 握手拿到的 operator scopes 一并记下来，连接时原样复用。
+      authMode: ServerConfig.authModeDeviceToken,
+      operatorScopes: operatorScopes,
     );
 
     await _saveConfig(config);
-    // 首页的连接由 ServerRepository 变更驱动（GatewayRepository.connect()），
-    // 与这里这条用完即弃的探测会话无关，所以直接跳转即可。
+    // 这里只需要跳转：新服务器会改 `main.dart` 里 `IndexScreen` 的
+    // `ValueKey(selectedServer.id)`，壳因此重建，`initState` 里的 connect()
+    // 会按刚保存的配置连一次。
+    //
+    // 别指望"ServerRepository 变更自动驱动连接" —— `GatewayRepository` 里的
+    // `_onServerChanged` 没有任何地方注册，是死代码。所以**改同一个服务器**
+    // （id 不变 → key 不变 → 壳不重建）不会触发重连，新写入的 scopes 要等
+    // 下一次 connect()（冷启动进首页）才生效。
     if (mounted) context.go(Routes.index);
     return true;
   }
@@ -233,7 +238,12 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('扫码连接网关'), elevation: 0),
-      body: Stack(
+      body:
+      Container(
+        width: double.infinity,
+        height: double.infinity,
+        child:
+      Stack(
         alignment: Alignment.center,
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),
@@ -248,6 +258,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 }

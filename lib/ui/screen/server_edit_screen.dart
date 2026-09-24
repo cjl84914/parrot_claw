@@ -4,8 +4,10 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_session.dart';
 import 'package:parrot_app/main.dart';
+import 'package:parrot_app/ui/view_model/conn_viewmodel.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 class ServerEditScreen extends StatefulWidget {
@@ -46,7 +48,13 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       _tokenController.text = widget.server!.token;
       _passwordController.text = widget.server!.password;
       _useTLS = widget.server!.useTLS;
-      _authMode = widget.server!.authMode;
+      // SegmentedButton 只声明了 password/token 两个 segment，`selected` 里出现
+      // 别的值会直接断言崩溃 —— 设备令牌（device-token）在这里按 token 呈现，
+      // 保存时是否保留原种类由 _buildConfig() 决定。
+      _authMode =
+          widget.server!.isPasswordAuth
+              ? ServerConfig.authModePassword
+              : ServerConfig.authModeToken;
     } else {
       _serverId = const Uuid().v4();
     }
@@ -410,8 +418,19 @@ class _ServerEditPageState extends State<ServerEditScreen> {
 
     if (!result.ok) return;
 
+    // 用这一趟探测拿到的**真实授权**覆盖 scopes 再保存。
+    //
+    // `_buildConfig()` 里那份只是"探测种子"（凭据没变就沿用已知能过的旧记录），
+    // 它可能早就过期了：网关侧 `devices approve` 升权并不会改动客户端持有的
+    // 凭据，所以光比较 token 文本根本判断不出权限变没变。而这次握手刚刚把答案
+    // 送回来了 —— 设备令牌会话的 `auth.scopes` 就是该令牌自身的 scopes。
+    //
+    // 覆盖是安全的：探测与正式连接共用同一个 `GatewayConnectConfig`，
+    // "探测通过"就意味着这套 scopes 握手能过。
+    final savedConfig = withGrantedScopesFromHello(config, result.data);
+
     // 只有试连成功才保存并切过去，旧会话在切换成功之后才被拆掉。
-    await _saveConfig(config);
+    await _saveConfig(savedConfig);
     if (!mounted) return;
     context.go(Routes.index);
     MySnackBar.showSuccess(context, _isEditing ? '网关已更新' : '网关已添加');
@@ -424,9 +443,42 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       await widget.viewModel.addServer(config);
     }
     widget.viewModel.selectServer(config);
+
+    // 保存后主动按新配置连一次 —— 否则这次保存当场不生效。
+    //
+    // 为什么必须主动连：改**同一个**服务器时 id 没变，`main.dart` 里
+    // `IndexScreen` 的 `ValueKey(selectedServer.id)` 也就没变，壳不会重建，
+    // `initState` 里的 `connect()` 不会再跑；而刚才那次探测用的是用完即弃的
+    // 会话，并没有碰正在使用的那条。结果就是"配置已经改对了，但当前会话仍按
+    // 旧 scopes 工作"（现象：能连上，却没有 operator.admin）。
+    //
+    // 这里不用自己拼配置：`ConnViewModel.connect()` 会重读 `selectedServer`，
+    // 并顺带跑一次 `_learnGrantedScopes()`（用 hello 校正 scopes）。
+    if (!mounted) return;
+    await context.read<ConnViewModel>().connect();
   }
 
+  /// 构造**探测用的**配置。
+  ///
+  /// 产出的 `operatorScopes` 只是"探测种子"，不是最终要保存的值：探测成功后
+  /// 会用握手回来的 `auth.scopes` 覆盖它（见 `_connectAndSave`）。
   ServerConfig _buildConfig() {
+    // 本页只提供 password/token 两种凭据。若只是改名字、地址等，而 token 内容
+    // 一个字没动，就保留原来的"设备令牌"种类 —— 否则会把受限凭据改判成全权，
+    // 下次连接按全量 scopes 请求，触发 scope-upgrade 审批（反过来，凭据真的
+    // 换了就必须按表单上选的种类走，否则又会出现"权限升不上来"）。
+    //
+    // 这里只判断"凭据种类"；"这份凭据到底有哪些 scopes"必须问网关（见下）。
+    final original = widget.server;
+    final credentialUnchanged =
+        original != null &&
+        _tokenController.text.trim() == original.token &&
+        _passwordController.text.trim() == original.password;
+    final authMode =
+        credentialUnchanged && original.isDeviceTokenAuth
+            ? ServerConfig.authModeDeviceToken
+            : _authMode;
+
     return ServerConfig(
       id: _serverId ?? const Uuid().v4(),
       name: _nameController.text.trim(),
@@ -434,7 +486,17 @@ class _ServerEditPageState extends State<ServerEditScreen> {
       port: int.parse(_portController.text.trim()),
       token: _tokenController.text.trim(),
       password: _passwordController.text.trim(),
-      authMode: _authMode,
+      authMode: authMode,
+      // 探测种子：凭据没动就沿用上次记录的集合（已知握手能过，不会因为多要
+      // scope 被网关拒），凭据换了就留空 —— 新凭据的授权未知，交给
+      // `openClawMinimalOperatorScopes` 兜底，先连上再从 hello 学回来。
+      //
+      // 别把它当"最终值"：网关侧升/降权不会改动客户端凭据，这份记录随时可能
+      // 过期，所以保存前一律以探测结果为准。
+      operatorScopes:
+          credentialUnchanged
+              ? original.operatorScopes
+              : const <String>[],
       useTLS: _useTLS,
       isDefault: widget.server?.isDefault ?? false,
     );

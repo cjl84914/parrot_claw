@@ -115,12 +115,17 @@ class GatewayRepository extends ChangeNotifier {
   String? disconnectReason;
 
   GatewayRepository({GatewaySessionFactory? sessionFactory})
-    : _sessionFactory = sessionFactory ?? defaultGatewaySessionFactory {}
+    : _sessionFactory = sessionFactory ?? defaultGatewaySessionFactory;
 
-  void _onServerChanged() {
-    _log.info('Server configuration changed, auto connecting...');
-    reconnect(); // 自动调用连接
-  }
+  // 这里原先有个 `_onServerChanged()`（日志写着 "Server configuration changed,
+  // auto connecting..."），想监听 ServerRepository 自动重连 —— 但从来没有地方
+  // 注册它，是死代码，而且它的存在让注释一度以为"保存配置会自动重连"。
+  //
+  // 实际行为：只有 `ConnViewModel.connect()`（index 页 initState）和手动
+  // `reconnect()` 会建/换会话；改**同一个**服务器的配置不会触发重连
+  // （`main.dart` 的 `ValueKey(selectedServer.id)` 没变 → 壳不重建）。
+  // 真要把这条接上的话注意：`selectServer`（内部走 `setDefault`）和
+  // `updateServer` 都会 notifyListeners，直接接上会连两次。
 
   /// 主动断开标志：disconnect() 设置，避免断开事件被当作故障上报 UI
   bool _manualDisconnect = false;
@@ -248,24 +253,11 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
-  /// 构造连接某个网关所需的运行时配置。
-  ///
-  /// scopes 的决策只在这里做一次：扫码配对（受限 operator）加入的网关要复用
-  /// 配对时实际授权的 scopes，否则按默认全量（含 admin/pairing）请求会触发
-  /// scope-upgrade 审批。探测与正式连接共用它，"探测通过"才等于"连得上"。
-  // Future<GatewayConnectConfig> _connectConfigFor(ServerConfig config) async {
-  //   final storedScopes = await GatewayScopeStore.operatorScopes(config.wsUrl);
-  //   return GatewayConnectConfig(
-  //     url: config.wsUrl,
-  //     token: config.isTokenAuth ? config.token : null,
-  //     password: config.isPasswordAuth ? config.password : null,
-  //     scopes: storedScopes ?? openClawOperatorScopes,
-  //   );
-  // }
-
   /// 用一条用完即弃的会话试连，**不会**触碰本仓库正在使用的会话。
   ///
-  /// 见 [probeGateway]：探测与正式连接共用同一套 scopes 决策。
+  /// 见 [probeGateway]：探测与正式连接共用同一套 scopes 决策 —— 两端都由
+  /// [GatewayConnectConfig.fromServer] 构造，本仓库不再自己拼配置，也不持久化
+  /// scopes（scopes 按凭据种类推导：设备令牌 → 受限集合，长效 token/密码 → 全量）。
   Future<GatewayOperationResult<HelloOk>> probeServer(
     GatewayConnectConfig config,
   ) async {
@@ -1345,16 +1337,30 @@ class GatewayRepository extends ChangeNotifier {
   Set<String> get clawHubInstallingSlugs =>
       Set.unmodifiable(_clawHubInstallingSlugs);
 
-  /// 当前连接是否拿到 `operator.admin`。
+  /// 本次会话网关**实际授权**的 scopes（hello 里的 `auth.scopes`）。
   ///
-  /// 安装 ClawHub 技能需要写权限，与 Android `operatorAdminScopeAvailable` 同源：
-  /// 读 hello 里 `auth.scopes`（网关没返回时视为没有，由调用方提示）。
+  /// 语义与归一化规则见 [grantedScopesFromHello]。设备令牌的 scopes 客户端推不
+  /// 出来，所以连接成功后要把这份写回配置（见 `ConnViewModel.connect()`），
+  /// 网关侧升/降权后才能自愈。
+  List<String>? get grantedScopes => grantedScopesFromHello(_hello);
+
+  /// 当前连接是否**真的**能用 `operator.admin`（安装 ClawHub 技能需要它）。
+  ///
+  /// 必须读**握手请求的那一份**（`_gatewayConfig.scopes`），不能读 hello 里的
+  /// `auth.scopes`。网关的方法鉴权是
+  /// `const scopes = client.connect.scopes ?? []` 再 `scopes.includes("operator.admin")`
+  /// （`dist/server-methods-NpEcZnvp.js:80-83`）—— **只认请求列表**。
+  ///
+  /// 而 `hello.auth.scopes` 对设备令牌会话回的是**该令牌自身的 scopes**，可以是
+  /// 请求集合的超集（网关 `ensureDeviceToken` 在「请求 ⊆ 令牌授权」时直接复用旧
+  /// 令牌，不会收窄）。拿它当判据就会出现"按钮可点、一点就报 missing scope"。
+  ///
+  /// [grantedScopes] 要的恰恰是那份令牌授权（用于回写配置自愈），两者用途不同，
+  /// 别互相替换。
   bool get clawHubCanInstall {
-    final scopes = _hello?.auth['scopes'];
-    if (scopes is! List) return false;
-    return scopes.whereType<String>().any(
-      (scope) => scope.trim() == 'operator.admin',
-    );
+    final scopes = _gatewayConfig?.scopes;
+    if (scopes == null) return false;
+    return scopes.any((scope) => scope.trim() == 'operator.admin');
   }
 
   /// 搜索序号：只让最新一次搜索的结果落地，旧响应直接丢弃。

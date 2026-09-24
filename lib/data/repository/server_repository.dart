@@ -59,6 +59,11 @@ class ServerRepository extends ChangeNotifier {
   Future<void> updateServer(String id, ServerConfig newConfig) async {
     await _storage.saveServer(newConfig);
     _servers = _servers.map((s) => s.id == id ? newConfig : s).toList();
+    // 选中项也要换成新实例：否则 `_selectedServer` 一直指着更新前的旧对象，
+    // 之后的 connect() 会按旧数据建会话（例如刚写回的 operatorScopes 读不到）。
+    if (_selectedServer?.id == id) {
+      _selectedServer = newConfig;
+    }
     notifyListeners();
   }
 

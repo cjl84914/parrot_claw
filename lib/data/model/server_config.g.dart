@@ -21,6 +21,11 @@ _ServerConfig _$ServerConfigFromJson(Map<String, dynamic> json) =>
               : DateTime.parse(json['lastConnected'] as String),
       authMode: json['authMode'] as String? ?? 'token',
       password: json['password'] as String? ?? '',
+      operatorScopes:
+          (json['operatorScopes'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const <String>[],
     );
 
 Map<String, dynamic> _$ServerConfigToJson(_ServerConfig instance) =>
@@ -35,4 +40,5 @@ Map<String, dynamic> _$ServerConfigToJson(_ServerConfig instance) =>
       'lastConnected': instance.lastConnected?.toIso8601String(),
       'authMode': instance.authMode,
       'password': instance.password,
+      'operatorScopes': instance.operatorScopes,
     };

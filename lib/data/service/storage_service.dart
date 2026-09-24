@@ -135,6 +135,21 @@ class ServerConfigAdapter extends TypeAdapter<ServerConfig> {
       // Old data without authMode/password fields
     }
 
+    List<String> operatorScopes = const [];
+    try {
+      final rawScopes = reader.read();
+      if (rawScopes is List) {
+        operatorScopes =
+            rawScopes
+                .whereType<String>()
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
+      }
+    } catch (_) {
+      // Old data without operatorScopes field
+    }
+
     return ServerConfig(
       id: id,
       name: name,
@@ -146,6 +161,7 @@ class ServerConfigAdapter extends TypeAdapter<ServerConfig> {
       lastConnected: lastConnected,
       authMode: authMode,
       password: password,
+      operatorScopes: operatorScopes,
     );
   }
 
@@ -161,5 +177,6 @@ class ServerConfigAdapter extends TypeAdapter<ServerConfig> {
     writer.write(obj.lastConnected);
     writer.write(obj.authMode);
     writer.write(obj.password);
+    writer.write(obj.operatorScopes);
   }
 }

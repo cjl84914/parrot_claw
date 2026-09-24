@@ -86,15 +86,14 @@ class ServerViewModel extends ChangeNotifier {
   ///
   /// 走一次性的独立 runtime，不触碰当前共享会话：失败时当前连接、当前配置和
   /// 自动重连都不会被影响。只有返回 ok 才应该保存并切换过去。
+  ///
+  /// 与正式连接共用 [GatewayConnectConfig.fromServer]，所以 scopes 的推导一致 ——
+  /// 否则会出现"测试连接成功（全量 scopes 拿到 admin）、正式连接却受限"的错位。
   Future<GatewayOperationResult<HelloOk>> probeServer(
     ServerConfig config,
   ) async {
     return _gatewayRepository.probeServer(
-      GatewayConnectConfig(
-        url: config.wsUrl,
-        token: config.isTokenAuth ? config.token : null,
-        password: config.isPasswordAuth ? config.password : null,
-      ),
+      GatewayConnectConfig.fromServer(config),
     );
   }
 }

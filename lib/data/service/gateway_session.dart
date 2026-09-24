@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/io.dart';
+import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/util/device_identity.dart';
 
 enum GatewayAuthSource {
@@ -63,6 +64,29 @@ const openClawOperatorScopes = <String>[
   'operator.write',
 ];
 
+/// 扫码配对下发的设备令牌只能请求的受限 operator scopes
+/// （BOOTSTRAP_HANDOFF_OPERATOR_SCOPES：无 admin、无 pairing）。
+///
+/// 注意这只是**兜底默认值**，不是真相：网关给设备令牌授了什么，只有网关知道。
+/// 正常路径是配对时把网关发的那一份记进 [ServerConfig.operatorScopes]，连接时
+/// 原样请求 —— 见 [GatewayConnectConfig.fromServer]。
+const openClawDeviceTokenScopes = <String>[
+  'operator.approvals',
+  'operator.questions',
+  'operator.read',
+  'operator.talk.secrets',
+  'operator.write',
+];
+
+/// 设备令牌配置**没有**记录 scopes 时的兜底请求集合。
+///
+/// 为什么不是 [openClawDeviceTokenScopes]：网关校验的是「请求 ⊆ 令牌授权」，
+/// 多要一个就整条握手被拒（`device token scope mismatch`）。上面那份常量里的
+/// `operator.questions` 在很多网关上并不在授权范围内，拿它当默认会直接连不上。
+/// 这里退到几乎任何 operator 令牌都有的 `operator.read`：先连上，再由
+/// `hello.auth.scopes` 学到真实 scopes 并写回配置，下一次连接就是完整权限。
+const openClawMinimalOperatorScopes = <String>['operator.read'];
+
 /// 建立一条 operator 会话所需的连接设置（值对象，不可变）。
 ///
 /// 这是「App 侧的连接意图」：一个 url + 一套凭据 + 一份角色/权限声明，
@@ -97,6 +121,35 @@ class GatewayConnectConfig {
     this.permissions = const <String, bool>{},
     this.clientDisplayName = 'ParrotClaw',
   });
+
+  /// 由持久化的端点配置构造连接意图 —— **scopes 的唯一决策点**。
+  ///
+  /// 请求的 scopes 同时决定两件事，所以不能随便给：
+  /// 1. **权限上限**：网关只返回「请求 ∩ 凭据授权」，列表里没有
+  ///    `operator.admin` 时，即使凭据是全权的也拿不到 admin；
+  /// 2. **握手能不能过**：设备令牌会话要求「请求 ⊆ 该令牌授权」，多要一个就被
+  ///    拒（`device token scope mismatch`）。
+  ///
+  /// 因此分三种情况：
+  /// - 设备令牌（扫码配对下发）→ 用 [ServerConfig.operatorScopes]（配对时记下、
+  ///   每次连接成功后再用 `hello.auth.scopes` 校正）；没记录时退到
+  ///   [openClawMinimalOperatorScopes]，先连上再自愈。
+  /// - 长效 token / 密码 → 默认全量（这类凭据的授权就是请求值本身）。
+  ///
+  /// 探测（`probeServer`）与正式连接共用本方法，"探测通过"才等于"连得上"。
+  factory GatewayConnectConfig.fromServer(ServerConfig config) {
+    return GatewayConnectConfig(
+      url: config.wsUrl,
+      token: config.isTokenAuth ? config.token : null,
+      password: config.isPasswordAuth ? config.password : null,
+      scopes:
+          config.isDeviceTokenAuth
+              ? (config.operatorScopes.isNotEmpty
+                  ? config.operatorScopes
+                  : openClawMinimalOperatorScopes)
+              : openClawOperatorScopes,
+    );
+  }
 
   GatewayConnectOptions toGatewayOptions() => GatewayConnectOptions(
     role: role,
@@ -234,6 +287,46 @@ class HelloOk {
     auth: (json['auth'] as Map?)?.cast<String, dynamic>() ?? {},
     policy: (json['policy'] as Map?)?.cast<String, dynamic>() ?? {},
   );
+}
+
+/// 从 hello 的 `auth.scopes` 取网关**实际授权**的 operator scopes。
+///
+/// 语义随凭据而变（网关 `helloOkAuthScopes = deviceToken ? deviceToken.scopes : scopes`）：
+/// - 设备令牌会话 → **该令牌自身的 scopes**，与请求值无关。这是"这份凭据到底有
+///   哪些权限"的唯一来源：客户端推不出来，而网关侧升/降权（`devices approve`）
+///   并不会改动客户端持有的凭据，只能每次握手时学回来；
+/// - 共享 token / 密码会话 → 就是请求值本身。
+///
+/// 空集合归一成 null —— 对调用方而言"没学到"和"一个都没有"处理方式相同。
+///
+/// 纯函数（只依赖 hello），所以探测拿到的那份 hello 也能直接喂进来，
+/// 不必先落到仓库的 `_hello` 上。
+List<String>? grantedScopesFromHello(HelloOk? hello) {
+  final scopes = hello?.auth['scopes'];
+  if (scopes is! List) return null;
+  final normalized =
+      scopes
+          .whereType<String>()
+          .map((scope) => scope.trim())
+          .where((scope) => scope.isNotEmpty)
+          .toList();
+  return normalized.isEmpty ? null : normalized;
+}
+
+/// 用一次握手的结果校正配置里记录的 operator scopes。
+///
+/// 为什么需要它：配置里那份（配对时记下的）随时可能过期 —— 网关侧升/降权
+/// （`devices approve`）并不会改动客户端持有的凭据，所以"凭据没变"推不出
+/// "权限没变"。每次握手带回来的 `auth.scopes` 才是当前真相。
+///
+/// 只覆盖 `operatorScopes`，不动凭据种类 —— 凭据种类由用户的选择与 token 是否
+/// 改动决定，与权限无关。
+///
+/// 没学到（[grantedScopesFromHello] 返回 null）时原样返回，避免把已知能用的
+/// 记录清空。
+ServerConfig withGrantedScopesFromHello(ServerConfig config, HelloOk? hello) {
+  final granted = grantedScopesFromHello(hello);
+  return granted == null ? config : config.copyWith(operatorScopes: granted);
 }
 
 class HelloSnapshot {
@@ -775,7 +868,6 @@ class GatewaySession {
   GatewaySessionState _state = GatewaySessionState.idle;
   GatewayAuthSource _lastAuthSource = GatewayAuthSource.none;
   bool _shouldReconnect = true;
-  bool _listening = false;
   bool _attemptInFlight = false;
   double _tickIntervalMs = 30000;
 
@@ -1062,7 +1154,6 @@ class GatewaySession {
   });
 
   void _listen(GatewaySocket socket, int generation) {
-    _listening = true;
     _subscription = socket.stream.listen(
       (raw) => _handleRaw(raw, generation),
       onError:
@@ -1111,17 +1202,19 @@ class GatewaySession {
   }
 
   Future<HelloOk> _sendConnect(int generation) async {
+    // 兜底直接复用 App 的规范集合，**不要在这里再手写一份**：这份兜底曾经写着
+    // `operator.pairing`，而设备令牌永远拿不到 pairing —— 只要有调用方忘了传
+    // `connectOptions`（`GatewayConnection.configure()` 的参数就是可选的），
+    // 握手会被 `device token scope mismatch` 直接拒掉，且极难定位。
+    //
+    // 生产路径一律由 `GatewayConnectConfig.toGatewayOptions()` 提供 options
+    // （scopes 的唯一决策点是 `GatewayConnectConfig.fromServer`），所以这份
+    // 兜底正常不会被执行，改它不影响现有行为。
     final options =
         connectOptions ??
         const GatewayConnectOptions(
           role: 'operator',
-          scopes: [
-            'operator.admin',
-            'operator.read',
-            'operator.write',
-            'operator.approvals',
-            'operator.pairing',
-          ],
+          scopes: openClawOperatorScopes,
           caps: [],
           commands: [],
           permissions: {},
@@ -1261,7 +1354,6 @@ class GatewaySession {
       return;
     _generation++;
     _state = GatewaySessionState.disconnected;
-    _listening = false;
     _tickTimer?.cancel();
     _tickTimer = null;
     _failPending(StateError('gateway connection closed: $reason'));
@@ -1310,7 +1402,6 @@ class GatewaySession {
   }) async {
     final subscription = _subscription;
     _subscription = null;
-    _listening = false;
     if (failPending) {
       _failPending(
         StateError(

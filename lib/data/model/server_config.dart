@@ -21,6 +21,20 @@ abstract class ServerConfig with _$ServerConfig {
     @HiveField(7) DateTime? lastConnected,
     @HiveField(8) @Default('token') String authMode,
     @HiveField(9) @Default('') String password,
+    /// 网关为**这份凭据**实际授权的 operator scopes（设备令牌才需要）。
+    ///
+    /// 设备令牌的 scopes 是网关侧决定的，客户端推不出来：请求里多一个不在授权
+    /// 范围内的 scope，握手就会被拒（`device token scope mismatch`），而且
+    /// **会话权限就是请求列表本身**（网关用 `client.connect.scopes` 做方法鉴权），
+    /// 所以既不能多要、也不能不要。
+    ///
+    /// 维护规则（三条缺一不可）：
+    /// - 配对成功时记下网关发的那一份；
+    /// - 每次连接成功后用 `hello.auth.scopes`（设备令牌会话返回的就是该令牌的
+    ///   真实 scopes）校正，网关侧升/降权后能自愈；
+    /// - 凭据变了（token/password 改动、重新配对）必须清空，否则会把旧凭据的
+    ///   权限带到新凭据上。
+    @HiveField(10) @Default(<String>[]) List<String> operatorScopes,
   }) = _ServerConfig;
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) =>
@@ -36,8 +50,26 @@ abstract class ServerConfig with _$ServerConfig {
   /// 获取显示地址
   String get displayAddress => '$host:$port';
 
-  bool get isPasswordAuth => authMode == 'password';
-  bool get isTokenAuth => authMode != 'password';
+  /// 网关长效 token（openclaw.json 里的共享令牌）。
+  static const String authModeToken = 'token';
+
+  /// 网关密码。
+  static const String authModePassword = 'password';
+
+  /// 扫码配对（device.pair.setupCode / bootstrap）下发的**设备令牌**。
+  ///
+  /// 它和长效 token 是两种凭据：网关对设备令牌只授权受限 operator scopes
+  /// （无 admin/pairing），所以连接时请求的 scopes 也必须跟着收窄 —— 否则会
+  /// 触发 scope-upgrade 审批。凭据种类 + [operatorScopes] 一起决定请求什么，
+  /// 见 `GatewayConnectConfig.fromServer`。
+  static const String authModeDeviceToken = 'device-token';
+
+  bool get isPasswordAuth => authMode == authModePassword;
+  /// 是否扫码配对下发的设备令牌（受限 scopes）。
+  bool get isDeviceTokenAuth => authMode == authModeDeviceToken;
+
+  /// 除密码认证外都从 `token` 字段取凭据（含设备令牌）。
+  bool get isTokenAuth => !isPasswordAuth;
 
   /// 获取当前生效的认证凭证
   String get activeCredential => isPasswordAuth ? password : token;

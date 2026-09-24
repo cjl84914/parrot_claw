@@ -347,13 +347,7 @@ class SetupModelViewModel extends ChangeNotifier {
   /// 仓库的 connect() 会把失败原因写进 disconnectReason 而不抛出，所以这里要
   /// 用 connected 复核一次，才能把「连不上」如实报给用户。
   Future<void> _ensureGatewayConnected(ServerConfig config) async {
-    await _gatewayRepository.connect(
-      GatewayConnectConfig(
-        url: config.wsUrl,
-        token: config.isTokenAuth ? config.token : null,
-        password: config.isPasswordAuth ? config.password : null,
-      ),
-    );
+    await _gatewayRepository.connect(GatewayConnectConfig.fromServer(config));
     if (!_gatewayRepository.connected) {
       throw StateError(
         _gatewayRepository.disconnectReason ??
