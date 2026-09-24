@@ -157,15 +157,31 @@ class _ChatScreenState extends State<ChatScreen>
       }
       final id = '${m.id}#media${messages.length}';
       if (media.type == 'image') {
-        messages.add(
-          ImageMessage(
-            id: id,
-            authorId: authorId,
-            size: 0,
-            createdAt: createdAt,
-            source: _resolveImageSource(rawSource),
-          ),
-        );
+        final imageSource = _resolveImageSource(rawSource);
+        if (imageSource != null) {
+          messages.add(
+            ImageMessage(
+              id: id,
+              authorId: authorId,
+              size: 0,
+              createdAt: createdAt,
+              source: imageSource,
+            ),
+          );
+        } else {
+          // 拿不到能加载的地址（例如别人那台设备上的路径）就降级成文件卡片：
+          // 它不读盘、不发请求，至少让用户看到「这里有一张图」，
+          // 而不是一个永远转圈的气泡 + 一条未捕获异常。
+          messages.add(
+            FileMessage(
+              id: id,
+              authorId: authorId,
+              createdAt: createdAt,
+              source: rawSource,
+              name: media.fileName ?? _fileNameOf(rawSource),
+            ),
+          );
+        }
       } else if (media.type == 'file' ||
           media.type == 'video' ||
           media.type == 'audio') {
@@ -203,24 +219,47 @@ class _ChatScreenState extends State<ChatScreen>
     ];
   }
 
+  /// 只可能出现在**设备本地**沙箱里的路径前缀（Android / iOS）。
+  ///
+  /// 网关那台机器是 macOS / Windows / Linux，不会有这些前缀，所以这类路径
+  /// 不可能通过 assistant-media 取到 —— 它属于**发送方那台设备**，别的客户端
+  /// 请求它只会拿到 404。注意别把 Windows 盘符路径（`C:\...`）加进来：
+  /// 网关本身可以跑在 Windows 上。
+  static const List<String> _deviceOnlyPathPrefixes = <String>[
+    'content://',
+    'file:///data/',
+    '/data/',
+    '/storage/',
+    '/mnt/',
+    '/var/mobile/',
+    '/private/var/',
+    '/var/containers/',
+  ];
+
   /// 图片渲染用的 source —— 交给图片组件之前必须先过这里。
   ///
-  /// `flyer_chat_image_message` 内部是 `cross_cache` 的
-  /// `CachedNetworkImage(message.source)`，而 `cross_cache` 只认四类 source：
-  /// `assets/`、`data:` URI、`http/https/blob`，**其余一律**先
-  /// `XFile(source).readAsBytes()` 读盘、再试 `base64Decode`，都失败就抛
-  /// `Invalid source: cannot be processed`（`cross_cache.dart` 的 `downloadAndSave`）。
+  /// **返回 null 表示「这个路径谁也加载不了」**，调用方要降级成文件卡片。
   ///
-  /// 网关给的 `MEDIA:` 路径是**网关那台机器上的绝对路径**：桌面端这个文件恰好
-  /// 就在本机，读盘蒙对了；移动端读不到盘 → 图片位置一片空白。
-  /// 所以：
-  /// - 本来就能直接加载的 → 原样返回；
-  /// - 本机真实存在的文件（桌面端、自己刚发出去的附件）→ 原样返回，走本地读盘；
-  /// - 其余（路径属于网关那台机器）→ 交给 ViewModel 转成 assistant-media URL。
+  /// 为什么要卡这么死：`flyer_chat_image_message` 内部是 `cross_cache` 的
+  /// `CachedNetworkImage(message.source)`，它只认 `assets/`、`data:`、
+  /// `http/https/blob`，其余一律先 `XFile(path)` 读盘、再试裸 base64，都失败
+  /// 就抛 `Invalid source: cannot be processed`；HTTP 拿到非 200 则抛
+  /// `DioException`。而且它是抛在 `MultiFrameImageStreamCompleter`
+  /// `_handleCodecReady` 的异步续体里 —— 那是**未捕获异常**（日志刷红），
+  /// `errorBuilder` 轮不到，气泡就一直停在加载态。
+  ///
+  /// 规则：
+  /// 1. 本来就能直接加载的（http/https/data/blob/assets）→ 原样；
+  /// 2. 本机真实存在的文件 → 原样（桌面端、自己刚发出去的附件走本地读盘）；
+  /// 3. 设备本地沙箱路径（见 [_deviceOnlyPathPrefixes]）→ null：它在网关那台
+  ///    机器上不存在，转成 assistant-media 只会 404；
+  /// 4. 其余按「网关那台机器上的路径」处理 → assistant-media URL。助手的
+  ///    `MEDIA:` 指令、以及用户消息的 `MediaPath` 副本都属于这一类，移动端
+  ///    靠它才能显示。
   ///
   /// 注意「能否直接加载」不能只看 `uri.scheme` 非空：Windows 盘符路径
   ///（`C:\...`）会被解析成 `scheme == 'c'`，所以这里逐个列出可加载的 scheme。
-  String _resolveImageSource(String source) {
+  String? _resolveImageSource(String source) {
     final scheme = Uri.tryParse(source)?.scheme ?? '';
     final loadableDirectly =
         scheme == 'http' ||
@@ -230,7 +269,20 @@ class _ChatScreenState extends State<ChatScreen>
         source.startsWith('assets/');
     if (loadableDirectly) return source;
     if (File(source).existsSync()) return source;
+    for (final prefix in _deviceOnlyPathPrefixes) {
+      if (source.startsWith(prefix)) return null;
+    }
     return widget.viewModel.resolveMediaUrl(context, source);
+  }
+
+  /// 从路径里取文件名。用户消息的图片块只带路径、不带 `fileName`，
+  /// 降级成文件卡片时得自己从路径里切一个出来。
+  String _fileNameOf(String path) {
+    final segments = path.replaceAll('\\', '/').split('/');
+    for (final segment in segments.reversed) {
+      if (segment.isNotEmpty) return segment;
+    }
+    return path;
   }
 
   @override

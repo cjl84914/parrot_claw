@@ -879,8 +879,13 @@ class GatewayRepository extends ChangeNotifier {
 
     if (content is String && content.isNotEmpty) {
       if ('${obj['MediaType'] ?? ''}'.startsWith('image')) {
+        // 图片要用**网关侧的副本**（inbound 目录）而不是 `content` 里发送方的
+        // 本地路径：后者只存在于发送方那台设备上，别的客户端（桌面端看手机发的
+        // 图、手机看桌面端发的图）把它转成 assistant-media 只会拿到 404。
+        // `MediaPath` 缺失时退回 `content`，行为与改动前一致。
+        final imagePath = _gatewayMediaPath(obj) ?? content;
         return [
-          ChatMessageContent(type: 'image', text: content),
+          ChatMessageContent(type: 'image', text: imagePath),
           ChatMessageContent(type: 'text', text: content),
         ];
       }
@@ -1013,6 +1018,25 @@ class GatewayRepository extends ChangeNotifier {
       debugPrint('Failed to parse session message: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  /// 网关侧的媒体副本路径。
+  ///
+  /// 用户消息里的 `content` 是**发送方那台设备**的本地路径，只有发送方自己
+  /// 读得到；网关会把附件复制到自己的 inbound 目录，并在消息对象上带
+  /// `MediaPath`（单个）/ `MediaPaths`（多个）。只有这个副本是**任何客户端
+  /// 都能通过 assistant-media 取到**的，所以渲染一律优先用它。
+  String? _gatewayMediaPath(Map<String, dynamic> obj) {
+    final single = obj['MediaPath'];
+    if (single is String && single.trim().isNotEmpty) return single.trim();
+
+    final many = obj['MediaPaths'];
+    if (many is List) {
+      for (final item in many) {
+        if (item is String && item.trim().isNotEmpty) return item.trim();
+      }
+    }
+    return null;
   }
 
   String _mediaType(String mediaUrl) {
