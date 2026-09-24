@@ -98,13 +98,30 @@ class GatewayConnectConfig {
   final String? token;
   final String? password;
   final String? bootstrapToken;
-  final String clientId;
+
+  /// 网关客户端标识（wire 上是 `connect.client.id`）。
+  ///
+  /// **null = 按当前平台自动选择**（[gatewayClientIdForPlatform]），这是所有
+  /// 连接点的正常用法 —— 构造时不传就是它。只有"这次会话的身份与常规会话不同"
+  /// 的场景才显式传（目前只有扫码配对的 bootstrap 会话，见
+  /// [canonicalMobileClientId]）。
+  ///
+  /// **不要在这里写自造字符串**：网关侧是封闭枚举，白名单外的值会让整条握手
+  /// 被 `INVALID_REQUEST` 打回，连不上而不是降级。
+  final String? clientId;
   final String clientMode;
   final String role;
   final List<String> scopes;
   final List<String> caps;
   final List<String> commands;
   final Map<String, bool> permissions;
+
+  /// 网关展示名（wire 上是 `connect.client.displayName`）。
+  ///
+  /// null = 按平台取 [gatewayClientDisplayNameForPlatform]。网关侧对该字段的
+  /// 定义是 `Type.Optional(NonEmptyString)` 且注释写明 "not used for policy
+  /// decisions"，只进日志（`clientLabel = displayName ?? id`）与 presence 展示，
+  /// 所以可以放心带平台后缀。
   final String? clientDisplayName;
 
   const GatewayConnectConfig({
@@ -112,14 +129,14 @@ class GatewayConnectConfig {
     this.token,
     this.password,
     this.bootstrapToken,
-    this.clientId = 'openclaw-android',
+    this.clientId,
     this.clientMode = 'ui',
     this.role = 'operator',
     this.scopes = openClawOperatorScopes,
     this.caps = const <String>[],
     this.commands = const <String>[],
     this.permissions = const <String, bool>{},
-    this.clientDisplayName = 'ParrotClaw',
+    this.clientDisplayName,
   });
 
   /// 由持久化的端点配置构造连接意图 —— **scopes 的唯一决策点**。
@@ -137,6 +154,10 @@ class GatewayConnectConfig {
   /// - 长效 token / 密码 → 默认全量（这类凭据的授权就是请求值本身）。
   ///
   /// 探测（`probeServer`）与正式连接共用本方法，"探测通过"才等于"连得上"。
+  ///
+  /// 注意这里**故意不传** `clientId` / `clientDisplayName`：两者由
+  /// [toGatewayOptions] 按当前平台补全（见 [gatewayClientIdForPlatform]），
+  /// 这样"每次连接都声明自己是本平台的原生客户端"，不必在每个调用点各写一份。
   factory GatewayConnectConfig.fromServer(ServerConfig config) {
     return GatewayConnectConfig(
       url: config.wsUrl,
@@ -151,17 +172,30 @@ class GatewayConnectConfig {
     );
   }
 
-  GatewayConnectOptions toGatewayOptions() => GatewayConnectOptions(
-    role: role,
-    scopes: scopes,
-    scopesAreExplicit: true,
-    caps: caps,
-    commands: commands,
-    permissions: permissions,
-    clientId: clientId,
-    clientMode: clientMode,
-    clientDisplayName: clientDisplayName,
-  );
+  /// 把连接意图映射成握手用的 options。
+  ///
+  /// 这里是 `clientId` / `clientDisplayName` 的**唯一决策点**：两者为 null 时按
+  /// 当前平台补全。平台与 id 必须一致 —— 网关会拿 `client.id` +
+  /// `client.platform` + `client.deviceFamily` 组成三元组校验
+  /// （`isSetupCodeMobileBootstrapClient`、`resolvePinnedClientMetadata`），
+  /// 声明的 id 与实际上报的平台不符时，扫码配对会从"静默自动批准"退化成
+  /// "需要 owner 手动批准"。
+  GatewayConnectOptions toGatewayOptions() {
+    final resolvedClientId = clientId ?? gatewayClientIdForPlatform();
+    final resolvedDisplayName =
+        clientDisplayName ?? gatewayClientDisplayNameForPlatform();
+    return GatewayConnectOptions(
+      role: role,
+      scopes: scopes,
+      scopesAreExplicit: true,
+      caps: caps,
+      commands: commands,
+      permissions: permissions,
+      clientId: resolvedClientId,
+      clientMode: clientMode,
+      clientDisplayName: resolvedDisplayName,
+    );
+  }
 
   GatewayConnectConfig copyWith({
     String? url,
@@ -228,10 +262,20 @@ class GatewayConnectConfig {
   );
 }
 
+/// 扫码配对（bootstrap）会话专用的客户端标识。
+///
+/// 为什么不能直接复用 [gatewayClientIdForPlatform]：
+/// - 移动端**必须**用官方 canonical id（`openclaw-android` / `openclaw-ios`）。
+///   网关的 setup code 静默放行要求「mobile profile + id ∈ {android, ios} 且
+///   `platform` / `deviceFamily` 三元组一致」（`isSetupCodeMobileBootstrapClient`），
+///   换成别的值就退回"需要 owner 手动批准"。
+/// - 桌面端没有对应的原生 id 能命中任何静默分支，退回 `node-host`：它是**唯一**
+///   还能匹配 `isNodePairingSetupBootstrapProfile` 静默分支的值（兑默认双角色码
+///   本来就要人工审批）。
 String canonicalMobileClientId() {
-  if (Platform.isAndroid) return 'openclaw-android';
-  if (Platform.isIOS) return 'openclaw-ios';
-  return 'node-host';
+  if (Platform.isAndroid) return openClawAndroidClientId;
+  if (Platform.isIOS) return openClawIosClientId;
+  return openClawNodeHostClientId;
 }
 
 String? deviceFamilyForPlatform() {
@@ -241,6 +285,64 @@ String? deviceFamilyForPlatform() {
   if (Platform.isWindows) return 'windows';
   if (Platform.isLinux) return 'linux';
   return null;
+}
+
+// ─────────────────────────────────────────────
+// 网关客户端标识（client.id）
+// ─────────────────────────────────────────────
+
+/// 网关侧**封闭注册表**里的官方客户端标识（`GATEWAY_CLIENT_IDS`）。
+///
+/// `client.id` 不是自由字符串：网关用 `GatewayClientIdSchema = Type.Enum(...)`
+/// 校验 `ConnectParamsSchema.client.id`，填注册表外的值会让**整条握手**被
+/// `INVALID_REQUEST` 打回（`invalid connect params: ...` +
+/// `closeCause: invalid-handshake`）—— 是连不上，不是降级。
+///
+/// 而且 id 会改行为，不只是标签：
+/// - `isOperatorUiClient` 只认 control-ui / browser-copilot / tui（**不看 `mode`**）；
+/// - 能收 exec 审批的只有 macos / ios / android；
+/// - 原生 App UI 静默路径（`isNativeAppUiClient`）要求 `mode == 'ui'` **且**
+///   id ∈ {macos, linux, ios, android}；
+/// - 扫码 setup code 的静默自动批准要求 id 与 profile、platform 三者匹配。
+const openClawAndroidClientId = 'openclaw-android';
+const openClawIosClientId = 'openclaw-ios';
+const openClawMacosClientId = 'openclaw-macos';
+const openClawLinuxClientId = 'openclaw-linux';
+const openClawNodeHostClientId = 'node-host';
+
+/// Windows 的兜底标识：注册表里**没有** `openclaw-windows`（网关只发布
+/// android / ios / linux / macos 原生 App；Windows 官方客户端是独立仓库的
+/// Windows Hub，以 `node-host` 身份注册成 node）。
+///
+/// 这里选通用的 `gateway-client`：不冒充任何原生 App。代价是 Windows 上拿不到
+/// `isNativeAppUiClient`（该判定本身就不含 Windows），反正两种候选都拿不到。
+/// 若想改成 `node-host`（更贴近官方 Windows 客户端的身份），改这一行即可。
+const openClawGenericClientId = 'gateway-client';
+
+/// 当前平台的网关客户端标识（`client.id`）。
+///
+/// 平台与 id 必须一致：网关会拿 `client.id` + `client.platform` +
+/// `client.deviceFamily` 组成三元组做校验，声明的 id 与实际上报的平台不符时，
+/// 扫码配对会从"静默自动批准"退化成"需要 owner 手动批准"。
+String gatewayClientIdForPlatform() {
+  if (Platform.isAndroid) return openClawAndroidClientId;
+  if (Platform.isIOS) return openClawIosClientId;
+  if (Platform.isMacOS) return openClawMacosClientId;
+  if (Platform.isLinux) return openClawLinuxClientId;
+  return openClawGenericClientId;
+}
+
+/// 当前平台的网关展示名（`client.displayName`）。
+///
+/// 该字段不参与任何网关策略，只进日志与 presence 展示，所以直接带平台后缀，
+/// 便于在网关侧一眼分清是哪个平台连上来的。
+String gatewayClientDisplayNameForPlatform() {
+  if (Platform.isAndroid) return 'parrotClaw-Android';
+  if (Platform.isIOS) return 'parrotClaw-iOS';
+  if (Platform.isMacOS) return 'parrotClaw-macOS';
+  if (Platform.isLinux) return 'parrotClaw-Linux';
+  if (Platform.isWindows) return 'parrotClaw-Windows';
+  return 'parrotClaw';
 }
 
 abstract class GatewayPush {
@@ -1208,19 +1310,20 @@ class GatewaySession {
     // 握手会被 `device token scope mismatch` 直接拒掉，且极难定位。
     //
     // 生产路径一律由 `GatewayConnectConfig.toGatewayOptions()` 提供 options
-    // （scopes 的唯一决策点是 `GatewayConnectConfig.fromServer`），所以这份
-    // 兜底正常不会被执行，改它不影响现有行为。
+    // （scopes 的唯一决策点是 `GatewayConnectConfig.fromServer`，clientId /
+    // displayName 的唯一决策点是 `gatewayClientIdForPlatform` 等平台函数），
+    // 所以这份兜底正常不会被执行，改它不影响现有行为。
     final options =
         connectOptions ??
-        const GatewayConnectOptions(
+        GatewayConnectOptions(
           role: 'operator',
           scopes: openClawOperatorScopes,
-          caps: [],
-          commands: [],
-          permissions: {},
-          clientId: 'gateway-client',
+          caps: const [],
+          commands: const [],
+          permissions: const {},
+          clientId: gatewayClientIdForPlatform(),
           clientMode: 'ui',
-          clientDisplayName: 'parrotClaw',
+          clientDisplayName: gatewayClientDisplayNameForPlatform(),
         );
     final nonce = await (_challenge?.future ??
             Future.error('challenge unavailable'))

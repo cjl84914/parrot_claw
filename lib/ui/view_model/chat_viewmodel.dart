@@ -89,6 +89,10 @@ class ChatViewModel extends ChangeNotifier {
 
   List<dynamic>? get rawModels => _gatewayRepository.rawModels;
 
+  Future loadModels() async{
+    await _gatewayRepository.listModels();
+  }
+
   /// 更新会话使用的模型和思考深度。
   ///
   /// 只会把非 null 的字段写入请求，因此可以单独更新其中一项，

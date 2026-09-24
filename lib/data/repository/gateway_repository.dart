@@ -280,7 +280,7 @@ class GatewayRepository extends ChangeNotifier {
     await _initializeSessionData();
     unawaited(beginHistoryLoad());
     unawaited(listSessions());
-    unawaited(listModels());
+    // unawaited(listModels());
   }
 
   Future<void> _initializeSessionData() async {

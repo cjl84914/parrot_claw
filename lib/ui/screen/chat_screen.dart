@@ -15,7 +15,6 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/message.dart' hide ChatMessage;
-import 'package:parrot_app/data/repository/server_repository.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/voice_screen.dart';
@@ -315,7 +314,7 @@ class _ChatScreenState extends State<ChatScreen>
                   child: IconButton(
                     onPressed: () {
                       if (kIsMobile) {
-                        context.go(Routes.voice);
+                        context.push(Routes.voice);
                       }
                       if (kIsDesktop) {
                         setState(() {
@@ -436,28 +435,32 @@ class _ChatScreenState extends State<ChatScreen>
                               index: index,
                             ),
                         composerBuilder:
-                            (context) => CustomComposer(
-                              key: _composerKey,
-                              // 「打断」已从上方工具栏挪到输入行（发送键的位置），
-                              // 生成中与否由 composer 自己读 viewModel.runId 判断。
-                              viewModel: widget.viewModel,
-                              topWidget: ComposerActionBar(
-                                buttons: [
-                                  ComposerActionButton(
-                                    visible: true,
-                                    icon: Icons.delete_sweep,
-                                    title: 'Clear',
-                                    onPressed: _resetConversation,
-                                  ),
-                                  ComposerActionButton(
-                                    key: _modelButtonKey,
-                                    visible: true,
-                                    icon: Icons.psychology_outlined,
-                                    title: widget.viewModel.model ?? '模型',
-                                    onPressed: () => _showModelOptions(context),
-                                    color: Colors.grey,
-                                  ),
-                                ],
+                            (context) => Visibility(
+                              visible: widget.viewModel.connected,
+                              child: CustomComposer(
+                                key: _composerKey,
+                                // 「打断」已从上方工具栏挪到输入行（发送键的位置），
+                                // 生成中与否由 composer 自己读 viewModel.runId 判断。
+                                viewModel: widget.viewModel,
+                                topWidget: ComposerActionBar(
+                                  buttons: [
+                                    ComposerActionButton(
+                                      visible: true,
+                                      icon: Icons.delete_sweep,
+                                      title: 'Clear',
+                                      onPressed: _resetConversation,
+                                    ),
+                                    ComposerActionButton(
+                                      key: _modelButtonKey,
+                                      visible: true,
+                                      icon: Icons.psychology_outlined,
+                                      title: widget.viewModel.model ?? '模型',
+                                      onPressed:
+                                          () => _showModelOptions(context),
+                                      color: Colors.grey,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                         // linkPreviewBuilder: (context, message, isSentByMe) {
@@ -887,11 +890,11 @@ class _ChatScreenState extends State<ChatScreen>
     return topLeft & renderObject.size;
   }
 
-  void _showModelOptions(BuildContext context) {
+  void _showModelOptions(BuildContext context) async {
     FocusManager.instance.primaryFocus?.unfocus();
     final modelButtonRect = _buttonRect(_modelButtonKey);
     if (modelButtonRect == null) return;
-
+    await widget.viewModel.loadModels();
     final items =
         (widget.viewModel.rawModels ?? []).whereType<Map>().map((model) {
           final modelId = model['id']?.toString();
@@ -986,11 +989,7 @@ class CustomComposer extends StatefulWidget {
   ///（`runId != ''` 即有一次生成在跑），所以直接把 viewModel 传进来。
   final ChatViewModel viewModel;
 
-  const CustomComposer({
-    super.key,
-    this.topWidget,
-    required this.viewModel,
-  });
+  const CustomComposer({super.key, this.topWidget, required this.viewModel});
 
   @override
   State<CustomComposer> createState() => _CustomComposerState();
@@ -1247,57 +1246,56 @@ class _CustomComposerState extends State<CustomComposer> {
                         )
                         : const SizedBox.shrink(),
                     const SizedBox(width: 4),
-                      Expanded(
-                        child:
-                            isVoiceMode
-                                ? SizedBox(
-                                    height: inputSingleLineHeight,
-                                    child: VoiceInputButton(
-                                      startRecording: _startRecording,
-                                      stopRecording: _stopRecording,
-                                    ),
-                                  )
-                                : _wrapFileDrop(
-                                  TextField(
-                                    controller: _controller,
-                                    decoration: InputDecoration(
-                                      hintText: '说点什么...',
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 12,
-                                          ),
-                                      hintStyle: theme.bodyMedium.copyWith(
-                                        color: theme.onSurface.withValues(
-                                          alpha: 0.5,
-                                        ),
-                                      ),
-                                      border: const OutlineInputBorder(
-                                        borderSide: BorderSide.none,
-                                        borderRadius: BorderRadius.all(
-                                          Radius.circular(24),
-                                        ),
-                                      ),
-                                      filled: true,
-                                      fillColor: theme.surfaceContainerHigh
-                                          .withValues(alpha: 0.8),
-                                      hoverColor: Colors.transparent,
-                                    ),
-                                    style: theme.bodyMedium.copyWith(
-                                      color: theme.onSurface,
-                                    ),
-                                    onSubmitted: _handleSubmitted,
-                                    textInputAction: TextInputAction.newline,
-                                    autocorrect: true,
-                                    autofocus: false,
-                                    textCapitalization:
-                                        TextCapitalization.sentences,
-                                    focusNode: _focusNode,
-                                    minLines: 1,
-                                    maxLines: 3,
-                                  ),
+                    Expanded(
+                      child:
+                          isVoiceMode
+                              ? SizedBox(
+                                height: inputSingleLineHeight,
+                                child: VoiceInputButton(
+                                  startRecording: _startRecording,
+                                  stopRecording: _stopRecording,
                                 ),
-                      ),
+                              )
+                              : _wrapFileDrop(
+                                TextField(
+                                  controller: _controller,
+                                  decoration: InputDecoration(
+                                    hintText: '说点什么...',
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    hintStyle: theme.bodyMedium.copyWith(
+                                      color: theme.onSurface.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                    border: const OutlineInputBorder(
+                                      borderSide: BorderSide.none,
+                                      borderRadius: BorderRadius.all(
+                                        Radius.circular(24),
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: theme.surfaceContainerHigh
+                                        .withValues(alpha: 0.8),
+                                    hoverColor: Colors.transparent,
+                                  ),
+                                  style: theme.bodyMedium.copyWith(
+                                    color: theme.onSurface,
+                                  ),
+                                  onSubmitted: _handleSubmitted,
+                                  textInputAction: TextInputAction.newline,
+                                  autocorrect: true,
+                                  autofocus: false,
+                                  textCapitalization:
+                                      TextCapitalization.sentences,
+                                  focusNode: _focusNode,
+                                  minLines: 1,
+                                  maxLines: 3,
+                                ),
+                              ),
+                    ),
                     // 生成中：发送键换成「打断」（原先在上方工具栏的 Abort）。
                     if (isRunning) ...[
                       const SizedBox(width: 4),

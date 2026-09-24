@@ -35,6 +35,9 @@ class _SidebarWidgetState extends State<SidebarWidget> {
   void initState() {
     super.initState();
     widget.viewModel.addListener(_onViewModelChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      widget.viewModel.listSessions();
+    });
   }
 
   @override

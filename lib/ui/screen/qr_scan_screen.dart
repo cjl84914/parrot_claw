@@ -27,8 +27,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
   bool _handling = false;
   GatewayPairingRequest? pairing;
 
+  /// bootstrap 会话专用的客户端标识（移动端 canonical id，桌面端 `node-host`）。
+  ///
   /// 官方移动端 bootstrap 静默放行要求 canonical client id；
   /// node-host 只对 node-only profile 静默，兑默认双角色码会被踢进人工审批。
+  /// **只有这一条 node 角色的 bootstrap 会话用它** —— 后面那条 operator 探测
+  /// 会话走平台默认（`gatewayClientIdForPlatform`），必须和正式连接完全一致，
+  /// 否则"探测通过"不等于"连得上"。
   String get _clientId => canonicalMobileClientId();
 
   /// 默认 QR（device.pair.setupCode）profile 授权的受限 operator scopes
@@ -99,7 +104,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
         caps: const <String>[],
         commands: const <String>[],
         permissions: const <String, bool>{},
-        clientDisplayName: 'parrotClaw',
       ),
     );
     if (!bootstrapResult.ok) {
@@ -124,18 +128,18 @@ class _QrScanScreenState extends State<QrScanScreen> {
     }
     final operatorScopes = _scopesFromEntry(operatorEntry);
 
+    // 这条探测会话必须和正式连接（`GatewayConnectConfig.fromServer`）完全同构：
+    // 不显式传 clientId / clientDisplayName，走平台默认。
     final operatorResult = await probeGateway(
       GatewayConnectConfig(
         url: p.wsUrl,
         token: operatorToken,
-        clientId: _clientId,
         clientMode: 'ui',
         role: 'operator',
         scopes: operatorScopes,
         caps: const <String>[],
         commands: const <String>[],
         permissions: const <String, bool>{},
-        clientDisplayName: 'parrotClaw',
       ),
     );
     if (!operatorResult.ok) {
