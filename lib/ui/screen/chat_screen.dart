@@ -435,32 +435,28 @@ class _ChatScreenState extends State<ChatScreen>
                               index: index,
                             ),
                         composerBuilder:
-                            (context) => Visibility(
-                              visible: widget.viewModel.connected,
-                              child: CustomComposer(
-                                key: _composerKey,
-                                // 「打断」已从上方工具栏挪到输入行（发送键的位置），
-                                // 生成中与否由 composer 自己读 viewModel.runId 判断。
-                                viewModel: widget.viewModel,
-                                topWidget: ComposerActionBar(
-                                  buttons: [
-                                    ComposerActionButton(
-                                      visible: true,
-                                      icon: Icons.delete_sweep,
-                                      title: 'Clear',
-                                      onPressed: _resetConversation,
-                                    ),
-                                    ComposerActionButton(
-                                      key: _modelButtonKey,
-                                      visible: true,
-                                      icon: Icons.psychology_outlined,
-                                      title: widget.viewModel.model ?? '模型',
-                                      onPressed:
-                                          () => _showModelOptions(context),
-                                      color: Colors.grey,
-                                    ),
-                                  ],
-                                ),
+                            (context) => CustomComposer(
+                              key: _composerKey,
+                              // 「打断」已从上方工具栏挪到输入行（发送键的位置），
+                              // 生成中与否由 composer 自己读 viewModel.runId 判断。
+                              viewModel: widget.viewModel,
+                              topWidget: ComposerActionBar(
+                                buttons: [
+                                  ComposerActionButton(
+                                    visible: true,
+                                    icon: Icons.delete_sweep,
+                                    title: 'Clear',
+                                    onPressed: _resetConversation,
+                                  ),
+                                  ComposerActionButton(
+                                    key: _modelButtonKey,
+                                    visible: widget.viewModel.connected,
+                                    icon: Icons.psychology_outlined,
+                                    title: widget.viewModel.model ?? '模型',
+                                    onPressed: () => _showModelOptions(context),
+                                    color: Colors.grey,
+                                  ),
+                                ],
                               ),
                             ),
                         // linkPreviewBuilder: (context, message, isSentByMe) {

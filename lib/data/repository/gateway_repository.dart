@@ -435,28 +435,35 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
+  /// 处理网关的 `chat` 事件 —— 助手文字的**唯一**显示投影。
+  ///
+  /// 为什么只认这一条：网关会把同一段助手文字投影两次，`agent`
+  /// （`stream: assistant`，`data.delta` 追加、`data.text` 只是偶发快照）和
+  /// `chat`（`deltaText` 追加、首帧/边界带完整 `message`）。官方协议文档
+  /// （`docs/gateway/protocol/rpc-bootstrap-and-events.md`）明确要求客户端
+  /// **只订阅一条投影**，两条都累加会重复输出。我们在握手里声明了
+  /// [openClawClientCaps] 的 `chat-only-assistant-text`，网关因此不再下发
+  /// `agent` 的带文本 assistant 事件，这里就只剩这一条来源。
   void _handleChatEvent(dynamic payload) {
     if (payload == null) return;
     final runId = payload['runId'] as String?;
     final state = payload['state'] as String?;
     switch (state) {
       case 'delta':
+        _appendStreamingDelta(payload, runId);
         break;
       case 'final':
         if (_runId == runId) {
           _log.info(payload);
+          // 终态 message 是权威全文：流式期间可能丢帧、也可能被 `replace`
+          // 改写，收尾时回填一次，气泡才不会停在半截。
+          _settleStreamingMessage(payload, runId);
           _clearStreamingMessages(runId);
           _runId = '';
           notifyListeners();
-          if (payload['message'] != null) {
-            final ChatMessage message = ChatMessage.fromJson(
-              payload['message'],
-            );
-            if (message.content.first.type == 'text') {
-              messageFinalController.add(
-                StringUtil.cleanTextForTts(message.content.first.text!),
-              );
-            }
+          final finalText = _visibleTextFromGatewayMessage(payload['message']);
+          if (finalText != null) {
+            messageFinalController.add(StringUtil.cleanTextForTts(finalText));
           }
         }
         break;
@@ -464,6 +471,8 @@ class GatewayRepository extends ChangeNotifier {
       case 'error':
         if (_runId == runId) {
           _log.warning('Chat run $runId ended with state=$state: $payload');
+          // 打断 / 报错时网关也会带已产出的 message，同样回填一次。
+          _settleStreamingMessage(payload, runId);
           _clearStreamingMessages(runId);
           _runId = '';
           notifyListeners();
@@ -471,6 +480,105 @@ class GatewayRepository extends ChangeNotifier {
         break;
     }
   }
+
+  /// 把一条 `chat` 增量并进当前 run 的流式气泡。
+  ///
+  /// 网关侧字段语义（见 `packages/gateway-protocol/src/schema/logs-chat.ts`
+  /// 的 `ChatDeltaEventSchema` 与官方文档）：
+  /// - `deltaText`：追加到整条回复末尾的片段。跨 item（一次 run 里可能有多段
+  ///   助手输出）时，片段自带 `\n\n` 分隔符，所以按 run 累积就能得到完整正文；
+  /// - `message`：**权威快照，已包含本次 `deltaText`**，只在首帧 / item 边界 /
+  ///   `replace` / 媒体变化时下发。有它就整段替换，别再追加一次（会重复）；
+  /// - `replace: true`：非前缀替换（CLI 输出变换、终答改写），此时 `deltaText`
+  ///   本身就是替换后的全文。
+  void _appendStreamingDelta(Map<String, dynamic> payload, String? runId) {
+    final deltaText = payload['deltaText'] as String? ?? '';
+    final snapshot = _visibleTextFromGatewayMessage(payload['message']);
+    if (deltaText.isEmpty && snapshot == null) return;
+
+    final key = _streamingKey(runId);
+    final previous = _streamingMessages[key];
+    final String text;
+    if (snapshot != null) {
+      text = snapshot;
+    } else if (payload['replace'] == true) {
+      text = _visibleTextOf(deltaText);
+    } else {
+      text = _visibleTextOf('${previous?.text ?? ''}$deltaText');
+    }
+    _emitStreamingMessage(key, previous, text, runId);
+  }
+
+  /// 终态收尾：把权威全文回填进**同一个**气泡（复用流式期间的客户端 id）。
+  ///
+  /// 不新建气泡，否则聊天页会同时留下「半截流式气泡 + 完整气泡」两条回复。
+  void _settleStreamingMessage(Map<String, dynamic> payload, String? runId) {
+    final snapshot = _visibleTextFromGatewayMessage(payload['message']);
+    if (snapshot == null) return;
+    final key = _streamingKey(runId);
+    final previous = _streamingMessages[key];
+    if (previous?.text == snapshot) return;
+    _emitStreamingMessage(key, previous, snapshot, runId);
+  }
+
+  /// 写入 / 刷新一条流式气泡。
+  ///
+  /// 同一个 [key] 复用同一个客户端气泡 id，聊天页据此就地更新而不是新增气泡。
+  void _emitStreamingMessage(
+    String key,
+    _StreamingMessageState? previous,
+    String text,
+    String? runId,
+  ) {
+    final state =
+        previous == null
+            ? _StreamingMessageState(id: uuid.v4(), text: text)
+            : previous.copyWith(text: text);
+    _streamingMessages[key] = state;
+    // 空文本（`replace` 清空、或只剩 `MEDIA:` 行）不建也不刷气泡：
+    // 建了会在聊天页留一个空气泡，等后续 delta 或终态快照再落。
+    if (text.isEmpty) return;
+    messageController.add(
+      ChatMessage(
+        id: state.id,
+        role: 'assistant',
+        content: [ChatMessageContent(type: 'text', text: text)],
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        idempotencyKey: runId,
+      ),
+    );
+  }
+
+  /// 流式气泡的累积键。`chat` 投影在一条 run 内是**一段连续文字**，
+  /// 所以按 run 归并即可；`runId` 缺失时退到固定键（老网关行为）。
+  String _streamingKey(String? runId) => runId ?? 'streaming_assistant';
+
+  /// 从网关消息对象里抽出可见正文（`MEDIA:` 指令行已剥掉）。
+  ///
+  /// 返回 null 表示这条 payload 没带 `message`、或解析不出可见正文。
+  /// 与历史加载同构：助手正文必须过 [splitMediaFromOutput]，否则流式期间
+  /// 气泡里会露出原始文件路径。
+  String? _visibleTextFromGatewayMessage(dynamic raw) {
+    if (raw is! Map) return null;
+    try {
+      final message = ChatMessage.fromJson(Map<String, dynamic>.from(raw));
+      final blocks = <String>[];
+      for (final block in message.content) {
+        if (block.type != 'text') continue;
+        final text = block.text;
+        if (text == null || text.isEmpty) continue;
+        blocks.add(text);
+      }
+      if (blocks.isEmpty) return null;
+      final visible = _visibleTextOf(blocks.join('\n\n'));
+      return visible.isEmpty ? null : visible;
+    } catch (error) {
+      _log.warning('Failed to parse chat message payload: $error');
+      return null;
+    }
+  }
+
+  String _visibleTextOf(String raw) => splitMediaFromOutput(raw).text;
 
   void subscribeSessionMessage() {}
 
@@ -934,16 +1042,16 @@ class GatewayRepository extends ChangeNotifier {
     if (payload == null) return;
     final stream = payload['stream'] as String?;
     final data = payload['data'];
-    final runId = payload['runId'] as String?;
     switch (stream) {
       case 'assistant':
         _log.info(payload);
-        // 2. 处理助手文本流 (不再直接创建 ChatMessage，而是更新流式文本)
-        final text = data?['text'] as String?;
-        if (text != null && text.isNotEmpty) {
-          _pushStreamingMessage(text, runId);
-        }
-        final mediaUrlsRaw = data['mediaUrls'] as List<dynamic>?;
+        // 助手**文字**不在这里处理：文字统一走 `chat` 投影
+        //（见 [_handleChatEvent]）。这里只认媒体 —— `agent` 的
+        // `data.text` 只是偶发快照、其余全在 `data.delta` 里，早先只读 `text`
+        // 导致「一条回复只显示出第一小段」。握手已声明
+        // `chat-only-assistant-text`，新网关不会再下发带文本的 assistant 事件；
+        // 老网关仍会发，这里忽略文本即可，不会与 `chat` 重复。
+        final mediaUrlsRaw = data?['mediaUrls'] as List<dynamic>?;
         if (mediaUrlsRaw != null && mediaUrlsRaw.isNotEmpty) {
           for (String mediaUrl in mediaUrlsRaw) {
             final fileName = mediaUrl.split('/').last;
@@ -1063,32 +1171,6 @@ class GatewayRepository extends ChangeNotifier {
       type = 'file';
     }
     return type;
-  }
-
-  /// Push a cumulative streaming reply, or start a new reply when the text
-  /// no longer belongs to the current reply in the same run.
-  void _pushStreamingMessage(String text, String? runId) {
-    if (text.isEmpty) return;
-
-    final key = runId ?? 'streaming_assistant';
-    final previous = _streamingMessages[key];
-    final isContinuation =
-        previous != null &&
-        (text == previous.text || text.startsWith(previous.text));
-    final state =
-        isContinuation
-            ? previous
-            : _StreamingMessageState(id: uuid.v4(), text: text);
-
-    _streamingMessages[key] = state.copyWith(text: text);
-    final message = ChatMessage(
-      id: state.id,
-      role: 'assistant',
-      content: [ChatMessageContent(type: 'text', text: text)],
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-      idempotencyKey: runId,
-    );
-    messageController.add(message);
   }
 
   void _clearStreamingMessages(String? runId) {

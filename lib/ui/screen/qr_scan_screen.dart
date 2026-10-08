@@ -137,7 +137,9 @@ class _QrScanScreenState extends State<QrScanScreen> {
         clientMode: 'ui',
         role: 'operator',
         scopes: operatorScopes,
-        caps: const <String>[],
+        // 与正式连接同构：聊天渲染也走 `chat` 投影，能力声明必须一致，
+        // 否则「探测通过」不代表正式连接的行为一致。
+        caps: openClawClientCaps,
         commands: const <String>[],
         permissions: const <String, bool>{},
       ),

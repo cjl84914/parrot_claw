@@ -87,6 +87,22 @@ const openClawDeviceTokenScopes = <String>[
 /// `hello.auth.scopes` 学到真实 scopes 并写回配置，下一次连接就是完整权限。
 const openClawMinimalOperatorScopes = <String>['operator.read'];
 
+/// App 向网关声明的客户端能力（wire 上是 `connect.params.caps`）。
+///
+/// `chat-only-assistant-text` = 「助手文字只从 `chat` 投影渲染」。网关据此不再
+/// 向本连接下发带文本的 `agent`（`stream: "assistant"`）事件
+/// （`src/gateway/server-chat.ts` 的 `excludeClientCapability`），于是同一段
+/// 文字只有一份来源。官方 Web UI 就是这么声明的
+/// （`ui/src/api/gateway-connect-plan.ts`）。
+///
+/// 不声明的话两条投影都会到：`agent` 的 `data.text` 只是偶发快照、增量全在
+/// `data.delta`，`chat` 那边是 `deltaText` + 完整 `message`。官方协议文档明确
+/// 要求**只订阅一条**，两条都累加会重复输出。
+///
+/// 网关侧该字段是 `Type.Array(NonEmptyString)`（不是封闭枚举），未知值被忽略，
+/// 所以对老网关声明它也不会让握手失败。
+const openClawClientCaps = <String>['chat-only-assistant-text'];
+
 /// 建立一条 operator 会话所需的连接设置（值对象，不可变）。
 ///
 /// 这是「App 侧的连接意图」：一个 url + 一套凭据 + 一份角色/权限声明，
@@ -133,7 +149,7 @@ class GatewayConnectConfig {
     this.clientMode = 'ui',
     this.role = 'operator',
     this.scopes = openClawOperatorScopes,
-    this.caps = const <String>[],
+    this.caps = openClawClientCaps,
     this.commands = const <String>[],
     this.permissions = const <String, bool>{},
     this.clientDisplayName,
@@ -1318,7 +1334,7 @@ class GatewaySession {
         GatewayConnectOptions(
           role: 'operator',
           scopes: openClawOperatorScopes,
-          caps: const [],
+          caps: openClawClientCaps,
           commands: const [],
           permissions: const {},
           clientId: gatewayClientIdForPlatform(),
