@@ -196,7 +196,31 @@ class _SettingScreenState extends State<SettingScreen> {
             Platform.isMacOS ||
             Platform.isWindows)
           ListTile(
-            title: const Text('使用Openclaw TTS', style: TextStyle(fontSize: 12)),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('使用Openclaw TTS', style: TextStyle(fontSize: 12)),
+                IconButton(
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  tooltip: 'OpenClaw TTS 配置说明',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () {
+                    const title = 'Talk 语音设置';
+                    context.push(
+                      Uri(
+                        path: Routes.webview,
+                        queryParameters: {
+                          'title': title,
+                          'assetPath': 'assets/docs/docs/openclaw-talk.html',
+                        },
+                      ).toString(),
+                    );
+                  },
+                ),
+              ],
+            ),
             subtitle: const Text(
               '需要先配置OpenClaw的TTS',
               style: TextStyle(color: Colors.grey, fontSize: 10),
