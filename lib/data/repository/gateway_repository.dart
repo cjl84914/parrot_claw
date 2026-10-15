@@ -1813,11 +1813,18 @@ class GatewayRepository extends ChangeNotifier {
   }
 
   /// 立即执行一次任务（不改变任务配置，因此不刷新列表）。
+  ///
+  /// `cron.run` 的触发方式走 `mode`（`force` 强制跑 / `due` 仅在到期时跑），
+  /// 与 `GatewayConnection.cronRun` 及网关工具调用一致 —— 早前发的是 `force`
+  /// 布尔字段，网关不认。
   Future<bool> runCronJob(String jobId, {bool force = true}) =>
       _runCronOperation('run', () async {
         await requestKnown(
           'cron.run',
-          params: {'id': _requireJobId(jobId), 'force': force},
+          params: {
+            'id': _requireJobId(jobId),
+            'mode': force ? 'force' : 'due',
+          },
         );
       });
 
@@ -1851,8 +1858,19 @@ class GatewayRepository extends ChangeNotifier {
             .toList(growable: false);
       });
 
+  /// `cron.add` / `cron.update` 之后重新拉一次列表。
+  ///
+  /// **必须显式带 `includeDisabled: true`**：网关 `cron.list` 默认只回启用中的
+  /// 任务。这里少传这个参数的话，刚被关闭的任务会在刷新后从列表里消失，
+  /// 退出列表页再进来（走 [loadCronJobs]，那个默认就是 true）又冒出来。
   Future<void> _reloadCronJobs() async {
-    _cronJobs = GatewayCronList.fromJson(await requestKnown('cron.list')).jobs;
+    _cronJobs =
+        GatewayCronList.fromJson(
+          await requestKnown(
+            'cron.list',
+            params: {'includeDisabled': true},
+          ),
+        ).jobs;
   }
 
   /// 任务 ID 不能为空 —— 空 ID 打到网关只会换来一个含糊的服务端错误。

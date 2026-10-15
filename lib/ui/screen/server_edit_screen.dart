@@ -35,6 +35,8 @@ class _ServerEditPageState extends State<ServerEditScreen> {
   String? _testError;
   String? _serverId;
   String _authMode = 'password';
+  /// 令牌输入框是否打码。默认打码，点右侧小眼睛临时明文查看。
+  bool _obscureToken = true;
 
   @override
   void initState() {
@@ -151,7 +153,13 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                   ],
                   selected: {_authMode},
                   onSelectionChanged:
-                      (s) => setState(() => _authMode = s.first),
+                      (s) => setState(() {
+                        _authMode = s.first;
+                        // 切走再切回来时重新打码：输入框是被移出树再重建的，
+                        // 明文状态会留在 State 里，不重置就会出现"上次摊开过的
+                        // 令牌，这次一进来还是明文"。
+                        _obscureToken = true;
+                      }),
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     textStyle: WidgetStatePropertyAll(AppTextStyles.bodyMedium),
@@ -179,7 +187,13 @@ class _ServerEditPageState extends State<ServerEditScreen> {
                   label: '访问令牌',
                   hint: '从openclaw.json获取',
                   icon: Icons.key_outlined,
-                  obscureText: true,
+                  obscureText: _obscureToken,
+                  suffixIcon: _buildObscureToggle(
+                    obscured: _obscureToken,
+                    label: '令牌',
+                    onToggle:
+                        () => setState(() => _obscureToken = !_obscureToken),
+                  ),
                   validator:
                       (v) =>
                           _authMode == 'token' && (v == null || v.isEmpty)
@@ -268,6 +282,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
     String? hint,
     required IconData icon,
     bool obscureText = false,
+    Widget? suffixIcon,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) {
@@ -280,6 +295,7 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(icon, size: 20, color: AppColors.textSecondary),
+        suffixIcon: suffixIcon,
         filled: false,
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
@@ -299,6 +315,28 @@ class _ServerEditPageState extends State<ServerEditScreen> {
         errorStyle: AppTextStyles.captionSmall.copyWith(color: AppColors.error),
       ),
       validator: validator,
+    );
+  }
+
+  /// 输入框右侧的「显示 / 隐藏」小眼睛。
+  ///
+  /// 用 `IconButton` 而不是裸 `Icon`：suffixIcon 外面那层 `ConstrainedBox` 只保证
+  /// 48×48 的盒子，裸图标自身只有 20px 命中区，手指很难点中；`IconButton` 会自己
+  /// 把整个盒子做成点击区，还带水波纹反馈。它落在 `TextFieldTapRegion` 内，
+  /// 所以点它不会触发 `onTapOutside` 把输入框的焦点（以及移动端键盘）收掉。
+  Widget _buildObscureToggle({
+    required bool obscured,
+    required String label,
+    required VoidCallback onToggle,
+  }) {
+    return IconButton(
+      onPressed: onToggle,
+      icon: Icon(
+        obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: 20,
+        color: AppColors.textSecondary,
+      ),
+      tooltip: obscured ? '显示$label' : '隐藏$label',
     );
   }
 

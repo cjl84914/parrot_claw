@@ -84,18 +84,18 @@ class _SidebarWidgetState extends State<SidebarWidget> {
                 index: 0,
                 selectedColor: selectedColor,
               ),
-              // _buildNavigationItem(
-              //   context,
-              //   icon: Icons.schedule_outlined,
-              //   label: '定时任务',
-              //   index: 1,
-              //   selectedColor: selectedColor,
-              // ),
               _buildNavigationItem(
                 context,
                 icon: Icons.extension_outlined,
                 label: '技能',
                 index: 3,
+                selectedColor: selectedColor,
+              ),
+              _buildNavigationItem(
+                context,
+                icon: Icons.schedule_outlined,
+                label: '定时任务',
+                index: 1,
                 selectedColor: selectedColor,
               ),
               _buildNavigationItem(
@@ -222,16 +222,15 @@ class _SidebarWidgetState extends State<SidebarWidget> {
             _closeDrawer(context);
             widget.viewModel.switchSession(null);
             context.go(Routes.index);
+          case 1:
+            _closeDrawer(context);
+            context.go(Routes.cron);
           case 2:
             _closeDrawer(context);
             context.go(Routes.serverList);
           case 3:
             _closeDrawer(context);
             context.go(Routes.skill);
-          default:
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('定时任务功能即将开放')),
-            );
         }
       },
     );

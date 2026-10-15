@@ -9,6 +9,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logging/logging.dart';
 import 'package:parrot_app/config/app_theme.dart';
+import 'package:parrot_app/data/model/gateway_cron.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/repository/gateway_repository.dart';
 import 'package:parrot_app/data/repository/local_gateway_repository.dart';
@@ -22,6 +23,8 @@ import 'package:parrot_app/data/service/shared_preferences_service.dart';
 import 'package:parrot_app/data/service/storage_service.dart';
 import 'package:parrot_app/ui/screen/chat_screen.dart';
 import 'package:parrot_app/ui/screen/conn_gateway_screen.dart';
+import 'package:parrot_app/ui/screen/cron_edit_screen.dart';
+import 'package:parrot_app/ui/screen/cron_screen.dart';
 import 'package:parrot_app/ui/screen/index_screen.dart';
 import 'package:parrot_app/ui/screen/setup_screen.dart';
 import 'package:parrot_app/ui/screen/setup_model_screen.dart';
@@ -286,6 +289,13 @@ final GoRouter router = GoRouter(
               ),
         ),
         GoRoute(
+          path: Routes.cron,
+          pageBuilder:
+              (context, state) => NoTransitionPage(
+                child: CronScreen(viewModel: context.read()),
+              ),
+        ),
+        GoRoute(
           path: Routes.serverList,
           pageBuilder:
               (context, state) => NoTransitionPage(
@@ -365,6 +375,16 @@ final GoRouter router = GoRouter(
         return SkillSearchScreen(viewModel: context.read());
       },
     ),
+    GoRoute(
+      path: Routes.cronEdit,
+      builder: (context, state) {
+        final extra = state.extra;
+        return CronEditScreen(
+          viewModel: context.read(),
+          job: extra is GatewayCronJob ? extra : null,
+        );
+      },
+    ),
 
     // GoRoute(
     //   path: Routes.live2d,
@@ -416,4 +436,6 @@ abstract final class Routes {
   static const setting = '/setting';
   static const skill = '/skill';
   static const skillSearch = '/skill_search';
+  static const cron = '/cron';
+  static const cronEdit = '/cron_edit';
 }
