@@ -6,6 +6,7 @@ import 'package:parrot_app/config/app_theme.dart';
 import 'package:parrot_app/data/model/gateway_pairing_request.dart';
 import 'package:parrot_app/data/model/server_config.dart';
 import 'package:parrot_app/data/service/gateway_connector.dart';
+import 'package:parrot_app/data/service/openclaw_protocol.dart';
 import 'package:parrot_app/main.dart';
 import 'package:parrot_app/ui/view_model/server_viewmodel.dart';
 import 'package:parrot_app/ui/widget/my_snack_bar.dart';
@@ -18,6 +19,17 @@ class QrScanScreen extends StatefulWidget {
 
   @override
   State<QrScanScreen> createState() => _QrScanScreenState();
+}
+
+/// 一次 bootstrap 探测的结果：握手快照 + 命中的候选地址。
+///
+/// 地址要带回来 —— setup code 可能同时广告 LAN 明文地址与 Tailscale Serve 的
+/// wss 地址，落配置时必须用**真正连上的那一条**，否则会出现「扫码成功但连不上」。
+class _BootstrapProbe {
+  const _BootstrapProbe({required this.hello, required this.url});
+
+  final HelloOk? hello;
+  final String url;
 }
 
 class _QrScanScreenState extends State<QrScanScreen> {
@@ -35,14 +47,6 @@ class _QrScanScreenState extends State<QrScanScreen> {
   /// 会话走平台默认（`gatewayClientIdForPlatform`），必须和正式连接完全一致，
   /// 否则"探测通过"不等于"连得上"。
   String get _clientId => canonicalMobileClientId();
-
-  /// 默认 QR（device.pair.setupCode）profile 授权的受限 operator scopes
-  /// （BOOTSTRAP_HANDOFF_OPERATOR_SCOPES，无 admin/pairing）。
-  ///
-  /// 只在网关没有逐条回带 scopes 时用作兜底（见 [_scopesFromEntry]）。真正生效的
-  /// 是配对时记进 [ServerConfig.operatorScopes] 的那一份，连接时原样请求 ——
-  /// 设备令牌会话多要一个 scope 就会被网关拒掉。
-  static const List<String> _operatorHandoffScopes = openClawDeviceTokenScopes;
 
   /// 配对用的会话都是用完即弃的：每次 [probeGateway] 都会在返回前把它关掉，
   /// 因此这里不需要再手工收尾。
@@ -91,40 +95,29 @@ class _QrScanScreenState extends State<QrScanScreen> {
     final p = pairing;
     if (p == null) return false;
 
-    final bootstrapResult = await probeGateway(
-      GatewayConnectConfig(
-        url: p.wsUrl,
-        token: p.token,
-        password: p.password,
-        bootstrapToken: p.bootstrapToken,
-        clientId: _clientId,
-        clientMode: 'node',
-        role: 'node',
-        scopes: const <String>[],
-        caps: const <String>[],
-        commands: const <String>[],
-        permissions: const <String, bool>{},
-      ),
-    );
-    if (!bootstrapResult.ok) {
-      await _showHandshakeError(bootstrapResult.error!);
-      return false;
-    }
+    final bootstrap = await _probeBootstrap(p);
+    if (bootstrap == null) return false; // 内部已经提示过失败原因
 
-    if (!mounted) return false;
-    final snapshot = bootstrapResult.data;
-    final auth = snapshot?.auth ?? const <String, dynamic>{};
+    final auth = bootstrap.hello?.auth ?? const <String, dynamic>{};
     _log.info('gateway bootstrap handshake completed');
 
     // auth.deviceToken 属于首握角色（node），不可复用于 operator 会话；
     // operator 凭据在 auth.deviceTokens 中按 role 区分。
     final operatorEntry = _operatorTokenEntry(auth);
     if (operatorEntry == null) {
-      throw StateError('网关未返回 operator 设备授权令牌');
+      // 官方还有一档 `node` 设置类型（`bootstrapProfile: "node"`）：那种码只下发
+      // node 角色、没有 operator 令牌，产物是给电脑用的
+      // `openclaw node run --pair "oc-pair://…"` 命令。本应用不能作为节点接入，
+      // 必须明说 —— 原来的实现在这里 `throw StateError`，而错误处理只认
+      // GatewayResponseError，于是扫这种码表现为「扫了一下、什么都没发生」。
+      await _failWith('这是节点主机（Node host）配对码，需要在电脑上执行 '
+          'openclaw node run --pair 命令，本应用不能作为节点接入。');
+      return false;
     }
     final operatorToken = (operatorEntry['deviceToken'] as String?)?.trim();
     if (operatorToken == null || operatorToken.isEmpty) {
-      throw StateError('网关未返回 operator 设备授权令牌');
+      await _failWith('网关未返回 operator 设备授权令牌，无法建立聊天会话。');
+      return false;
     }
     final operatorScopes = _scopesFromEntry(operatorEntry);
 
@@ -132,8 +125,9 @@ class _QrScanScreenState extends State<QrScanScreen> {
     // 不显式传 clientId / clientDisplayName，走平台默认。
     final operatorResult = await probeGateway(
       GatewayConnectConfig(
-        url: p.wsUrl,
+        url: bootstrap.url,
         token: operatorToken,
+        tlsFingerprint: p.tlsFingerprint,
         clientMode: 'ui',
         role: 'operator',
         scopes: operatorScopes,
@@ -151,12 +145,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
     if (!mounted) return false;
 
+    final endpoint = _splitEndpoint(bootstrap.url);
     final config = ServerConfig(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: '${p.host}:${p.port}',
-      host: p.host,
-      port: p.port,
-      useTLS: p.useTLS,
+      name: '${endpoint.host}:${endpoint.port}',
+      host: endpoint.host,
+      port: endpoint.port,
+      useTLS: endpoint.useTLS,
       token: operatorToken,
       // 关键：这份凭据是设备令牌而不是网关长效 token，网关只授权受限 scopes。
       // 记成 device-token 后连接时会请求受限集合；而**具体是哪几个**只有网关
@@ -164,9 +159,14 @@ class _QrScanScreenState extends State<QrScanScreen> {
       // 握手拿到的 operator scopes 一并记下来，连接时原样复用。
       authMode: ServerConfig.authModeDeviceToken,
       operatorScopes: operatorScopes,
+      // 自签 TLS 网关必须带上指纹，否则冷启动重连会因为证书校验失败而连不上。
+      tlsFingerprint: p.tlsFingerprint ?? '',
     );
 
     await _saveConfig(config);
+    if (mounted) {
+      MySnackBar.showSuccess(context, '配对成功（${_accessOf(operatorScopes).label}）');
+    }
     // 这里只需要跳转：新服务器会改 `main.dart` 里 `IndexScreen` 的
     // `ValueKey(selectedServer.id)`，壳因此重建，`initState` 里的 connect()
     // 会按刚保存的配置连一次。
@@ -177,6 +177,70 @@ class _QrScanScreenState extends State<QrScanScreen> {
     // 下一次 connect()（冷启动进首页）才生效。
     if (mounted) context.go(Routes.index);
     return true;
+  }
+
+  /// 按候选地址逐个探测，返回第一个握手成功的结果。
+  ///
+  /// setup code 的 payload 可以广告多条地址（官方只在 `gateway.bind=lan` 且探测到
+  /// 持久 Tailscale Serve HTTPS 根时附 `urls[]`）。官方 iOS 客户端就是逐个探测、
+  /// 存第一个可达的（`docs/cli/qr.md`），所以这里也按序回退 —— 但**只对「连不上」
+  /// 回退**：网关已经明确回话（token 无效、需要审批、权限不匹配）时，换地址也是
+  /// 同一个网关、同一个答案，白等一轮还会把真正的错误盖成「地址不通」。
+  Future<_BootstrapProbe?> _probeBootstrap(GatewayPairingRequest p) async {
+    GatewayResponseError? lastError;
+    for (final url in p.candidateUrls) {
+      final result = await probeGateway(
+        GatewayConnectConfig(
+          url: url,
+          token: p.token,
+          password: p.password,
+          bootstrapToken: p.bootstrapToken,
+          tlsFingerprint: p.tlsFingerprint,
+          clientId: _clientId,
+          clientMode: 'node',
+          role: 'node',
+          scopes: const <String>[],
+          caps: const <String>[],
+          commands: const <String>[],
+          permissions: const <String, bool>{},
+        ),
+      );
+      if (result.ok) {
+        if (url != p.wsUrl) {
+          _log.info('gateway bootstrap fell back to an advertised route');
+        }
+        return _BootstrapProbe(hello: result.data, url: url);
+      }
+      final error = result.error;
+      if (error == null) break;
+      lastError = error;
+      if (!_isTransportFailure(error)) break;
+    }
+
+    await _showHandshakeError(lastError ?? '无法连接到网关');
+    return null;
+  }
+
+  /// 这个失败是不是「连不上」（值得换下一个候选地址再试）。
+  ///
+  /// `probeGateway` 对非网关错误（socket 异常、TLS 握手失败、连接超时）会合成为
+  /// `UNAVAILABLE`，所以它就是传输层失败的主信号。
+  bool _isTransportFailure(GatewayResponseError error) =>
+      error.code.toUpperCase() == 'UNAVAILABLE';
+
+  /// 从命中的候选地址里取出 [ServerConfig] 需要的字段。
+  ///
+  /// 已知缺口：`ServerConfig.wsUrl` 只拼 `scheme://host:port`，**不带路径**。
+  /// 网关 URL 带 base path（Control UI 挂载点）时保存下来会丢路径 —— 这是既有
+  /// 行为，本轮不动，只在这里记一笔。
+  ({String host, int port, bool useTLS}) _splitEndpoint(String url) {
+    final uri = Uri.parse(url);
+    final useTLS = uri.scheme == 'wss';
+    final port = uri.hasPort ? uri.port : (useTLS ? 443 : 18789);
+    if (uri.path.isNotEmpty && uri.path != '/') {
+      _log.warning('gateway route carries a base path; ServerConfig cannot store it');
+    }
+    return (host: uri.host, port: port, useTLS: useTLS);
   }
 
   Future<void> _saveConfig(ServerConfig config) async {
@@ -206,6 +270,14 @@ class _QrScanScreenState extends State<QrScanScreen> {
     return null;
   }
 
+  /// 网关回带的 operator scopes 才是真相，**不要在这里猜**。
+  ///
+  /// 原来这里写死 `openClawDeviceTokenScopes`（受限集合，无 admin）当兜底，那是
+  /// 官方**旧**默认档；现在默认档已经改成完整访问（含 `operator.admin`），写死
+  /// 受限集合会让首连少权限。反过来写死完整集合又会在受限档上多要 scope，
+  /// 直接 `device token scope mismatch` 握手被拒。所以真没回带时退到几乎任何
+  /// operator 令牌都有的 `operator.read`，连上后由 `ConnViewModel` 的
+  /// `_learnGrantedScopes` 用 `hello.auth.scopes` 校正并回写配置，第二次连接即完整。
   List<String> _scopesFromEntry(Map<String, dynamic> entry) {
     final raw = entry['scopes'];
     if (raw is List) {
@@ -217,16 +289,37 @@ class _QrScanScreenState extends State<QrScanScreen> {
               .toList();
       if (scopes.isNotEmpty) return scopes;
     }
-    // 服务端未逐条回带 scopes 时，回退到默认受限集合（与 QR profile 一致）。
-    return _operatorHandoffScopes;
+    return openClawMinimalOperatorScopes;
   }
 
+  /// 从网关实际授权的 operator scopes 反推访问档位。
+  ///
+  /// 二维码 payload 里**没有**档位信息（官方 `PairingSetupPayload` 只有
+  /// `url/urls/bootstrapToken/expiresAtMs/tlsFingerprint`），只有握手回来的
+  /// `deviceTokens[].scopes` 能说明网关到底给了什么：含 `operator.admin` 就是完整
+  /// 访问（官方 `MOBILE_FULL_ACCESS_OPERATOR_SCOPES`），否则是受限访问
+  /// （`BOOTSTRAP_HANDOFF_OPERATOR_SCOPES`）。
+  OpenClawPairSetupAccess _accessOf(List<String> operatorScopes) =>
+      operatorScopes.contains('operator.admin')
+      ? OpenClawPairSetupAccess.full
+      : OpenClawPairSetupAccess.limited;
+
   void _showInvalidQr() {
-    MySnackBar.showError(context, '无效的二维码，未识别到网关配置');
+    MySnackBar.showError(context, '无效的配对码，未识别到网关配置');
     _handling = false;
   }
 
-  Future<void> _showHandshakeError(error) async {
+  /// 提示一条失败原因，然后回到扫码态。
+  Future<void> _failWith(String message) async {
+    if (!mounted) return;
+    MySnackBar.showError(context, message);
+    await Future.delayed(const Duration(seconds: 2));
+    await _resetForRescan();
+  }
+
+  Future<void> _showHandshakeError(Object error) async {
+    if (!mounted) return;
+
     if (error is GatewayResponseError) {
       if (gatewayErrorCodeFromRaw(error.code) ==
           GatewayErrorCode.deviceNotPaired) {
@@ -235,7 +328,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
       } else {
         MySnackBar.showError(context, error.message);
       }
+    } else {
+      // 非网关错误（socket 异常、解析失败、超时…）。原实现只处理
+      // GatewayResponseError，其余分支什么都不显示，扫码的人只看到「扫了一下
+      // 没反应」，无从下手 —— 必须给出原因。
+      MySnackBar.showError(context, '配对失败：$error');
     }
+
     await Future.delayed(const Duration(seconds: 2));
     await _resetForRescan();
   }
@@ -243,7 +342,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('扫码连接网关'), elevation: 0),
+      appBar: AppBar(title: const Text('扫描配对码'), elevation: 0),
       body:
       Container(
         width: double.infinity,

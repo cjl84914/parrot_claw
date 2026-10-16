@@ -35,6 +35,15 @@ abstract class ServerConfig with _$ServerConfig {
     /// - 凭据变了（token/password 改动、重新配对）必须清空，否则会把旧凭据的
     ///   权限带到新凭据上。
     @HiveField(10) @Default(<String>[]) List<String> operatorScopes,
+    /// 网关 TLS 证书指纹（小写十六进制 SHA-256，64 字符）；空串 = 不做固定。
+    ///
+    /// 只由扫码配对写入：setup code 的 payload 带 `tlsFingerprint` 时，说明网关
+    /// 用的是自签证书（直连本地 TLS 或 `gateway.remote.url` 带指纹），此时必须
+    /// 固定指纹才连得上 —— 系统信任库不认这张证书。
+    ///
+    /// 必须持久化：冷启动重连时手上只有这份配置，指纹丢了就会因为证书校验失败
+    /// 而连不上，且现象是「扫码时好好的、重启后连不上」，很难排查。
+    @HiveField(11) @Default('') String tlsFingerprint,
   }) = _ServerConfig;
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) =>

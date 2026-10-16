@@ -96,10 +96,18 @@ class ConnViewModel extends ChangeNotifier {
     await _gatewayRepository.reconnect();
   }
 
+  /// 生成网关配对码。参数原样转发给仓库 —— 之前这里声明了 `publicUrl` 却调用
+  /// 无参重载，属于「签名承诺了、实现没做」，别再把参数吃掉。
   Future<OpenClawDevicePairSetupCodeResponse> devicePairSetupCode({
     String? publicUrl,
+    OpenClawPairSetupAccess access = OpenClawPairSetupAccess.full,
+    bool includeQr = true,
   }) async {
-    return _gatewayRepository.devicePairSetupCode();
+    return _gatewayRepository.devicePairSetupCode(
+      publicUrl: publicUrl,
+      access: access,
+      includeQr: includeQr,
+    );
   }
 
   @override

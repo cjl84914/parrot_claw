@@ -22,6 +22,15 @@ class CronViewModel extends ChangeNotifier {
 
   List<Map<String, dynamic>> get runs => _gatewayRepository.cronRuns;
 
+  /// 网关 `models.list` 返回的原始模型条目（`{id, name, ...}`）；
+  /// 从未加载过时为 null。
+  List<dynamic>? get rawModels => _gatewayRepository.rawModels;
+
+  /// 拉取网关实际可用的模型列表（编辑页「模型」下拉用）。
+  Future<void> loadModels() async {
+    await _gatewayRepository.listModels();
+  }
+
   bool get isLoading => _gatewayRepository.cronLoading;
 
   String? get error => _gatewayRepository.cronError;

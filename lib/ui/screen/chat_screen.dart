@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart';
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
+import 'package:flutter_link_previewer/flutter_link_previewer.dart';
 import 'package:flyer_chat_file_message/flyer_chat_file_message.dart';
 import 'package:flyer_chat_image_message/flyer_chat_image_message.dart';
 import 'package:flyer_chat_system_message/flyer_chat_system_message.dart';
@@ -96,6 +97,30 @@ class _ChatScreenState extends State<ChatScreen>
   /// 打开图片/文件/视频；用 externalApplication 调系统默认应用（macOS 关键）
   Future<void> _openMedia(BuildContext context, String source) async {
     final url = widget.viewModel.resolveMediaUrl(context, source);
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme.isEmpty) return;
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法打开：$url')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('打开失败：$e')));
+      }
+    }
+  }
+
+  /// 打开消息正文里的链接；和 [_openMedia] 一样走系统默认应用（macOS 关键）。
+  ///
+  /// 这里**故意不做 `canLaunchUrl` 预检**：它在 iOS 上对没写进
+  /// `LSApplicationQueriesSchemes` 的 scheme 会误报 false，链接会静默点不开。
+  /// 直接 launchUrl，真的失败再提示。
+  Future<void> _openUrl(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme.isEmpty) return;
     try {
@@ -491,6 +516,15 @@ class _ChatScreenState extends State<ChatScreen>
                               index: index,
                               showStatus: false,
                               sentBackgroundColor: AppColors.primary,
+                              // 必须显式给 onLinkTap：flyer 内部走 gpt_markdown 的
+                              // legacy linkBuilder 分支，那里的 GestureDetector 是
+                              // `onTap: () => onTap?.call()`，而 onTap 又由
+                              // `onLinkTap == null ? null : ...` 得来 —— 不给的话
+                              // 这个 GestureDetector 是透明的，点链接直接穿透，
+                              // 表现就是「链接看着像链接但点不动」。
+                              onLinkTap: (url, _) {
+                                unawaited(_openUrl(context, url));
+                              },
                             ),
                         fileMessageBuilder:
                             (

@@ -37,14 +37,13 @@ class _ServerListPageState extends State<ServerListScreen> {
               tooltip: '打开侧边栏',
               onPressed: () => indexController.switchSideBarVisible(),
             ),
-            title: const Text('网关管理', style: AppTextStyles.headlineMedium),
+            title: const Text('网关管理'),
             elevation: 0,
             actions: [
-              TextButton(
-                onPressed: () {
-                  context.push(Routes.connGateway);
-                },
-                child: const Text('添加'),
+              IconButton(
+                icon: const Icon(Icons.add),
+                tooltip: '添加网关',
+                onPressed: () =>  context.push(Routes.connGateway)
               ),
             ],
           ),

@@ -140,6 +140,54 @@ class OpenClawStateVersion {
   }
 }
 
+/// 扫码配对的「设置类型」（官方 Control UI 的 *Setup type*）。
+///
+/// 网关侧对应 `src/shared/device-bootstrap-profile.ts` 里的三档 profile：
+/// - `full` → `FULL_ACCESS_PAIRING_SETUP_BOOTSTRAP_PROFILE`（含 `operator.admin`）
+/// - `limited` → `PAIRING_SETUP_BOOTSTRAP_PROFILE`（不含 `operator.admin`）
+/// - 官方还有 `node`（节点主机，给电脑用）与 `voice-node`（仅 CLI）——本应用不提供。
+enum OpenClawPairSetupAccess {
+  full,
+  limited;
+
+  /// `device.pair.setupCode` 的 `bootstrapProfile` 入参。
+  ///
+  /// **`full` 必须返回 null（整个字段不出现）**：官方 schema 的 enum 只有
+  /// `limited` / `node` / `voice-node`（`packages/gateway-protocol/src/schema/devices.ts`
+  /// 的 `DevicePairSetupCodeParamsSchema`），显式传 `"full"` 会被网关按未知枚举值
+  /// 拒掉（`INVALID_REQUEST`）。**不传**才落到 `FULL_ACCESS_PAIRING_SETUP_BOOTSTRAP_PROFILE`
+  /// （`src/pairing/setup-code.ts` 的 `options.bootstrapProfile ?? FULL_ACCESS_...`）。
+  String? get bootstrapProfile => switch (this) {
+    OpenClawPairSetupAccess.full => null,
+    OpenClawPairSetupAccess.limited => 'limited',
+  };
+
+  /// 由网关回带的 `access` 反解。
+  ///
+  /// 老网关不返回该字段，`node` / `voice-node` 也解析不出来 —— 三种情况一律返回
+  /// null（调用方按「未知」处理，不能当成 full，否则会误导用户以为拿到了管理权限）。
+  static OpenClawPairSetupAccess? fromWire(String? raw) => switch (raw?.trim()) {
+    'full' => OpenClawPairSetupAccess.full,
+    'limited' => OpenClawPairSetupAccess.limited,
+    _ => null,
+  };
+
+  /// 界面文案。与 [bootstrapProfile] 放在一起，避免两处各自维护一份映射。
+  String get label => switch (this) {
+    OpenClawPairSetupAccess.full => '完整访问',
+    OpenClawPairSetupAccess.limited => '受限访问',
+  };
+
+  /// 档位的一句话说明。
+  ///
+  /// 目前界面**不渲染**它（设置类型改成并排一行的紧凑样式，只留 [label]），
+  /// 保留在这里是为了将来需要时不必重新对照官方文案。
+  String get hint => switch (this) {
+    OpenClawPairSetupAccess.full => '设备能力 + 完整的网关管理权限，包含设置与升级。',
+    OpenClawPairSetupAccess.limited => '设备能力、聊天与审批，不含管理权限。',
+  };
+}
+
 class OpenClawDevicePairSetupCodeResponse {
   final String setupCode;
   final String gatewayUrl;
@@ -149,7 +197,11 @@ class OpenClawDevicePairSetupCodeResponse {
   final String? joinUrl;
   final String? qrDataUrl;
   final List<String>? gatewayUrls;
-  final String? access;
+
+  /// 网关实际下发的档位。null = 老网关没这个字段（或返回了本应用不支持的档位）。
+  final OpenClawPairSetupAccess? access;
+
+  /// true = 请求的是完整访问，但网关因明文 `ws://` 自动降级成了受限访问。
   final bool? accessDowngraded;
   final int? expiresAtMs;
 
@@ -203,10 +255,16 @@ class OpenClawDevicePairSetupCodeResponse {
       joinUrl: json['joinUrl'] as String?,
       qrDataUrl: json['qrDataUrl'] as String?,
       gatewayUrls: (json['gatewayUrls'] as List?)?.whereType<String>().toList(),
-      access: json['access'] as String?,
+      access: OpenClawPairSetupAccess.fromWire(json['access'] as String?),
       accessDowngraded: json['accessDowngraded'] as bool?,
       expiresAtMs: (json['expiresAtMs'] as num?)?.toInt(),
     );
+  }
+
+  /// 配对码是否已过期。没有 `expiresAtMs`（老网关）时一律按「未过期」处理。
+  bool expiredAt(int nowMs) {
+    final expiresAt = expiresAtMs;
+    return expiresAt != null && expiresAt <= nowMs;
   }
 }
 

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.8+13
+version: 1.1.0+15
 
 environment:
   sdk: ^3.7.0
@@ -151,6 +151,9 @@ flutter:
      - assets/
      - assets/images/
      - assets/senseVoice/
+     # ASR 同音字替换（sherpa hr）：lexicon.txt + replace.fst
+     # 注意 `- assets/` 只收该目录下的**直接**文件，不递归子目录，所以这里必须单列
+     - assets/hr/
 #     - assets/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/
      - assets/live2d/
      - assets/live2d/assets/

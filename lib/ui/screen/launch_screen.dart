@@ -97,11 +97,11 @@ class LaunchScreen extends StatelessWidget {
     return _CardContainer(
       child: Column(
         children: const [
-          _FeatureRow(icon: Icons.link_rounded, label: '连接到你的网关'),
+          _FeatureRow(icon: Icons.link, label: '连接到你的网关'),
           // _FeatureDivider(),
           // _FeatureRow(icon: Icons.shield_outlined, label: '选择设备权限'),
           // _FeatureDivider(),
-          _FeatureRow(icon: Icons.check_circle_outline_rounded, label: '在手机上使用 OpenClaw'),
+          _FeatureRow(icon: Icons.phone_iphone_outlined, label: '在手机上使用 OpenClaw'),
         ],
       ),
     );
@@ -113,8 +113,8 @@ class LaunchScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 24,
+            height: 24,
             margin: const EdgeInsets.only(top: 1),
             decoration: const BoxDecoration(color: _warning, shape: BoxShape.circle),
             child: const Icon(Icons.priority_high_rounded, color: Colors.black, size: 20),
@@ -128,7 +128,7 @@ class LaunchScreen extends StatelessWidget {
                   '安全提示',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

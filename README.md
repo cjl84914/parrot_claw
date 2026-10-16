@@ -110,12 +110,12 @@ ParrotClaw App（Flutter 交互层）
 - [x] Skill管理
 - [x] 英文 README DOCS
 - [x] 数字人生成案例
-- [ ] 定时任务
+- [x] 定时任务
+- [x] 文生图 / 图生图
+- [x] 音乐生成（AceStep 文生曲）
+- [x] 文生视频 
+- [x] 图生视频
 - [ ] Agent配置
-- [ ] 文生图 / 图生图
-- [ ] 音乐生成（AceStep 文生曲）
-- [ ] 文生视频 
-- [ ] 图生视频
 - [ ] FaceFusion 案例
 
 ---

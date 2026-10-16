@@ -85,7 +85,7 @@ class _SkillScreenState extends State<SkillScreen> {
           tooltip: '打开侧边栏',
           onPressed: () => indexController.switchSideBarVisible(),
         ),
-        title: Text('Skill管理'),
+        title: const Text('技能管理'),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),

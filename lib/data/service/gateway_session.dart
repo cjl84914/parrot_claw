@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/io.dart';
@@ -115,6 +116,13 @@ class GatewayConnectConfig {
   final String? password;
   final String? bootstrapToken;
 
+  /// 网关 TLS 证书指纹（小写十六进制 SHA-256）。
+  ///
+  /// 非空时对 `wss://` 连接做证书固定：只认这张证书。扫码配对时网关把指纹放在
+  /// setup code 的 payload 里下发，说明它用的是自签证书，系统信任库不认 ——
+  /// 不固定指纹就连不上。
+  final String? tlsFingerprint;
+
   /// 网关客户端标识（wire 上是 `connect.client.id`）。
   ///
   /// **null = 按当前平台自动选择**（[gatewayClientIdForPlatform]），这是所有
@@ -145,6 +153,7 @@ class GatewayConnectConfig {
     this.token,
     this.password,
     this.bootstrapToken,
+    this.tlsFingerprint,
     this.clientId,
     this.clientMode = 'ui',
     this.role = 'operator',
@@ -175,10 +184,12 @@ class GatewayConnectConfig {
   /// [toGatewayOptions] 按当前平台补全（见 [gatewayClientIdForPlatform]），
   /// 这样"每次连接都声明自己是本平台的原生客户端"，不必在每个调用点各写一份。
   factory GatewayConnectConfig.fromServer(ServerConfig config) {
+    final fingerprint = config.tlsFingerprint.trim();
     return GatewayConnectConfig(
       url: config.wsUrl,
       token: config.isTokenAuth ? config.token : null,
       password: config.isPasswordAuth ? config.password : null,
+      tlsFingerprint: fingerprint.isEmpty ? null : fingerprint,
       scopes:
           config.isDeviceTokenAuth
               ? (config.operatorScopes.isNotEmpty
@@ -218,6 +229,7 @@ class GatewayConnectConfig {
     String? token,
     String? password,
     String? bootstrapToken,
+    String? tlsFingerprint,
     String? clientId,
     String? clientMode,
     String? role,
@@ -232,6 +244,7 @@ class GatewayConnectConfig {
       token: token ?? this.token,
       password: password ?? this.password,
       bootstrapToken: bootstrapToken ?? this.bootstrapToken,
+      tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
       clientId: clientId ?? this.clientId,
       clientMode: clientMode ?? this.clientMode,
       role: role ?? this.role,
@@ -250,6 +263,7 @@ class GatewayConnectConfig {
       other.token == token &&
       other.password == password &&
       other.bootstrapToken == bootstrapToken &&
+      other.tlsFingerprint == tlsFingerprint &&
       other.clientId == clientId &&
       other.clientMode == clientMode &&
       other.role == role &&
@@ -265,6 +279,7 @@ class GatewayConnectConfig {
     token,
     password,
     bootstrapToken,
+    tlsFingerprint,
     clientId,
     clientMode,
     role,
@@ -917,14 +932,45 @@ class IOWebSocketGatewaySocket implements GatewaySocket {
 }
 
 class DefaultGatewaySocketFactory implements GatewaySocketFactory {
-  const DefaultGatewaySocketFactory();
+  /// 固定的网关 TLS 证书指纹（小写十六进制 SHA-256，64 字符）。
+  ///
+  /// 非空时对 `wss://` 启用证书固定。注意 `badCertificateCallback` 只在系统信任库
+  /// **已经拒绝**这张证书时才会被调用，所以：公开 CA 签发的证书走原路径不受影响，
+  /// 自签证书则靠指纹比对放行。这正是扫码配对要的行为 —— 网关把指纹放进 setup code
+  /// 的 payload，就是在说「这张证书是自签的，请按指纹认它」。
+  final String? tlsFingerprint;
+
+  const DefaultGatewaySocketFactory({this.tlsFingerprint});
 
   @override
-  GatewaySocket connect(Uri uri, {required Duration timeout}) =>
-      IOWebSocketGatewaySocket(
+  GatewaySocket connect(Uri uri, {required Duration timeout}) {
+    final fingerprint = tlsFingerprint?.trim();
+    if (fingerprint == null || fingerprint.isEmpty || uri.scheme != 'wss') {
+      return IOWebSocketGatewaySocket(
         IOWebSocketChannel.connect(uri, connectTimeout: timeout),
       );
+    }
+    // 每个连接一个 HttpClient：它握手后就只服务这一条 socket，不需要额外的生命周期管理。
+    final client = HttpClient()
+      ..badCertificateCallback =
+          (certificate, host, port) => sha256OfDerCertificate(certificate.der) == fingerprint;
+    return IOWebSocketGatewaySocket(
+      IOWebSocketChannel.connect(
+        uri,
+        connectTimeout: timeout,
+        customClient: client,
+      ),
+    );
+  }
 }
+
+/// 证书 DER 编码的 SHA-256（小写十六进制）。
+///
+/// 口径与官方客户端一致（Android 侧
+/// `X509Certificate.encoded.toByteString().sha256().hex()`）：对 **DER 字节**取
+/// SHA-256，不是 SPKI，也不是 PEM 文本。
+String sha256OfDerCertificate(List<int> der) =>
+    sha256.convert(der).toString().toLowerCase();
 
 enum GatewaySessionState {
   idle,
@@ -996,6 +1042,7 @@ class GatewaySession {
     required this.token,
     required this.password,
     this.bootstrapToken,
+    String? tlsFingerprint,
     required this.pushHandler,
     this.connectOptions,
     this.disconnectHandler,
@@ -1006,7 +1053,9 @@ class GatewaySession {
     this.connectTimeout = const Duration(seconds: 30),
     this.challengeTimeout = const Duration(seconds: 6),
     this.defaultRequestTimeout = const Duration(seconds: 15),
-  }) : socketFactory = socketFactory ?? const DefaultGatewaySocketFactory(),
+  }) : socketFactory =
+           socketFactory ??
+           DefaultGatewaySocketFactory(tlsFingerprint: tlsFingerprint),
        clock = clock ?? DateTime.now,
        idGenerator = idGenerator ?? const Uuid().v4,
        _backoff = retryPolicy.initialDelay;

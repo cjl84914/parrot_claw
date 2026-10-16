@@ -28,7 +28,15 @@ mixin _$ServerConfig {
 ///   真实 scopes）校正，网关侧升/降权后能自愈；
 /// - 凭据变了（token/password 改动、重新配对）必须清空，否则会把旧凭据的
 ///   权限带到新凭据上。
-@HiveField(10) List<String> get operatorScopes;
+@HiveField(10) List<String> get operatorScopes;/// 网关 TLS 证书指纹（小写十六进制 SHA-256，64 字符）；空串 = 不做固定。
+///
+/// 只由扫码配对写入：setup code 的 payload 带 `tlsFingerprint` 时，说明网关
+/// 用的是自签证书（直连本地 TLS 或 `gateway.remote.url` 带指纹），此时必须
+/// 固定指纹才连得上 —— 系统信任库不认这张证书。
+///
+/// 必须持久化：冷启动重连时手上只有这份配置，指纹丢了就会因为证书校验失败
+/// 而连不上，且现象是「扫码时好好的、重启后连不上」，很难排查。
+@HiveField(11) String get tlsFingerprint;
 /// Create a copy of ServerConfig
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -41,16 +49,16 @@ $ServerConfigCopyWith<ServerConfig> get copyWith => _$ServerConfigCopyWithImpl<S
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerConfig&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.host, host) || other.host == host)&&(identical(other.port, port) || other.port == port)&&(identical(other.token, token) || other.token == token)&&(identical(other.useTLS, useTLS) || other.useTLS == useTLS)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.lastConnected, lastConnected) || other.lastConnected == lastConnected)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.password, password) || other.password == password)&&const DeepCollectionEquality().equals(other.operatorScopes, operatorScopes));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerConfig&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.host, host) || other.host == host)&&(identical(other.port, port) || other.port == port)&&(identical(other.token, token) || other.token == token)&&(identical(other.useTLS, useTLS) || other.useTLS == useTLS)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.lastConnected, lastConnected) || other.lastConnected == lastConnected)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.password, password) || other.password == password)&&const DeepCollectionEquality().equals(other.operatorScopes, operatorScopes)&&(identical(other.tlsFingerprint, tlsFingerprint) || other.tlsFingerprint == tlsFingerprint));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,host,port,token,useTLS,isDefault,lastConnected,authMode,password,const DeepCollectionEquality().hash(operatorScopes));
+int get hashCode => Object.hash(runtimeType,id,name,host,port,token,useTLS,isDefault,lastConnected,authMode,password,const DeepCollectionEquality().hash(operatorScopes),tlsFingerprint);
 
 @override
 String toString() {
-  return 'ServerConfig(id: $id, name: $name, host: $host, port: $port, token: $token, useTLS: $useTLS, isDefault: $isDefault, lastConnected: $lastConnected, authMode: $authMode, password: $password, operatorScopes: $operatorScopes)';
+  return 'ServerConfig(id: $id, name: $name, host: $host, port: $port, token: $token, useTLS: $useTLS, isDefault: $isDefault, lastConnected: $lastConnected, authMode: $authMode, password: $password, operatorScopes: $operatorScopes, tlsFingerprint: $tlsFingerprint)';
 }
 
 
@@ -61,7 +69,7 @@ abstract mixin class $ServerConfigCopyWith<$Res>  {
   factory $ServerConfigCopyWith(ServerConfig value, $Res Function(ServerConfig) _then) = _$ServerConfigCopyWithImpl;
 @useResult
 $Res call({
-@HiveField(0) String id,@HiveField(1) String name,@HiveField(2) String host,@HiveField(3) int port,@HiveField(4) String token,@HiveField(5) bool useTLS,@HiveField(6) bool isDefault,@HiveField(7) DateTime? lastConnected,@HiveField(8) String authMode,@HiveField(9) String password,@HiveField(10) List<String> operatorScopes
+@HiveField(0) String id,@HiveField(1) String name,@HiveField(2) String host,@HiveField(3) int port,@HiveField(4) String token,@HiveField(5) bool useTLS,@HiveField(6) bool isDefault,@HiveField(7) DateTime? lastConnected,@HiveField(8) String authMode,@HiveField(9) String password,@HiveField(10) List<String> operatorScopes,@HiveField(11) String tlsFingerprint
 });
 
 
@@ -78,7 +86,7 @@ class _$ServerConfigCopyWithImpl<$Res>
 
 /// Create a copy of ServerConfig
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? host = null,Object? port = null,Object? token = null,Object? useTLS = null,Object? isDefault = null,Object? lastConnected = freezed,Object? authMode = null,Object? password = null,Object? operatorScopes = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? host = null,Object? port = null,Object? token = null,Object? useTLS = null,Object? isDefault = null,Object? lastConnected = freezed,Object? authMode = null,Object? password = null,Object? operatorScopes = null,Object? tlsFingerprint = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -91,7 +99,8 @@ as bool,lastConnected: freezed == lastConnected ? _self.lastConnected : lastConn
 as DateTime?,authMode: null == authMode ? _self.authMode : authMode // ignore: cast_nullable_to_non_nullable
 as String,password: null == password ? _self.password : password // ignore: cast_nullable_to_non_nullable
 as String,operatorScopes: null == operatorScopes ? _self.operatorScopes : operatorScopes // ignore: cast_nullable_to_non_nullable
-as List<String>,
+as List<String>,tlsFingerprint: null == tlsFingerprint ? _self.tlsFingerprint : tlsFingerprint // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 
@@ -176,10 +185,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes, @HiveField(11)  String tlsFingerprint)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ServerConfig() when $default != null:
-return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes);case _:
+return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes,_that.tlsFingerprint);case _:
   return orElse();
 
 }
@@ -197,10 +206,10 @@ return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useT
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes, @HiveField(11)  String tlsFingerprint)  $default,) {final _that = this;
 switch (_that) {
 case _ServerConfig():
-return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes);case _:
+return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes,_that.tlsFingerprint);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -217,10 +226,10 @@ return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useT
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@HiveField(0)  String id, @HiveField(1)  String name, @HiveField(2)  String host, @HiveField(3)  int port, @HiveField(4)  String token, @HiveField(5)  bool useTLS, @HiveField(6)  bool isDefault, @HiveField(7)  DateTime? lastConnected, @HiveField(8)  String authMode, @HiveField(9)  String password, @HiveField(10)  List<String> operatorScopes, @HiveField(11)  String tlsFingerprint)?  $default,) {final _that = this;
 switch (_that) {
 case _ServerConfig() when $default != null:
-return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes);case _:
+return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useTLS,_that.isDefault,_that.lastConnected,_that.authMode,_that.password,_that.operatorScopes,_that.tlsFingerprint);case _:
   return null;
 
 }
@@ -232,7 +241,7 @@ return $default(_that.id,_that.name,_that.host,_that.port,_that.token,_that.useT
 @JsonSerializable()
 @HiveType(typeId: 0)
 class _ServerConfig extends ServerConfig {
-  const _ServerConfig({@HiveField(0) required this.id, @HiveField(1) required this.name, @HiveField(2) required this.host, @HiveField(3) this.port = 18789, @HiveField(4) this.token = '', @HiveField(5) this.useTLS = false, @HiveField(6) this.isDefault = false, @HiveField(7) this.lastConnected, @HiveField(8) this.authMode = 'token', @HiveField(9) this.password = '', @HiveField(10) final  List<String> operatorScopes = const <String>[]}): _operatorScopes = operatorScopes,super._();
+  const _ServerConfig({@HiveField(0) required this.id, @HiveField(1) required this.name, @HiveField(2) required this.host, @HiveField(3) this.port = 18789, @HiveField(4) this.token = '', @HiveField(5) this.useTLS = false, @HiveField(6) this.isDefault = false, @HiveField(7) this.lastConnected, @HiveField(8) this.authMode = 'token', @HiveField(9) this.password = '', @HiveField(10) final  List<String> operatorScopes = const <String>[], @HiveField(11) this.tlsFingerprint = ''}): _operatorScopes = operatorScopes,super._();
   factory _ServerConfig.fromJson(Map<String, dynamic> json) => _$ServerConfigFromJson(json);
 
 @override@HiveField(0) final  String id;
@@ -278,6 +287,15 @@ class _ServerConfig extends ServerConfig {
   return EqualUnmodifiableListView(_operatorScopes);
 }
 
+/// 网关 TLS 证书指纹（小写十六进制 SHA-256，64 字符）；空串 = 不做固定。
+///
+/// 只由扫码配对写入：setup code 的 payload 带 `tlsFingerprint` 时，说明网关
+/// 用的是自签证书（直连本地 TLS 或 `gateway.remote.url` 带指纹），此时必须
+/// 固定指纹才连得上 —— 系统信任库不认这张证书。
+///
+/// 必须持久化：冷启动重连时手上只有这份配置，指纹丢了就会因为证书校验失败
+/// 而连不上，且现象是「扫码时好好的、重启后连不上」，很难排查。
+@override@JsonKey()@HiveField(11) final  String tlsFingerprint;
 
 /// Create a copy of ServerConfig
 /// with the given fields replaced by the non-null parameter values.
@@ -292,16 +310,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ServerConfig&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.host, host) || other.host == host)&&(identical(other.port, port) || other.port == port)&&(identical(other.token, token) || other.token == token)&&(identical(other.useTLS, useTLS) || other.useTLS == useTLS)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.lastConnected, lastConnected) || other.lastConnected == lastConnected)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.password, password) || other.password == password)&&const DeepCollectionEquality().equals(other._operatorScopes, _operatorScopes));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ServerConfig&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.host, host) || other.host == host)&&(identical(other.port, port) || other.port == port)&&(identical(other.token, token) || other.token == token)&&(identical(other.useTLS, useTLS) || other.useTLS == useTLS)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.lastConnected, lastConnected) || other.lastConnected == lastConnected)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.password, password) || other.password == password)&&const DeepCollectionEquality().equals(other._operatorScopes, _operatorScopes)&&(identical(other.tlsFingerprint, tlsFingerprint) || other.tlsFingerprint == tlsFingerprint));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,host,port,token,useTLS,isDefault,lastConnected,authMode,password,const DeepCollectionEquality().hash(_operatorScopes));
+int get hashCode => Object.hash(runtimeType,id,name,host,port,token,useTLS,isDefault,lastConnected,authMode,password,const DeepCollectionEquality().hash(_operatorScopes),tlsFingerprint);
 
 @override
 String toString() {
-  return 'ServerConfig(id: $id, name: $name, host: $host, port: $port, token: $token, useTLS: $useTLS, isDefault: $isDefault, lastConnected: $lastConnected, authMode: $authMode, password: $password, operatorScopes: $operatorScopes)';
+  return 'ServerConfig(id: $id, name: $name, host: $host, port: $port, token: $token, useTLS: $useTLS, isDefault: $isDefault, lastConnected: $lastConnected, authMode: $authMode, password: $password, operatorScopes: $operatorScopes, tlsFingerprint: $tlsFingerprint)';
 }
 
 
@@ -312,7 +330,7 @@ abstract mixin class _$ServerConfigCopyWith<$Res> implements $ServerConfigCopyWi
   factory _$ServerConfigCopyWith(_ServerConfig value, $Res Function(_ServerConfig) _then) = __$ServerConfigCopyWithImpl;
 @override @useResult
 $Res call({
-@HiveField(0) String id,@HiveField(1) String name,@HiveField(2) String host,@HiveField(3) int port,@HiveField(4) String token,@HiveField(5) bool useTLS,@HiveField(6) bool isDefault,@HiveField(7) DateTime? lastConnected,@HiveField(8) String authMode,@HiveField(9) String password,@HiveField(10) List<String> operatorScopes
+@HiveField(0) String id,@HiveField(1) String name,@HiveField(2) String host,@HiveField(3) int port,@HiveField(4) String token,@HiveField(5) bool useTLS,@HiveField(6) bool isDefault,@HiveField(7) DateTime? lastConnected,@HiveField(8) String authMode,@HiveField(9) String password,@HiveField(10) List<String> operatorScopes,@HiveField(11) String tlsFingerprint
 });
 
 
@@ -329,7 +347,7 @@ class __$ServerConfigCopyWithImpl<$Res>
 
 /// Create a copy of ServerConfig
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? host = null,Object? port = null,Object? token = null,Object? useTLS = null,Object? isDefault = null,Object? lastConnected = freezed,Object? authMode = null,Object? password = null,Object? operatorScopes = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? host = null,Object? port = null,Object? token = null,Object? useTLS = null,Object? isDefault = null,Object? lastConnected = freezed,Object? authMode = null,Object? password = null,Object? operatorScopes = null,Object? tlsFingerprint = null,}) {
   return _then(_ServerConfig(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -342,7 +360,8 @@ as bool,lastConnected: freezed == lastConnected ? _self.lastConnected : lastConn
 as DateTime?,authMode: null == authMode ? _self.authMode : authMode // ignore: cast_nullable_to_non_nullable
 as String,password: null == password ? _self.password : password // ignore: cast_nullable_to_non_nullable
 as String,operatorScopes: null == operatorScopes ? _self._operatorScopes : operatorScopes // ignore: cast_nullable_to_non_nullable
-as List<String>,
+as List<String>,tlsFingerprint: null == tlsFingerprint ? _self.tlsFingerprint : tlsFingerprint // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

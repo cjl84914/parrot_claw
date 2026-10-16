@@ -101,7 +101,7 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
         ),
         const SizedBox(height: 14),
         const Text(
-          '扫描二维码，或使用 ParrotClaw 网关提供的\n设置代码。',
+          '扫描配对码，或使用 openclaw.json 提供的信息\n手动配置。',
           textAlign: TextAlign.center,
           style: TextStyle(color: ConnGatewayScreen._muted, fontSize: 15, height: 1.55),
         ),
@@ -182,7 +182,7 @@ class _ConnGatewayScreenState extends State<ConnGatewayScreen> {
           child: FilledButton.icon(
             onPressed: () => context.push(Routes.qrScan),
             icon: const Icon(Icons.qr_code_scanner_rounded),
-            label: const Text('扫描二维码'), //或设置代码
+            label: const Text('扫描配对码'), //或设置代码
             style: FilledButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: Colors.black,

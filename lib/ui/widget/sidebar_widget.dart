@@ -160,7 +160,7 @@ class _SidebarWidgetState extends State<SidebarWidget> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: IconButton(
-                        tooltip: '分享网关配置',
+                        tooltip: '配对设备',
                         onPressed: () => _openQrCode(context),
                         icon: const Icon(Icons.phone_iphone_outlined, size: 21),
                         visualDensity: VisualDensity.compact,

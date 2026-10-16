@@ -28,15 +28,15 @@ lib/
 │   │   ├── server_repository.dart
 │   │   └── setting_repository.dart
 │   └── service/                       # 核心服务
-│       ├── gateway_session.dart       # WebSocket 会话（协议 / 鉴权 / 重连）
-│       ├── gateway_connector.dart     # 会话工厂 + 重连退避策略
-│       ├── gateway_scope_store.dart
+│       ├── gateway_connection.dart    # Gateway RPC / 操作 API 与连接相关类型
+│       ├── gateway_connector.dart     # 会话工厂、连接探测与重连策略
+│       ├── gateway_session.dart       # WebSocket 会话（握手 / 鉴权 / 心跳 / 重连）
 │       ├── openclaw_protocol.dart     # Gateway 协议常量与类型
 │       ├── openclaw_installer_service.dart  # 安装服务接口
 │       ├── openclaw_model_service.dart      # 模型管理接口
 │       ├── local_gateway_service.dart       # 本机 Gateway 状态 / 凭据接口
 │       ├── shared_preferences_service.dart
-│       ├── storage_service.dart       # Hive 存储
+│       └── storage_service.dart       # Hive 存储
 │       └── impl/                      # 平台实现（按平台装配）
 │           ├── openclaw_service_factory.dart
 │           ├── macos_openclaw_installer_service.dart
@@ -146,9 +146,10 @@ final viewModel = context.watch<ConnViewModel>();
 
 ### OpenClaw 连接
 
-- `GatewaySession`（`data/service/gateway_session.dart`）是连接的唯一真源：负责 WebSocket 建连、协议握手、鉴权、心跳与**自带退避重连**。
-- `gateway_connector.dart` 定义了会话工厂与更激进的重连退避策略（1s 起、2 倍递增、上限 30s），网关重启后能较快恢复。
-- `openclaw_protocol.dart` 放协议版本常量（当前 `protocol = 4`，最低兼容 `3`）与需要保持字符串形态的原始 JSON 包装类型。
+- `gateway_session.dart` 实现 WebSocket 会话：负责连接握手、鉴权、心跳、请求/推送处理及会话级自动重连。
+- `gateway_connector.dart` 提供会话工厂与一次性连接探测 `probeGateway()`；正式会话和探测使用同一连接配置。当前会话退避策略从 1 秒起步、倍增、上限 30 秒；探测会话在结束时会关闭，避免遗留后台重连。
+- `gateway_connection.dart` 集中定义 Gateway RPC 方法、连接/端点与 Agent 调用等连接层 API 类型。
+- `openclaw_protocol.dart` 放 Gateway 协议常量与协议数据类型；如需记录协议版本兼容范围，以该文件当前实现为准。
 - 鉴权来源见 `GatewayAuthSource`：设备 token / 共享 token / 引导 token / 密码。
 
 ### 本地 Gateway 安装（macOS / Windows）
@@ -161,9 +162,9 @@ final viewModel = context.watch<ConnViewModel>();
 
 ### 扫码配对
 
-桌面端展示二维码、移动端扫码即可完成配对：
+桌面端展示配对码、移动端扫码即可完成配对：
 
-- `qr_code_screen.dart` 展示二维码，`qr_scan_screen.dart` 负责扫码（基于 `mobile_scanner`）。
+- `qr_code_screen.dart` 展示配对码，`qr_scan_screen.dart` 负责扫码（基于 `mobile_scanner`）。
 - `gateway_pairing_screen.dart` + `gateway_pairing_request.dart` 处理配对请求与结果。
 
 ### Skill 管理
@@ -191,7 +192,7 @@ final viewModel = context.watch<ConnViewModel>();
 | | `audio_session` | 音频会话管理（处理 ASR 与 TTS 冲突） |
 | | `flutter_edge_tts` | 在线语音合成（Edge TTS，**当前 TTS 主力**） |
 | | `sherpa_onnx` | 离线语音识别（ASR，SenseVoice） |
-| **AI** | `sherpa_onnx` | 离线 ASR / VAD |
+| **AI** | `sherpa_onnx` | 离线 ASR / VAD / 同音字替换（Homophone Replacer） |
 | **OpenClaw** | `web_socket_channel` | Gateway WebSocket 连接 |
 | | `ed25519_edwards` | 设备身份签名认证 |
 | | `uuid` | 会话/请求 ID |
@@ -201,10 +202,10 @@ final viewModel = context.watch<ConnViewModel>();
 | | `flutter_screenutil` | 屏幕适配 |
 | | `flutter_inappwebview` | Live2D 数字人 WebView |
 | | `mobile_scanner` | 扫码配对 |
+| | `desktop_drop` | macOS / Windows 桌面文件拖放 |
 | | `window_manager` | 桌面窗口管理（macOS / Windows） |
 | | `go_router` | 路由管理 |
 | | `flutter_easyloading` | 全局 Loading / Toast |
-| | `flutter_spinkit` | Loading 动画 |
 | **存储** | `hive` + `hive_flutter` | 本地数据库（服务器配置、聊天记录） |
 | | `shared_preferences` | 轻量键值存储 |
 | **工具** | `provider` | 状态管理 |
@@ -219,7 +220,7 @@ final viewModel = context.watch<ConnViewModel>();
 | | `logging` | 日志 |
 | | `baidu_mob_stat` | 百度移动统计（git 依赖） |
 
-> 已停用（`pubspec.yaml` 中注释）：`flutter_dotenv`、`flutter_tts`、`video_player`。
+> `flutter_dotenv`、`flutter_tts`、`video_player` 在 `pubspec.yaml` 中仍为注释状态；它们不参与当前构建。`desktop_drop` 已加入依赖并由 macOS / Windows 注册。近期依赖锁文件也更新了多个包版本，具体版本以 `pubspec.lock` 为准。
 
 ### 关键插件使用说明
 
@@ -246,14 +247,16 @@ await tts.speak('你好');
 
 #### sherpa-onnx（离线语音识别）
 
-离线 ASR 由 `asr_util.dart` 基于 `sherpa_onnx` 实现，配合 **VAD**（`assets/silero_vad.onnx`）做端点检测：
+离线 ASR 由 `asr_util.dart` 基于 `sherpa_onnx` 实现，配合 **VAD**（`assets/silero_vad.onnx`）做端点检测，并配置 Homophone Replacer 进行同音字替换：
 
 ```dart
 final recognizer = await createOfflineRecognizer();
 // 录音 → VAD 切分 → recognizer 识别 → 回调文本
 ```
 
-> 模型文件首次运行时会从 `assets/` 复制到应用支持目录，详见 `file_util.dart`。
+同音字替换资源位于 `assets/hr/`：`lexicon.txt` 和 `replace.fst`。初始化识别器时通过 `copyAssetFile()` 将两者复制到应用支持目录，再传给 `HomophoneReplacerConfig`；Flutter assets 配置必须显式包含 `assets/hr/`（`assets/` 不会递归收录子目录）。
+
+> 模型及 HR 资源首次运行时会从 `assets/` 复制到应用支持目录，详见 `file_util.dart`。
 
 #### 语音识别模型（SenseVoice）
 
@@ -286,6 +289,10 @@ await session.configure(AudioSessionConfiguration(
 ```
 
 ASR 录音时，TTS 播放会通过 `AudioContext` 配置 `audioFocus: AndroidAudioFocus.none` 来避免被系统终止。
+
+#### desktop_drop（桌面拖放）
+
+`desktop_drop` 用于 macOS / Windows 桌面端接收拖入文件。插件由 Flutter 自动注册；新增或移除原生插件后，检查 macOS 的 `GeneratedPluginRegistrant.swift` 和 Windows 的生成注册文件是否与依赖保持一致。
 
 #### flutter_chat_ui（聊天界面）
 

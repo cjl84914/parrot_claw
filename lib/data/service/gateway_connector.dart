@@ -40,6 +40,7 @@ GatewaySession defaultGatewaySessionFactory({
     token: _nonEmpty(config.token),
     password: _nonEmpty(config.password),
     bootstrapToken: _nonEmpty(config.bootstrapToken),
+    tlsFingerprint: _nonEmpty(config.tlsFingerprint),
     pushHandler: onPush,
     disconnectHandler: onDisconnect,
     connectOptions: config.toGatewayOptions(),

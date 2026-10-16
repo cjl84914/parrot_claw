@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:parrot_app/config/app_theme.dart';
-import 'package:parrot_app/data/service/gateway_connection.dart';
-import 'package:parrot_app/main.dart';
 
 class GatewayPairingScreen extends StatelessWidget {
   final String requestId;

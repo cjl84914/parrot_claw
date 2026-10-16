@@ -57,7 +57,6 @@ class _CronEditScreenState extends State<CronEditScreen> {
   /// 「单次」模式下的运行时间。
   late DateTime _singleRunAt;
 
-  static const _modelOptions = ['默认', 'gpt-4o-mini', 'claude-haiku', '自定义…'];
   static const _unitOptions = ['秒', '分', '时', '天'];
   static const _timezoneOptions = [
     'Asia/Shanghai',
@@ -83,6 +82,37 @@ class _CronEditScreenState extends State<CronEditScreen> {
         if (mounted) setState(() {});
       });
     }
+
+    // 「模型」下拉列的是网关实际可用的模型（models.list），不是写死的几项。
+    unawaited(_loadModels());
+  }
+
+  /// 拉一次模型列表；回来后重建，让下拉立刻拿到真实选项。
+  Future<void> _loadModels() async {
+    await widget.viewModel.loadModels();
+    if (mounted) setState(() {});
+  }
+
+  /// 「模型」下拉的选项：`默认` + 网关实际可用的模型。
+  ///
+  /// 值就是写进 `payload.model` 的模型 id（与聊天页的模型菜单同源，
+  /// 都取自 `models.list`）。当前任务已存的模型若不在列表里（网关换了模型
+  /// 配置，或列表还没拉回来），也补进去，避免看起来像「值丢了」。
+  List<String> get _modelOptions {
+    const fallback = GatewayCronDraft.defaultModelLabel;
+    final ids =
+        <String>[
+          for (final model in widget.viewModel.rawModels ?? const [])
+            if (model is Map) model['id']?.toString().trim() ?? '',
+        ].where((id) => id.isNotEmpty && id != fallback).toSet().toList();
+
+    final current = _modelController.text.trim();
+    return [
+      fallback,
+      if (current.isNotEmpty && current != fallback && !ids.contains(current))
+        current,
+      ...ids,
+    ];
   }
 
   @override
@@ -665,10 +695,13 @@ class _CronEditScreenState extends State<CronEditScreen> {
       builder: (sheetContext) {
         return SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          // 用 `ListView(shrinkWrap: true)` 而不是 `Column`：模型选项是从网关
+          // 拉回来的，条数不确定；`Column` 一多就会撑破弹层的最大高度而报
+          // 「RenderFlex overflowed」。`shrinkWrap` 让条目少时高度照旧贴合内容。
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
-              const SizedBox(height: 8),
               for (final option in options)
                 ListTile(
                   title: Text(option, style: AppTextStyles.bodyMedium),
@@ -682,7 +715,6 @@ class _CronEditScreenState extends State<CronEditScreen> {
                           : null,
                   onTap: () => Navigator.of(sheetContext).pop(option),
                 ),
-              const SizedBox(height: 8),
             ],
           ),
         );

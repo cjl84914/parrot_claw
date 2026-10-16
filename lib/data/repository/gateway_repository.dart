@@ -1237,18 +1237,35 @@ class GatewayRepository extends ChangeNotifier {
     }
   }
 
+  /// 生成一张网关配对码（可选带二维码）。
+  ///
+  /// [access] 决定网关下发哪一档 bootstrap profile：完整访问下发的 operator
+  /// 令牌含 `operator.admin`，受限访问不含。
+  ///
+  /// **`full` 的语义是「不传 `bootstrapProfile` 字段」**，不能显式传 `"full"` ——
+  /// 官方 schema 的 enum 只有 `limited` / `node` / `voice-node`，多传一个未知值
+  /// 会被老网关按 `INVALID_REQUEST` 拒掉（见
+  /// [OpenClawPairSetupAccess.bootstrapProfile]）。
+  ///
+  /// 另外网关侧 `device.pair.setupCode` 要求调用方具备 `operator.admin`
+  /// （`src/gateway/methods/core-descriptors.ts` 的方法权限策略），所以受限设备
+  /// 令牌会话调用本方法会失败。
   Future<OpenClawDevicePairSetupCodeResponse> devicePairSetupCode({
     String? publicUrl,
+    OpenClawPairSetupAccess access = OpenClawPairSetupAccess.full,
+    bool includeQr = true,
   }) async {
     // 注意：这里把 publicUrl 真的透传下去了。原实现声明了这个入参却直接丢弃，
     // 属于「签名承诺了、实现没做」——调用方目前都不传，所以行为不变。
+    final bootstrapProfile = access.bootstrapProfile;
     return OpenClawDevicePairSetupCodeResponse.fromJson(
       await requestKnown(
         'device.pair.setupCode',
         params: {
           if (publicUrl?.trim().isNotEmpty == true)
             'publicUrl': publicUrl!.trim(),
-          'includeQr': true,
+          if (bootstrapProfile != null) 'bootstrapProfile': bootstrapProfile,
+          'includeQr': includeQr,
         },
         timeout: const Duration(seconds: 15),
       ),

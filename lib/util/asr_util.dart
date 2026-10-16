@@ -13,6 +13,10 @@ Future<sherpa_onnx.OfflineRecognizer> createOfflineRecognizer() async {
   final config = sherpa_onnx.OfflineRecognizerConfig(
     model: modelConfig,
     ruleFsts: '',
+    hr: sherpa_onnx.HomophoneReplacerConfig(
+      lexicon: await copyAssetFile('assets/hr/lexicon.txt'),
+      ruleFsts: await copyAssetFile('assets/hr/replace.fst'),
+    ),
   );
   return sherpa_onnx.OfflineRecognizer(config);
 }

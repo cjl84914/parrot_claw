@@ -26,6 +26,7 @@ _ServerConfig _$ServerConfigFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList() ??
           const <String>[],
+      tlsFingerprint: json['tlsFingerprint'] as String? ?? '',
     );
 
 Map<String, dynamic> _$ServerConfigToJson(_ServerConfig instance) =>
@@ -41,4 +42,5 @@ Map<String, dynamic> _$ServerConfigToJson(_ServerConfig instance) =>
       'authMode': instance.authMode,
       'password': instance.password,
       'operatorScopes': instance.operatorScopes,
+      'tlsFingerprint': instance.tlsFingerprint,
     };
