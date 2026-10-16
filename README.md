@@ -5,7 +5,7 @@
 <h4 align="center">为一人公司和内容设计师打造的AI数字员工</h4>
 <p align="center">
  <a href="https://parrot.geetion.com"><img src="https://img.shields.io/badge/官网-parrot.geetion.com-orange.svg"></a>
- <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.8-brightgreen.svg"></a>
+ <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.9-brightgreen.svg"></a>
  <a href="https://gitee.com/alexcai/parrot_claw/LICENSE"><img src="https://img.shields.io/github/license/mashape/apistatus.svg"></a>
 </p>
 
@@ -91,7 +91,7 @@ ParrotClaw App（Flutter 交互层）
 
 ## 当前版本
 
-- App 版本：`1.0.6`
+- App 版本：`1.0.9`
 - Flutter SDK：`3.47.1`
 
 ## 路线图
@@ -106,7 +106,7 @@ ParrotClaw App（Flutter 交互层）
 - [x] Windows 版本
 - [x] 扫码克隆服务器
 - [x] 会话管理
-- [x] 兼容官方二维码
+- [x] 兼容官方配对码
 - [x] Skill管理
 - [x] 英文 README DOCS
 - [x] 数字人生成案例
