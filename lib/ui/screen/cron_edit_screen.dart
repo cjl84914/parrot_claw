@@ -350,10 +350,14 @@ class _CronEditScreenState extends State<CronEditScreen> {
                   (v) => (v == null || v.trim().isEmpty) ? '请输入提示词' : null,
             ),
             _buildSelectField(
-              controller: _modelController,
+              value: _modelController.text,
               label: '模型',
               icon: Icons.memory_outlined,
               options: _modelOptions,
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _modelController.text = value);
+              },
             ),
           ]),
           _buildCard([
@@ -431,10 +435,14 @@ class _CronEditScreenState extends State<CronEditScreen> {
               SizedBox(
                 width: 112,
                 child: _buildSelectField(
-                  controller: _unitController,
+                  value: _unitController.text,
                   label: '单位',
                   icon: Icons.schedule_outlined,
                   options: _unitOptions,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _unitController.text = value);
+                  },
                 ),
               ),
             ],
@@ -451,10 +459,14 @@ class _CronEditScreenState extends State<CronEditScreen> {
                 (v) => (v == null || v.trim().isEmpty) ? '请输入表达式' : null,
           ),
           _buildSelectField(
-            controller: _timezoneController,
+            value: _timezoneController.text,
             label: '时区',
             icon: Icons.public,
             options: _timezoneOptions,
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _timezoneController.text = value);
+            },
           ),
         ];
       // 单次（及其他未知值）
@@ -657,70 +669,65 @@ class _CronEditScreenState extends State<CronEditScreen> {
     );
   }
 
-  /// 只读输入框 + 底部弹层选择，外观与普通输入框一致。
+  /// 下拉选择字段：外观与普通输入框一致（`InputDecorator` 提供浮动标签 +
+  /// 无边框），控件本身用 Material 自带的 `DropdownButton`，与
+  /// `setting_screen.dart` 的下拉一致（`isExpanded: true` + 文本溢出省略）。
   Widget _buildSelectField({
-    required TextEditingController controller,
+    required String value,
     required String label,
     required IconData icon,
     required List<String> options,
+    required ValueChanged<String?> onChanged,
     String? helper,
   }) {
-    return _buildTextField(
-      controller: controller,
-      label: label,
-      icon: icon,
-      helper: helper,
-      readOnly: true,
-      onTap: () => _pickOption(controller, options),
-      suffixIcon: const Icon(
-        Icons.expand_more,
-        size: 20,
-        color: AppColors.textSecondary,
+    // 已存的值可能不在候选里（网关换了模型配置 / 列表还没拉回来），
+    // 补进去，否则 `DropdownButton` 会因「value 不在 items 中」直接断言失败。
+    final items = <String>[
+      if (value.isNotEmpty && !options.contains(value)) value,
+      ...options,
+    ];
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helper,
+        helperMaxLines: 4,
+        filled: false,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        labelStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textSecondary,
+        ),
+        helperStyle: AppTextStyles.caption,
       ),
-    );
-  }
-
-  Future<void> _pickOption(
-    TextEditingController controller,
-    List<String> options,
-  ) async {
-    final current = controller.text;
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppRadius.xlarge),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: items.contains(value) ? value : null,
+          isExpanded: true,
+          isDense: true,
+          icon: const Icon(
+            Icons.expand_more,
+            size: 20,
+            color: AppColors.textSecondary,
+          ),
+          style: AppTextStyles.bodyMedium,
+          borderRadius: BorderRadius.circular(AppRadius.medium),
+          items: [
+            for (final option in items)
+              DropdownMenuItem<String>(
+                value: option,
+                child: Text(
+                  option,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: onChanged,
         ),
       ),
-      builder: (sheetContext) {
-        return SafeArea(
-          top: false,
-          // 用 `ListView(shrinkWrap: true)` 而不是 `Column`：模型选项是从网关
-          // 拉回来的，条数不确定；`Column` 一多就会撑破弹层的最大高度而报
-          // 「RenderFlex overflowed」。`shrinkWrap` 让条目少时高度照旧贴合内容。
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              for (final option in options)
-                ListTile(
-                  title: Text(option, style: AppTextStyles.bodyMedium),
-                  trailing:
-                      option == current
-                          ? Icon(
-                            Icons.check,
-                            size: 18,
-                            color: Theme.of(sheetContext).colorScheme.primary,
-                          )
-                          : null,
-                  onTap: () => Navigator.of(sheetContext).pop(option),
-                ),
-            ],
-          ),
-        );
-      },
     );
-    if (selected != null && mounted) setState(() => controller.text = selected);
   }
 
   /// 启用行：`[开关] 已启用  Every 1分钟 · 下次 39秒后`（左对齐）。
