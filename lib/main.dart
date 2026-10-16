@@ -71,13 +71,14 @@ void main() async {
     await windowManager.ensureInitialized();
     // Windows 使用系统标题栏（原生支持拖动/最小化/关闭）；
     // macOS 保持隐藏标题栏的无边框体验（其标题栏区域本身可拖动）。
-    const WindowOptions windowOptions = WindowOptions(
-      size: Size(1280, 800),
-      minimumSize: Size(390, 800),
+    final WindowOptions windowOptions = WindowOptions(
+      size: const Size(1280, 800),
+      minimumSize: const Size(390, 800),
       center: false,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.hidden,
+      titleBarStyle:
+          Platform.isWindows ? TitleBarStyle.normal : TitleBarStyle.hidden,
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
@@ -268,9 +269,7 @@ final GoRouter router = GoRouter(
           path: Routes.index,
           pageBuilder: (context, state) {
             return NoTransitionPage(
-              child: ChatScreen(
-                viewModel: context.read(),
-              ),
+              child: ChatScreen(viewModel: context.read()),
             );
           },
         ),
