@@ -1,0 +1,147 @@
+{
+  "14": {
+    "inputs": {
+      "tags": "Pop, uplifting, catchy melody, warm vocals, acoustic guitar, soft drums, bass, piano, 100 bpm, studio quality",
+      "lyrics": "[verse]\n[zh]you3ren2fang4yan1hua1 you3ren2zhui1wan3feng1\n\n[verse]\n[zh]jie4yi1lv3shi2guang1 peng3yi1pian4xing1kong1\n\n[verse]\n[zh]ting2yi1ting2 deng3yi1deng3 bie2cong1cong1\n\n[verse]\n[zh]zao4meng4zhe3zao4le5hao3meng4 zhi2de2wo3cheng1song4\n\n[chorus]\n[zh]shi4jie4zeng4yu3wo3chong2ming2 ye3zeng4yu3wo3lei2ting2\n\n[chorus]\n[zh]zeng4wo3wan1wan1yi1mei2yue4 ye3zeng4yu3wo3wan3xing1\n\n[chorus]\n[zh]zeng4wo3yi1chang3bing4 you4man4man4quan2yu4yao2feng1ling2\n\n[chorus]\n[zh]zeng4wo3yi1chang3kong1 you4jian4jian4tian2man3zhen1gan3qing2\n\n[verse]\n[zh]you3ren2chang4qing2ge1 you3ren2ting1wan3zhong1\n\n[verse]\n[zh]jie4yi1si1meng3dong3 jing1yi1pian4fan1yong3\n\n[verse]\n[zh]zhui1yi1zhui1 gan3yi1gan3 qing2zheng4nong2\n\n[verse]\n[zh]hao3gu4shi4juan4gu4hao3ren2 tian1ci4de5en1chong3\n\n[chorus]\n[zh]shi4jie4zeng4yu3wo3yong1you3 ye3zeng4yu3wo3hui2jing4\n\n[chorus]\n[zh]zeng4wo3xiao3xiao3yi1shan4chuang1 ye3zeng4yu3wo3wu1ding3\n\n[chorus]\n[zh]zeng4wo3yi1ge4ming2 you4jian4jian4zhang3da4de5nian2ling2\n\n[chorus]\n[zh]zeng4wo3yi1shou3shi1 you4qiao1qiao1du2de5hen3an1jing4\n\n[verse]\n[zh]you3ren2yao4hui2wang4 you3ren2yao4chong1jing3\n\n[verse]\n[zh]jie4yi1duo3bai2yun2 pai1yi1zhang1he2ying3\n\n[verse]\n[zh]xiang3yi1xiang3 wen4zi4ji3 mo4da3ting1\n\n[verse]\n[zh]yuan3qu4zhe3qu4le5yuan3fang1 yuan4ta1dou1an1xin1",
+      "lyrics_strength": 0.9900000000000002,
+      "clip": [
+        "40",
+        1
+      ]
+    },
+    "class_type": "TextEncodeAceStepAudio",
+    "_meta": {
+      "title": "\u6587\u672c\u97f3\u9891\u7f16\u7801\uff08AceStep\uff09"
+    }
+  },
+  "17": {
+    "inputs": {
+      "seconds": 120,
+      "batch_size": 1
+    },
+    "class_type": "EmptyAceStepLatentAudio",
+    "_meta": {
+      "title": "\u7a7aLatent\u97f3\u9891\uff08AceStep\uff09"
+    }
+  },
+  "18": {
+    "inputs": {
+      "samples": [
+        "52",
+        0
+      ],
+      "vae": [
+        "40",
+        2
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE\u89e3\u7801\uff08\u97f3\u9891\uff09"
+    }
+  },
+  "40": {
+    "inputs": {
+      "ckpt_name": "ace_step_v1_3.5b.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Checkpoint\u52a0\u8f7d\u5668\uff08\u7b80\u6613\uff09"
+    }
+  },
+  "44": {
+    "inputs": {
+      "conditioning": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "\u6761\u4ef6\u96f6\u5316"
+    }
+  },
+  "49": {
+    "inputs": {
+      "model": [
+        "51",
+        0
+      ],
+      "operation": [
+        "50",
+        0
+      ]
+    },
+    "class_type": "LatentApplyOperationCFG",
+    "_meta": {
+      "title": "Latent\u5e94\u7528\u64cd\u4f5cCFG"
+    }
+  },
+  "50": {
+    "inputs": {
+      "multiplier": 1.0000000000000002
+    },
+    "class_type": "LatentOperationTonemapReinhard",
+    "_meta": {
+      "title": "Latent\u64cd\u4f5c\u8272\u8c03\u6620\u5c04Reinhard"
+    }
+  },
+  "51": {
+    "inputs": {
+      "shift": 5.000000000000001,
+      "model": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "\u91c7\u6837\u7b97\u6cd5\uff08SD3\uff09"
+    }
+  },
+  "52": {
+    "inputs": {
+      "seed": 666103121359541,
+      "steps": 50,
+      "cfg": 5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "49",
+        0
+      ],
+      "positive": [
+        "14",
+        0
+      ],
+      "negative": [
+        "44",
+        0
+      ],
+      "latent_image": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K\u91c7\u6837\u5668"
+    }
+  },
+  "59": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "quality": "V0",
+      "audioUI": "/api/view?filename=ComfyUI_00009.mp3&type=output&subfolder=audio&rand=0.9205412111325687",
+      "audio": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "\u4fdd\u5b58\u97f3\u9891 (MP3)"
+    }
+  }
+}

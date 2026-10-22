@@ -1,0 +1,79 @@
+{
+  "10": {
+    "inputs": {
+      "image": "input.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像（输入）"
+    }
+  },
+  "1": {
+    "inputs": {
+      "model_name": "4x-ClearRealityV1_Soft.pth"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "加载放大模型（4x-ClearRealityV1_Soft）"
+    }
+  },
+  "2": {
+    "inputs": {
+      "upscale_model": [
+        "1",
+        0
+      ],
+      "image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ImageUpscaleWithModel",
+    "_meta": {
+      "title": "模型放大 4x"
+    }
+  },
+  "3": {
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 1920,
+      "height": 1080,
+      "crop": "center"
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "缩放到 1920×1080（居中裁切，可选）"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "hires_fix_4x",
+      "images": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存 · 4x 原尺寸"
+    }
+  },
+  "11": {
+    "inputs": {
+      "filename_prefix": "hires_fix_1920",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存 · 1920×1080"
+    }
+  }
+}
