@@ -28,9 +28,9 @@ lib/
 │   │   ├── server_repository.dart
 │   │   └── setting_repository.dart
 │   └── service/                       # Core services
-│       ├── gateway_session.dart       # WebSocket session (protocol / auth / reconnect)
-│       ├── gateway_connector.dart     # Session factory + reconnect backoff
-│       ├── gateway_scope_store.dart
+│       ├── gateway_connection.dart    # Gateway RPC / operation APIs and connection types
+│       ├── gateway_connector.dart     # Session factory, connection probing and reconnect policy
+│       ├── gateway_session.dart       # WebSocket session (handshake / auth / heartbeat / reconnect)
 │       ├── openclaw_protocol.dart     # Gateway protocol constants and types
 │       ├── openclaw_installer_service.dart  # Installer service interface
 │       ├── openclaw_model_service.dart      # Model management interface
@@ -146,9 +146,10 @@ final viewModel = context.watch<ConnViewModel>();
 
 ### OpenClaw connection
 
-- `GatewaySession` (`data/service/gateway_session.dart`) is the single source of truth for a connection: it owns the WebSocket connection, protocol handshake, auth, heartbeat and **backoff-based reconnection**.
-- `gateway_connector.dart` defines the session factory and a more aggressive reconnect backoff (starting at 1s, doubling, capped at 30s), so the app recovers quickly after a Gateway restart.
-- `openclaw_protocol.dart` holds the protocol version constants (currently `protocol = 4`, minimum compatible `3`) and the raw-JSON wrapper types that must stay strings.
+- `gateway_session.dart` implements the WebSocket session: connection handshake, auth, heartbeat, request / push handling, and session-level automatic reconnection.
+- `gateway_connector.dart` provides the session factory and a one-shot connection probe `probeGateway()`; the real session and the probe share the same connection config. The current session backoff starts at 1 second, doubles, and caps at 30 seconds; probe sessions are closed when they finish, so no background reconnection is left behind.
+- `gateway_connection.dart` centralises the Gateway RPC methods, connection / endpoint types and agent-invocation types used by the connection layer.
+- `openclaw_protocol.dart` holds the Gateway protocol constants and protocol data types; if you need to record the supported protocol version range, treat that file's current implementation as the source of truth.
 - Auth sources are described by `GatewayAuthSource`: device token / shared token / bootstrap token / password.
 
 ### Local Gateway install (macOS / Windows)
@@ -191,7 +192,7 @@ Browse, search and install Skills inside the app:
 | | `audio_session` | Audio session management (handles ASR vs TTS conflicts) |
 | | `flutter_edge_tts` | Online speech synthesis (Edge TTS, **the current primary TTS**) |
 | | `sherpa_onnx` | Offline speech recognition (ASR, SenseVoice) |
-| **AI** | `sherpa_onnx` | Offline ASR / VAD |
+| **AI** | `sherpa_onnx` | Offline ASR / VAD / homophone replacement (Homophone Replacer) |
 | **OpenClaw** | `web_socket_channel` | Gateway WebSocket connection |
 | | `ed25519_edwards` | Device identity signed auth |
 | | `uuid` | Session / request IDs |
@@ -201,10 +202,10 @@ Browse, search and install Skills inside the app:
 | | `flutter_screenutil` | Screen adaptation |
 | | `flutter_inappwebview` | WebView for the Live2D digital human |
 | | `mobile_scanner` | Scan-to-pair |
+| | `desktop_drop` | Desktop file drop on macOS / Windows |
 | | `window_manager` | Desktop window management (macOS / Windows) |
 | | `go_router` | Routing |
 | | `flutter_easyloading` | Global loading / toast |
-| | `flutter_spinkit` | Loading animations |
 | **Storage** | `hive` + `hive_flutter` | Local database (server config, chat history) |
 | | `shared_preferences` | Lightweight key-value storage |
 | **Tooling** | `provider` | State management |
@@ -219,7 +220,7 @@ Browse, search and install Skills inside the app:
 | | `logging` | Logging |
 | | `baidu_mob_stat` | Baidu mobile analytics (git dependency) |
 
-> No longer used (commented out in `pubspec.yaml`): `flutter_dotenv`, `flutter_tts`, `video_player`.
+> `flutter_dotenv`, `flutter_tts` and `video_player` are still commented out in `pubspec.yaml`; they do not take part in the current build. `desktop_drop` has been added as a dependency and is registered by macOS / Windows. The lockfile has also picked up several package version bumps recently — `pubspec.lock` is the source of truth for exact versions.
 
 ### Notes on key plugins
 
@@ -246,14 +247,16 @@ A few easy-to-miss points (all commented in `EdgeTTSUtil`):
 
 #### sherpa-onnx (offline speech recognition)
 
-Offline ASR is implemented in `asr_util.dart` on top of `sherpa_onnx`, combined with **VAD** (`assets/silero_vad.onnx`) for endpoint detection:
+Offline ASR is implemented in `asr_util.dart` on top of `sherpa_onnx`, combined with **VAD** (`assets/silero_vad.onnx`) for endpoint detection, plus a Homophone Replacer for homophone substitution:
 
 ```dart
 final recognizer = await createOfflineRecognizer();
 // record → VAD segmentation → recognizer → text callback
 ```
 
-> On first run, model files are copied from `assets/` into the app support directory; see `file_util.dart` for details.
+The homophone replacement assets live in `assets/hr/`: `lexicon.txt` and `replace.fst`. When the recognizer is initialised, `copyAssetFile()` copies both into the app support directory before they are handed to `HomophoneReplacerConfig`. The Flutter assets config must list `assets/hr/` explicitly (`assets/` does not include subdirectories recursively).
+
+> On first run, model files and the HR assets are copied from `assets/` into the app support directory; see `file_util.dart` for details.
 
 #### Speech recognition model (SenseVoice)
 
@@ -286,6 +289,10 @@ await session.configure(AudioSessionConfiguration(
 ```
 
 While ASR is recording, TTS playback configures `audioFocus: AndroidAudioFocus.none` through `AudioContext` so the system does not terminate it.
+
+#### desktop_drop (desktop drag and drop)
+
+`desktop_drop` lets the macOS / Windows desktop builds receive files dragged onto the app. The plugin is registered by Flutter automatically; after adding or removing a native plugin, check that macOS's `GeneratedPluginRegistrant.swift` and the generated Windows registration files still match the dependency list.
 
 #### flutter_chat_ui (chat UI)
 

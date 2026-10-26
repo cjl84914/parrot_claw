@@ -397,7 +397,7 @@ Alex、小林、王工
 2. 使用场景文档优先级确认
 
 ## 关键结论
-- App Store 已上线，官网和 Gitee 开源同步完成
+- App Store 已上线，官网和 GitHub 开源同步完成
 - 场景落地优先于国际化，先跑通"写作 + 会议记录"闭环
 
 ## 待办事项
@@ -457,4 +457,4 @@ ParrotClaw 的玩法远不止这些——也许你会发掘出我们没想到的
 
 - QQ：121237385
 - Email：121237385@qq.com
-- 项目地址：[https://gitee.com/alexcai/parrot_claw](https://gitee.com/alexcai/parrot_claw)
+- 项目地址：[https://github.com/cjl84914/parrot_claw](https://github.com/cjl84914/parrot_claw)

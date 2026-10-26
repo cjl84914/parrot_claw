@@ -1,6 +1,25 @@
 # Changelog
 
-> 🚧 English changelog is in progress. See the [Chinese changelog](/docs/changelog) for the full history.
+This page tracks version updates and notable changes to ParrotClaw.
+
+## v1.0.9
+
+- 🔗 Compatible with **OpenClaw 2026.10.3**
+- ⏰ Added **scheduled tasks**
+- ✨ UX improvements
+- 🐛 Bug fixes
+
+## v1.0.8
+
+- 🔗 Compatible with **OpenClaw 2026.9.8**
+- 🔊 Added an **entry point to the OpenClaw TTS docs**
+- 🐛 Bug fixes
+
+## v1.0.7
+
+- 🐛 Bug fixes
+- 🎙️ Improved barge-in interaction
+- 🖥️ Desktop: drag a file path into the input box
 
 ## v1.0.6
 
@@ -10,7 +29,7 @@
 
 ## v1.0.5
 
-- 🌟 Overall UX improvements
+- 🌟 **Broad UX improvements**
 - 💬 Added **session management**
 - 📱 Added **scan-to-pair** (supports the official OpenClaw QR code)
 
@@ -32,4 +51,4 @@
 
 ---
 
-> Full release history: [Gitee Releases](https://gitee.com/alexcai/parrot_claw/releases) · [GitHub Releases](https://github.com/cjl84914/parrot_claw/releases).
+> Full release history: [GitHub Releases](https://github.com/cjl84914/parrot_claw/releases).

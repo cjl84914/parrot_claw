@@ -1,17 +1,18 @@
-# About ParrotClaw
+<div align="center">
+  <img src="/images/icon.jpg" width="120" alt="ParrotClaw Logo">
+</div>
 
-ParrotClaw is an open-source AI digital employee for solo founders and creators.
+# ParrotClaw
 
-> 🚧 English documentation is in progress. Please refer to the [Chinese docs](/docs/about) for the complete content.
+<p align="center">An AI digital employee for one-person companies and content designers</p>
 
-## What it is
+<p align="center">
+  <a href="/en/docs/getting-started">🚀 Getting started</a>
+</p>
 
-- **Private by design** — runs fully on your own machine
-- **Conversational** — just talk to it
-- **Offline Chinese voice** — local speech recognition with sherpa-onnx
-- **Cross-platform** — iOS, Android, macOS, Windows, Linux
+## Contact the author
 
-## Links
-
-- [GitHub](https://github.com/cjl84914/parrot_claw)
-- [Gitee](https://gitee.com/alexcai/parrot_claw)
+- **QQ**: 121237385
+- **Email**: [121237385@qq.com](mailto:121237385@qq.com)
+- **Website**: [https://parrot.geetion.com](https://parrot.geetion.com)
+- **GitHub**: [https://github.com/cjl84914/parrot_claw](https://github.com/cjl84914/parrot_claw)

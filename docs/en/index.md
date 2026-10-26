@@ -35,5 +35,3 @@ features:
     title: Meeting minutes
     details: Record, transcribe, and get meeting notes automatically.
 ---
-
-> 🌐 Full English documentation is in progress. For now, please refer to the [Chinese docs](/docs/about).

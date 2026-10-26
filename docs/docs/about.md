@@ -16,4 +16,3 @@
 - **Email**：[121237385@qq.com](mailto:121237385@qq.com)
 - **官网**：[https://parrot.geetion.com](https://parrot.geetion.com)
 - **GitHub**：[https://github.com/cjl84914/parrot_claw](https://github.com/cjl84914/parrot_claw)
-- **Gitee**：[https://gitee.com/alexcai/parrot_claw](https://gitee.com/alexcai/parrot_claw)

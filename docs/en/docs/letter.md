@@ -36,28 +36,28 @@ And so ParrotClaw was born.
 
 ### How it differs from the official OpenClaw app
 
-ParrotClaw stands on top of OpenClaw — the underlying capabilities are the same as the official app; the difference is that **the experience has been made "simple"**.
+The official OpenClaw app is powerful, but it puts up a few barriers for users in China:
 
-The official app is powerful, but it puts up a few barriers for everyday users in China:
+- **Dependence on Google services** — most phones in China have no Google Services, so offline speech recognition does not work
+- **Developer-oriented interaction** — it is better suited to developers
 
-- **Technical installation** — you have to prepare the environment and configure OpenClaw yourself
-- **Dependence on Google services** — most phones in China have no Google Services, so voice recognition does not work
-- **Developer-oriented interaction** — it feels more like a tool than an app that works out of the box
-
-What ParrotClaw improves:
+ParrotClaw addresses those pain points:
 
 | Aspect | Official OpenClaw app | ParrotClaw |
 |------|------------------|------------|
-| Getting started | Technical, needs configuration | **Simple and easy to use**, works out of the box |
-| Installation | Install and configure OpenClaw yourself | **One-click install on desktop**; **scan to use on mobile** |
-| Speech recognition | Relies on Google online services | **Offline Chinese ASR** (sherpa-onnx) — no network, no Google |
-| Speech synthesis | Needs setup, mostly cloud-based | **Free TTS**, available out of the box |
-| Digital human | None | **Live2D digital human** with lip-synced speech — more fun to talk to |
-| Cross-platform | Mobile first | **Flutter cross-platform** — one experience on desktop and mobile |
+| Speech recognition | Relies on Google online services | Offline recognition on sherpa-onnx, supports Chinese, no Google, no network |
+| Digital human | None | Live2D integration, making read-aloud conversation more fun |
+| Message formats | Text only | **Image display, audio and video playback** — rich media messages supported natively |
+| Multi-server configuration | Single server connection only | **Multi-server management** — one app connects to several OpenClaw or toolchain servers at once and switches freely |
+| Cross-platform | Mobile only | **Flutter cross-platform** — one codebase covering mobile and desktop with a consistent experience |
 
-In one sentence: **ParrotClaw turns "usable" into "easy to use".**
+Put simply: **ParrotClaw makes an AI digital employee workable in a Chinese environment — and more fun to use.**
 
-ParrotClaw is also open source under the **MIT license** — the code is fully open, and you are welcome to use and build on it. And like the official app, it supports **self-hosting**: everything runs on your own devices, so your privacy never leaves your network.
+Beyond localisation for China, ParrotClaw has some distinctive engineering choices:
+
+**Multi-server configuration** — unlike the official app, which connects to a single backend, ParrotClaw can configure and manage several server connections at once. You can keep production and test environments apart, or deploy agents with different roles on different servers and manage them together. If you run a ComfyUI image workstation, a TTS server and an OpenClaw orchestration hub, one app handles all the switching.
+
+**Cross-platform Flutter architecture** — built on Flutter, one codebase covers Android, iOS, Windows, macOS and Linux. Your data follows your account seamlessly across devices, and for developers the maintenance cost drops sharply: a new feature ships everywhere at once.
 
 ## 3. A modest contribution
 

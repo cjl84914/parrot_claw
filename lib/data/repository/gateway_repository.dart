@@ -72,9 +72,31 @@ class GatewayRepository extends ChangeNotifier {
 
   bool get isHistoryLoading => _isHistoryLoading;
 
+  /// 正在加载历史的那一次请求对应的会话 key。
+  ///
+  /// 切会话时旧请求可能还没回来，靠它区分「这次加载还是不是当前这次」，
+  /// 免得旧结果覆盖新会话、或者旧请求的收尾把新请求的 loading 抹掉。
+  String? _historyLoadingKey;
+
+  /// 当前会话的 run id（没有在跑就是空串）。UI 的「打断」按钮只看这个。
   String _runId = '';
 
   String get runId => _runId;
+
+  /// 当前 run 属于哪个会话（发送那一刻的 key）。
+  ///
+  /// `abortMessage()` 必须用它，而不是 `sessionKey` —— 否则切到别的会话之后点
+  /// 「打断」，`chat.abort` 会带着新会话的 key 发出去（runId 对不上，网关直接
+  /// 拒绝，旧会话的生成也停不下来）。
+  String _runSessionKey = '';
+
+  /// 每个会话各自在跑的 run（key 是去掉 `agent:` 作用域后的会话 key）。
+  ///
+  /// 切会话不能把旧会话的 run 状态丢掉：切走再切回来，输入行仍要显示「打断」、
+  /// 流式文字也要接着写。但**终态事件可能在别的会话里到达**（切走期间跑完了），
+  /// 所以这张表对所有会话都维护，只有「当前会话」才渲染到 UI —— 见
+  /// [_handleChatEvent]。不清的话切回来会永远停在「运行中」。
+  final Map<String, String> _runIdBySession = {};
 
   // A run can contain multiple assistant replies. Keep a client-side ID for
   // the current cumulative streaming reply so later replies are appended.
@@ -162,6 +184,9 @@ class GatewayRepository extends ChangeNotifier {
     _isReconnecting = reconnecting;
     disconnectReason = reconnecting ? '正在重新连接网关…' : null;
     _runId = '';
+    _runSessionKey = '';
+    // 换了连接，旧连接上的 run 都不作数了。
+    _runIdBySession.clear();
     // _log.info('Switching to server: ${config.clientDisplayName}');
 
     try {
@@ -422,17 +447,114 @@ class GatewayRepository extends ChangeNotifier {
       case 'health':
         break;
       case 'chat':
+        // `chat` 一律送进 [_handleChatEvent]：别的会话的增量不渲染，但终态要
+        // 用来结掉那个会话的 run（否则切回去会永远停在「运行中」）。
         if (payload != null) _handleChatEvent(payload);
         break;
       case 'agent':
-        if (payload != null) _handleAgentEvent(payload);
+        if (payload != null && _isCurrentSessionEvent(payload)) {
+          _handleAgentEvent(payload);
+        }
         break;
       case 'presence':
         break;
       case 'session.message':
-        if (payload != null) _handleSessionMessageEvent(payload);
+        if (payload != null && _isCurrentSessionEvent(payload)) {
+          _handleSessionMessageEvent(payload);
+        }
       default:
     }
+  }
+
+  /// 事件是否属于「当前正在看的会话」。
+  ///
+  /// 网关把**所有**会话的 `chat` / `agent` 事件都推给同一条连接，而聊天页只有
+  /// 一份消息列表 —— 不过滤的话，A 会话正在生成的回复会直接插进刚切过去的 B
+  /// 会话里。典型现象：在 A 说一句「你好」，马上切到 B，B 里冒出「你好，XX」。
+  ///
+  /// 载荷里没有 `sessionKey`（老网关）时一律放行：宁可多显示，也不能因为拿不到
+  /// 这个字段把正常回复全吞掉。
+  bool _isCurrentSessionEvent(dynamic payload) {
+    if (payload is! Map) return true;
+    final raw = payload['sessionKey'];
+    if (raw is! String || raw.trim().isEmpty) return true;
+    final current = _sessionKey;
+    if (current == null || current.trim().isEmpty) return true;
+    return _sameSessionKey(raw, current);
+  }
+
+  /// 会话 key 的宽松比较。
+  ///
+  /// 同一个会话有两种常见写法：`main` 与 `agent:main:main`（带 agent 作用域）。
+  /// `chat.send` 用的是调用方传进去的 key，事件里回的却是网关规范化之后的 key，
+  /// 直接 `==` 会把正常回复误判成「别的会话」而整条吞掉。
+  ///
+  /// 但**两侧都带作用域且不同**时（`agent:a:main` vs `agent:b:main`）必须判为
+  /// 不同会话 —— 那是两个 agent 各自的 `main`，不能混。
+  bool _sameSessionKey(String a, String b) {
+    final left = a.trim();
+    final right = b.trim();
+    if (left == right) return true;
+    if (left.startsWith('agent:') && right.startsWith('agent:')) return false;
+    return _unscopedSessionKey(left) == _unscopedSessionKey(right);
+  }
+
+  String _unscopedSessionKey(String raw) {
+    var key = raw.trim();
+    while (key.startsWith('agent:')) {
+      final rest = key.substring('agent:'.length);
+      final sep = rest.indexOf(':');
+      // 只有 `agent:<agentId>:<sessionKey>` 才剥；`agent:` 后面没冒号就别动。
+      if (sep <= 0 || sep >= rest.length - 1) break;
+      final next = rest.substring(sep + 1);
+      if (next == key) break;
+      key = next;
+    }
+    return key;
+  }
+
+  /// 会话 run 表的键：统一成去掉 `agent:` 作用域的形式，`main` 与
+  /// `agent:main:main` 才能落到同一个槽位。
+  String _sessionRunKey(String? key) =>
+      key == null || key.trim().isEmpty ? '' : _unscopedSessionKey(key);
+
+  /// 记下「这个会话正在跑 run」。
+  ///
+  /// 只有当前会话才同步刷新 [_runId] / [_runSessionKey] —— UI 的「打断」按钮
+  /// 认的是这两个字段，切到别的会话时它们必须跟着会话走。
+  void _trackRun(String? sessionKey, String runId) {
+    final key = _sessionRunKey(sessionKey);
+    if (key.isEmpty) return;
+    _runIdBySession[key] = runId;
+    if (key == _sessionRunKey(_sessionKey)) {
+      _runId = runId;
+      _runSessionKey = sessionKey ?? _runSessionKey;
+    }
+  }
+
+  /// 这个会话的 run 结束了（终态事件 / 打断 / 发送失败）。
+  ///
+  /// [runId] 传了就只在「该会话当前记的 run 还是它」时才清 —— await 期间用户
+  /// 可能已经在同一个会话里发出了下一条，别把新 run 一起抹掉。
+  void _untrackRun(String? sessionKey, {String? runId}) {
+    final key = _sessionRunKey(sessionKey);
+    if (key.isEmpty) return;
+    if (runId != null && _runIdBySession[key] != runId) return;
+    _runIdBySession.remove(key);
+    if (key == _sessionRunKey(_sessionKey)) {
+      _runId = '';
+      _runSessionKey = '';
+    }
+  }
+
+  /// 这条终态事件是不是「本客户端为这个会话发起的那个 run」。
+  ///
+  /// 拿不到会话 key 的老网关退回旧判据（`_runId == runId`）。
+  bool _ownsRun(String? sessionKey, String? runId) {
+    if (runId == null || runId.isEmpty) return true;
+    final key = _sessionRunKey(sessionKey);
+    if (key.isEmpty) return _runId == runId;
+    return _runIdBySession[key] == runId;
   }
 
   /// 处理网关的 `chat` 事件 —— 助手文字的**唯一**显示投影。
@@ -448,34 +570,44 @@ class GatewayRepository extends ChangeNotifier {
     if (payload == null) return;
     final runId = payload['runId'] as String?;
     final state = payload['state'] as String?;
+    // 这个 run 属于哪个会话：优先看载荷，其次看发送时的快照。
+    final rawKey = payload['sessionKey'];
+    final ownerKey =
+        rawKey is String && rawKey.trim().isNotEmpty
+            ? rawKey
+            : (_runSessionKey.isNotEmpty ? _runSessionKey : _sessionKey);
+    // 只有「当前正在看的会话」才渲染；别的会话的事件只做状态维护。
+    final isCurrent = _isCurrentSessionEvent(payload);
     switch (state) {
       case 'delta':
+        if (!isCurrent) return;
         _appendStreamingDelta(payload, runId);
         break;
       case 'final':
-        if (_runId == runId) {
+      case 'aborted':
+      case 'error':
+        // 收尾必须做，哪怕这个 run 属于别的会话：切走期间跑完的 run 如果不在这里
+        // 结掉，切回来会一直显示「运行中」（输入行挂着「打断」却永远不结束）。
+        if (!_ownsRun(ownerKey, runId)) break;
+        if (state != 'final') {
+          _log.warning('Chat run $runId ended with state=$state: $payload');
+        } else {
           _log.info(payload);
+        }
+        if (isCurrent) {
           // 终态 message 是权威全文：流式期间可能丢帧、也可能被 `replace`
           // 改写，收尾时回填一次，气泡才不会停在半截。
           _settleStreamingMessage(payload, runId);
-          _clearStreamingMessages(runId);
-          _runId = '';
-          notifyListeners();
+        }
+        _clearStreamingMessages(runId);
+        _untrackRun(ownerKey);
+        if (!isCurrent) break;
+        notifyListeners();
+        if (state == 'final') {
           final finalText = _visibleTextFromGatewayMessage(payload['message']);
           if (finalText != null) {
             messageFinalController.add(StringUtil.cleanTextForTts(finalText));
           }
-        }
-        break;
-      case 'aborted':
-      case 'error':
-        if (_runId == runId) {
-          _log.warning('Chat run $runId ended with state=$state: $payload');
-          // 打断 / 报错时网关也会带已产出的 message，同样回填一次。
-          _settleStreamingMessage(payload, runId);
-          _clearStreamingMessages(runId);
-          _runId = '';
-          notifyListeners();
         }
         break;
     }
@@ -585,16 +717,30 @@ class GatewayRepository extends ChangeNotifier {
   void unsubscribeSessionMessage() {}
 
   Future<void> beginHistoryLoad() async {
-    if (!_connected || _isHistoryLoading || sessionKey == null) {
+    // 先把这次要加载的会话 key 快照下来：下面 await 期间用户可能又切了会话，
+    // 结果必须按「发起时的 key」判断是否还有效。
+    final key = sessionKey;
+    if (!_connected || key == null) {
+      return;
+    }
+    // 同一个会话已经在拉：不必重复请求。换了会话则必须放行 —— 否则切走时那次
+    // 未完成的加载会把新会话的加载挡在门外，界面一直停在旧会话的消息上。
+    if (_isHistoryLoading && _historyLoadingKey == key) {
       return;
     }
     _isHistoryLoading = true;
+    _historyLoadingKey = key;
     notifyListeners();
     try {
       final Map<String, dynamic> json = await requestKnown(
         'chat.history',
-        params: {'sessionKey': sessionKey!},
+        params: {'sessionKey': key},
       );
+
+      // 期间切走了：这次结果属于旧会话，丢掉。否则旧会话的历史会盖到新会话上。
+      if (!_sameSessionKey(sessionKey ?? '', key)) {
+        return;
+      }
 
       final sessionInfo = json['sessionInfo'];
       final sessionInfoMap =
@@ -635,11 +781,17 @@ class GatewayRepository extends ChangeNotifier {
         }
       }
       sessionUpdateController.add(messages);
-      _isHistoryLoading = false;
       notifyListeners();
     } catch (e) {
-      _isHistoryLoading = false;
       _log.severe(e);
+    } finally {
+      // 只在「这次加载仍是当前那次」时收尾：切会话后新一次加载可能已经开始，
+      // 不能被旧的那次把 loading 标志抹掉。
+      if (_historyLoadingKey == key) {
+        _isHistoryLoading = false;
+        _historyLoadingKey = null;
+      }
+      notifyListeners();
     }
   }
 
@@ -656,6 +808,10 @@ class GatewayRepository extends ChangeNotifier {
     _isConnecting = false;
     _isReconnecting = false;
     _isHistoryLoading = false;
+    _historyLoadingKey = null;
+    _runId = '';
+    _runSessionKey = '';
+    _runIdBySession.clear();
     disconnectReason = null;
     notifyListeners();
     await _shutdownSession();
@@ -692,6 +848,7 @@ class GatewayRepository extends ChangeNotifier {
     final runId =
         'chat_${DateTime.now().millisecondsSinceEpoch}_${uuid.v4().substring(0, 8)}'; // 1. 准备数据
     _runId = runId;
+    _runSessionKey = sessionKey ?? _runSessionKey;
     notifyListeners();
     if (attachments.isEmpty) {
       // 2. 乐观更新：创建并显示用户消息
@@ -727,6 +884,12 @@ class GatewayRepository extends ChangeNotifier {
 
     final resolvedSessionKey = sessionKey ?? await mainSessionKey();
     _sessionKey = resolvedSessionKey;
+    // 期间用户可能已经切走：只在这次 run 仍是当前 run 时才记下它的归属，
+    // 别把旧会话的 key 写回来。
+    if (_runId == runId) {
+      _runSessionKey = resolvedSessionKey;
+      _trackRun(resolvedSessionKey, runId);
+    }
     try {
       await requestKnown(
         'chat.send',
@@ -750,10 +913,8 @@ class GatewayRepository extends ChangeNotifier {
       );
     } catch (error) {
       // 只清掉「自己这一次」的 run：期间用户可能已经发了下一条，别把它踩掉。
-      if (_runId == runId) {
-        _runId = '';
-        notifyListeners();
-      }
+      _untrackRun(resolvedSessionKey, runId: runId);
+      notifyListeners();
       _log.warning('chat.send failed: $error');
       rethrow;
     }
@@ -785,20 +946,53 @@ class GatewayRepository extends ChangeNotifier {
   Future<void> abortMessage() async {
     final runId = _runId;
     if (runId.isEmpty) return;
+    // 用 run 自己的会话 key，而不是「当前正在看的会话」：切走之后点打断，
+    // 带新会话的 key 过去会因 runId 对不上被网关拒绝，旧会话的生成也停不下来。
+    final runSessionKey =
+        _runSessionKey.isNotEmpty ? _runSessionKey : sessionKey;
+    if (runSessionKey == null) return;
     await requestKnown(
       'chat.abort',
-      params: {'sessionKey': sessionKey!, 'runId': runId},
+      params: {'sessionKey': runSessionKey, 'runId': runId},
     );
     // 被中断这一次的流式占位要在这里清掉：它后续的 final/aborted 事件会因
     // runId 已不匹配被忽略，不会再来清。
     _clearStreamingMessages(runId);
-    if (_runId != runId) return;
-    _runId = '';
+    _untrackRun(runSessionKey, runId: runId);
     notifyListeners();
   }
 
+  /// 切换当前会话。
+  ///
+  /// 切会话换的只是「看哪一份消息」：消息列表要立刻清空（否则新会话历史回来
+  /// 之前，屏幕上挂着的还是旧会话的内容），但**每个会话自己的 run 状态要留着** ——
+  /// 切走再切回来，输入行仍要显示「打断」、流式文字也要接着写。
+  ///
+  /// 旧会话的 `chat` 增量不会串过来，靠的是 [_handleChatEvent] 里的会话过滤，
+  /// 不是在这里把状态清掉。
   Future<void> switchSession(String? key) async {
-    _sessionKey = key ?? _sessionKey;
+    final next = key ?? _sessionKey;
+    // 用宽松比较判「换没换」：`main` 与 `agent:main:main` 是同一个会话，
+    // 别把它当成切换（否则点同一个会话也会清屏重拉）。
+    final changed =
+        (next == null || _sessionKey == null)
+            ? next != _sessionKey
+            : !_sameSessionKey(next, _sessionKey!);
+    if (changed) {
+      _sessionKey = next;
+      // 恢复这个会话自己的 run：切回来仍要显示「运行中」。
+      final restoredRunId = _runIdBySession[_sessionRunKey(next)] ?? '';
+      _runId = restoredRunId;
+      _runSessionKey = restoredRunId.isEmpty ? '' : (next ?? '');
+      // 流式气泡的累积文字按 runId 存，这里**不清**：切回来之后下一个 delta
+      // 能接着写完整段，而不是只显示回来之后的那几个字。
+      // 旧会话那次历史请求可能还在飞：让新会话的加载能立刻发起，
+      // 旧请求回来时会因 key 不匹配被丢弃（见 [beginHistoryLoad]）。
+      _isHistoryLoading = false;
+      _historyLoadingKey = null;
+      sessionUpdateController.add(const <ChatMessage>[]);
+      notifyListeners();
+    }
     unawaited(beginHistoryLoad());
   }
 

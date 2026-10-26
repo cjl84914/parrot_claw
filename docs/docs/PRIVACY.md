@@ -7,7 +7,7 @@
 
 ## 1. 关于本政策
 
-ParrotClaw（语鹦助手）是一款开源的 AI 数字员工应用（以下简称"本应用"或"我们"），由 Alex 开发并维护。本应用采用 **MIT 协议** 发布，源代码托管于 Gitee 平台。
+ParrotClaw（语鹦助手）是一款开源的 AI 数字员工应用（以下简称"本应用"或"我们"），由 Alex 开发并维护。本应用采用 **MIT 协议** 发布，源代码托管于 GitHub 平台。
 
 本隐私政策旨在帮助您了解使用 ParrotClaw 时，您的信息如何被收集、使用和存储。
 
@@ -108,7 +108,7 @@ ParrotClaw 需要以下系统权限才能完整运行：
 
 ## 7. 隐私政策的变更
 
-我们可能会不时更新本隐私政策。更新后的政策会在应用内（关于页面）以及 Gitee 仓库中发布，并注明更新日期。继续使用本应用即表示您同意更新后的政策。
+我们可能会不时更新本隐私政策。更新后的政策会在应用内（关于页面）以及 GitHub 仓库中发布，并注明更新日期。继续使用本应用即表示您同意更新后的政策。
 
 ---
 
@@ -118,8 +118,8 @@ ParrotClaw 需要以下系统权限才能完整运行：
 
 - **Email**：121237385@qq.com
 - **QQ**：121237385
-- **Gitee**：[https://gitee.com/alexcai/parrot_claw](https://gitee.com/alexcai/parrot_claw)
-- **项目 Issues**：[https://gitee.com/alexcai/parrot_claw/issues](https://gitee.com/alexcai/parrot_claw/issues)
+- **GitHub**：[https://github.com/cjl84914/parrot_claw](https://github.com/cjl84914/parrot_claw)
+- **项目 Issues**：[https://github.com/cjl84914/parrot_claw/issues](https://github.com/cjl84914/parrot_claw/issues)
 
 ---
 
@@ -164,4 +164,4 @@ macOS 构建的应用在 Release 模式下**未启用沙盒**（sandbox），因
 
 ---
 
-*ParrotClaw 是开源软件，完整源代码请访问 [https://gitee.com/alexcai/parrot_claw](https://gitee.com/alexcai/parrot_claw)*
+*ParrotClaw 是开源软件，完整源代码请访问 [https://github.com/cjl84914/parrot_claw](https://github.com/cjl84914/parrot_claw)*

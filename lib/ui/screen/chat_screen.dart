@@ -866,6 +866,12 @@ class _ChatScreenState extends State<ChatScreen>
     _eventSessionUpdateSubscription = widget.viewModel.sessionUpdateEvents
         ?.listen((messages) {
           _chatController.setMessages(messages.expand(_toUiMessages).toList());
+          // 切回一个「还在跑」的会话：消息列表刚被历史整份重建，typing 气泡也
+          // 跟着没了。这里按当前 run 补回来，否则表现就是「切走再切回，运行中
+          // 状态消失」（输入行的「打断」由 runId 自己恢复）。
+          if (widget.viewModel.runId != '') {
+            unawaited(_addTyping());
+          }
         });
     _pendingRunSubscription = widget.viewModel.pendingRunEvents?.listen(
       (lastTextContent) {},

@@ -73,7 +73,7 @@ void main() async {
     // macOS 保持隐藏标题栏的无边框体验（其标题栏区域本身可拖动）。
     final WindowOptions windowOptions = WindowOptions(
       size: const Size(1280, 800),
-      minimumSize: const Size(390, 800),
+      minimumSize: const Size(640, 480),
       center: false,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,

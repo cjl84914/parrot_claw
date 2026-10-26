@@ -1,53 +1,54 @@
 <p align="center">
 <img src="./assets/images/icon.jpg"  width="150" height="150">
 </p>
-<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">ParrotClaw 语鹦助手</h1>
-<h4 align="center">为一人公司和内容设计师打造的AI数字员工</h4>
+<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">ParrotClaw</h1>
+<h4 align="center">An AI digital employee for one-person companies and content creators</h4>
 <p align="center">
- <a href="https://parrot.geetion.com"><img src="https://img.shields.io/badge/官网-parrot.geetion.com-orange.svg"></a>
- <a href="https://gitee.com/alexcai/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.9-brightgreen.svg"></a>
- <a href="https://gitee.com/alexcai/parrot_claw/LICENSE"><img src="https://img.shields.io/github/license/mashape/apistatus.svg"></a>
+ <a href="https://parrot.geetion.com"><img src="https://img.shields.io/badge/Website-parrot.geetion.com-orange.svg"></a>
+ <a href="https://github.com/cjl84914/parrot_claw"><img src="https://img.shields.io/badge/ParrotClaw-v1.0.9-brightgreen.svg"></a>
+ <a href="https://github.com/cjl84914/parrot_claw/blob/main/LICENSE"><img src="https://img.shields.io/github/license/cjl84914/parrot_claw.svg"></a>
 </p>
 
-<p align="center"><a href="README.en.md">English</a> | <strong>中文</strong></p>
+<p align="center"><strong>English</strong> | <a href="README.zh.md">中文</a></p>
 
-> 私有化部署 · 对话式交互
-> 永久开源
+> Self-hosted · Conversational
+> Open source, forever
 
 
 
-## 演示图
+## Screenshots
 
 <div align="center">
-  <img src="./docs/public/images/screen1.webp" width="300" alt="屏幕截图 1">
+  <img src="./docs/public/images/screen1.webp" width="300" alt="Screenshot 1">
   &nbsp;&nbsp;&nbsp;
-  <img src="./docs/public/images/screen2.webp" width="300" alt="屏幕截图 2">
+  <img src="./docs/public/images/screen2.webp" width="300" alt="Screenshot 2">
 </div>
 
 ---
 
-## 这是什么
+## What is this
 
-**ParrotClaw** 是一个数字员工解决方案。
+**ParrotClaw** is a digital employee solution.
 
-你只需要打开 App，像聊天一样告诉它你的需求，它就能帮你把活干了。
+Just open the app and tell it what you need — in plain conversation, the way you'd chat with a person — and it gets the work done.
 
-**覆盖的场景：**
-- **会议记录助手** — 录音进去，纪要出来
-- **知识问答助手** — 公司资料库，对话式检索
-- **内容创作** — 文字、图片、视频、音频
+**What it covers:**
+- **Meeting notes assistant** — feed it a recording, get the minutes
+- **Knowledge Q&A assistant** — ask questions against your company's knowledge base
+- **Content creation** — text, images, video, audio
 
-👉 [关于 ParrotClaw](docs/docs/about.md)
+👉 [About ParrotClaw](docs/en/docs/about.md)
 
-> 📖 项目附带 VitePress 文档站，`cd docs && npm run docs:dev` 本地预览
+> 📖 The project ships with a VitePress documentation site. Preview it locally with `cd docs && npm run docs:dev`
 
 ---
 
-## 快速开始
+## Getting started
 
-需要先安装 [Flutter](https://docs.flutter.dev/get-started/install)（`3.47.1`）。
+[Flutter](https://docs.flutter.dev/get-started/install) is required (`3.47.1`).
+
 ```bash
-git clone https://gitee.com/alexcai/parrot_claw.git
+git clone https://github.com/cjl84914/parrot_claw.git
 cd parrot_claw
 flutter pub get
 flutter run
@@ -55,121 +56,121 @@ flutter run
 
 ---
 
-## 使用示例
+## Usage examples
 
-打开 App，在聊天界面说：
+Open the app and say something in the chat:
 
-> "你好"
+> "Hello"
 
-Agent 会回应你。从最简单的对话开始，然后你可以让它做更多事：
+The agent will answer. Start with the simplest conversation, then let it do more:
 
-> "帮我把刚才的会议录音整理成纪要"
+> "Turn the meeting recording I just made into minutes"
 
-> "帮我写一篇文章发布到掘金"
+> "Write an article and publish it to Juejin"
 
-> "帮我生成一张产品宣传图"
+> "Generate a promo image for my product"
 
-📖 更多完整场景教程（文章写作、会议记录、掘金发布、音视频处理、代码解读）见 [使用案例](docs/docs/use-cases.md)
+📖 For complete, walk-through tutorials (article writing, meeting notes, publishing to Juejin, audio/video processing, code explanation), see [Use cases](docs/en/docs/use-cases.md)
 
 ---
 
-## 架构
+## Architecture
 
 ```
-ParrotClaw App（Flutter 交互层）
+ParrotClaw App (Flutter UI layer)
          ↕
-     OpenClaw（Agent 调度中枢）
+     OpenClaw (Agent orchestration hub)
          ↕
-    ComfyUI / TTS / 其他工具
+    ComfyUI / TTS / other tools
 ```
 
-- **ParrotClaw App** — 交互层，集成离线语音识别（ASR）、数字人实时对话等
-- **OpenClaw** — Agent 编排中枢，连接各工具链
-- **工具链** — 图片生成、视频生成、音乐生成、语音合成、知识库等
+- **ParrotClaw App** — the UI layer, with built-in offline speech recognition (ASR), a real-time talking digital human, and more
+- **OpenClaw** — the agent orchestration hub that wires up the toolchain
+- **Toolchain** — image generation, video generation, music generation, speech synthesis, knowledge base, and more
 
 ---
 
-## 当前版本
+## Current version
 
-- App 版本：`1.0.9`
-- Flutter SDK：`3.47.1`
+- App version: `1.0.9`
+- Flutter SDK: `3.47.1`
 
-## 路线图
+## Roadmap
 
-- [x] 与 Agent 对话
-- [x] 知识问答助手
-- [x] 语音合成（TTS）
-- [x] 数字人集成（Live2D）
-- [x] 会议记录助手（录音 → 纪要）
-- [x] 开源到 GitHub
-- [x] 配置 GitHub Actions
-- [x] Windows 版本
-- [x] 扫码克隆服务器
-- [x] 会话管理
-- [x] 兼容官方配对码
-- [x] Skill管理
-- [x] 英文 README DOCS
-- [x] 数字人生成案例
-- [x] 定时任务
-- [x] 文生图 / 图生图
-- [x] 音乐生成（AceStep 文生曲）
-- [x] 文生视频 
-- [x] 图生视频
-- [ ] Agent配置
-- [ ] FaceFusion 案例
-
----
-
-## 技术栈
-
-- **Flutter** — 跨平台 App（macOS / iOS / Android / Windows）
-- **OpenClaw** — AI Agent 框架
-- **ComfyUI** — 图像 / 视频生成 / 音乐生成
-- **FFmpeg** — 视频处理 / 音频处理
-- **Live2D / DUIX** — 数字人
-- **Sherpa-onnx** — 离线语音识别
+- [x] Chat with an agent
+- [x] Knowledge Q&A assistant
+- [x] Text-to-speech (TTS)
+- [x] Digital human integration (Live2D)
+- [x] Meeting notes assistant (recording → minutes)
+- [x] Open sourced on GitHub
+- [x] GitHub Actions
+- [x] Windows build
+- [x] Scan-to-clone server
+- [x] Session management
+- [x] Compatible with official QR pairing
+- [x] Skill management
+- [x] English README + docs
+- [x] Digital human example
+- [x] Scheduled tasks
+- [x] Text-to-image / image-to-image
+- [x] Music generation (AceStep text-to-song)
+- [x] Text-to-video
+- [x] Image-to-video
+- [ ] Agent configuration
+- [ ] FaceFusion example
 
 ---
 
-## 许可证
+## Tech stack
+
+- **Flutter** — cross-platform app (macOS / iOS / Android / Windows)
+- **OpenClaw** — AI agent framework
+- **ComfyUI** — image / video / music generation
+- **FFmpeg** — video / audio processing
+- **Live2D / DUIX** — digital human
+- **Sherpa-onnx** — offline speech recognition
+
+---
+
+## License
 
 [MIT](LICENSE)
 
-## 感恩集成
+## Acknowledgements
 
-ParrotClaw 站在这些优秀开源项目的肩膀上，由衷感谢：
+ParrotClaw stands on the shoulders of these excellent open-source projects. Our sincere thanks to:
 
-- [Flutter](https://github.com/flutter/flutter) — 跨平台 UI 框架
-- [OpenClaw](https://github.com/openclaw/openclaw) — AI Agent 框架
-- [ComfyUI](https://github.com/Comfy-Org/ComfyUI) — 图像 / 视频生成
-- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — 本地语音识别
-- [FFmpeg](https://github.com/FFmpeg/FFmpeg) — 音视频处理
+- [Flutter](https://github.com/flutter/flutter) — cross-platform UI framework
+- [OpenClaw](https://github.com/openclaw/openclaw) — AI agent framework
+- [ComfyUI](https://github.com/Comfy-Org/ComfyUI) — image / video generation
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — on-device speech recognition
+- [FFmpeg](https://github.com/FFmpeg/FFmpeg) — audio/video processing
 
 ---
 
-## 商业合作
+## Business inquiries
 
-QQ：121237385
+QQ: 121237385
 
 Email: 121237385@qq.com
 
-## 贡献
+## Contributing
 
-欢迎通过提交 [Pull Request](https://gitee.com/alexcai/parrot_claw/pulls) 参与项目。
+Pull requests are welcome — see [Pull Requests](https://github.com/cjl84914/parrot_claw/pulls).
 
-贡献指南：[`docs/docs/contributing-gitee.md`](docs/docs/contributing-gitee.md)（Gitee）/ [`docs/docs/contributing-github.md`](docs/docs/contributing-github.md)（GitHub）
+Contributing guides: [`docs/en/docs/contributing-github.md`](docs/en/docs/contributing-github.md) (GitHub) / [`docs/en/docs/contributing-gitee.md`](docs/en/docs/contributing-gitee.md) (Gitee)
 
 
-## 附录
+## Appendix
 
-- [`docs/docs/use-cases.md`](docs/docs/use-cases.md) — 使用案例（文字创作、会议记录、掘金发布、音视频处理、代码解读）
-- [`docs/docs/about.md`](docs/docs/about.md) — 关于项目与开发历程
-- [`docs/docs/openclaw-setup.md`](docs/docs/openclaw-setup.md) — OpenClaw 安装、Gateway 连接等
-- [`docs/docs/flutter-tips.md`](docs/docs/flutter-tips.md) — Flutter 项目架构、插件使用
-- [`docs/docs/faq.md`](docs/docs/faq.md) — 常见问题
-- [`docs/docs/contributing-gitee.md`](docs/docs/contributing-gitee.md) — Gitee 贡献指南
-- [`docs/docs/contributing-github.md`](docs/docs/contributing-github.md) — GitHub 贡献指南
-- [`docs/docs/getting-started.md`](docs/docs/getting-started.md) — 快速开始
+- [`docs/en/docs/use-cases.md`](docs/en/docs/use-cases.md) — Use cases (writing, meeting notes, publishing to Juejin, audio/video processing, code explanation)
+- [`docs/en/docs/about.md`](docs/en/docs/about.md) — About the project and its history
+- [`docs/en/docs/openclaw-setup.md`](docs/en/docs/openclaw-setup.md) — Installing OpenClaw, connecting a Gateway, and more
+- [`docs/en/docs/flutter-tips.md`](docs/en/docs/flutter-tips.md) — Flutter project structure and plugins
+- [`docs/en/docs/faq.md`](docs/en/docs/faq.md) — FAQ
+- [`docs/en/docs/contributing-github.md`](docs/en/docs/contributing-github.md) — GitHub contributing guide
+- [`docs/en/docs/contributing-gitee.md`](docs/en/docs/contributing-gitee.md) — Gitee contributing guide
+- [`docs/en/docs/getting-started.md`](docs/en/docs/getting-started.md) — Getting started
 
 ---
 

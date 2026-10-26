@@ -51,4 +51,4 @@
 
 ---
 
-> 完整发布记录见 [Gitee Releases](https://gitee.com/alexcai/parrot_claw/releases) · [GitHub Releases](https://github.com/cjl84914/parrot_claw/releases)。
+> 完整发布记录见 [GitHub Releases](https://github.com/cjl84914/parrot_claw/releases)。
