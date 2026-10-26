@@ -10,7 +10,7 @@ import java.io.File;
 
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import com.baidu.mobstat.StatService;
+//import com.baidu.mobstat.StatService;
 
 public class MainActivity extends FlutterActivity {
     private static final String DUIX_DOWNLOAD_CHANNEL = "duix_download_service";
@@ -19,21 +19,21 @@ public class MainActivity extends FlutterActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // 调试模式下，打开log开关，可以看到调试log
-        StatService.setDebugOn(false);
+//        StatService.setDebugOn(false);
         // 设置app发布渠道
-        StatService.setAppChannel(this, "官方", true);
-        String versionName = "unknown";
-        try {
-            PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-            versionName = packageInfo.versionName;
-        } catch (PackageManager.NameNotFoundException e) {
-            throw new RuntimeException(e);
-        }
-        StatService.setAppVersionName(this, versionName);
-        // 设置Appkey
-        StatService.setAppKey("b6ac64942a");
-        // 启动sdk
-        StatService.start(this);
+//        StatService.setAppChannel(this, "官方", true);
+//        String versionName = "unknown";
+//        try {
+//            PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+//            versionName = packageInfo.versionName;
+//        } catch (PackageManager.NameNotFoundException e) {
+//            throw new RuntimeException(e);
+//        }
+//        StatService.setAppVersionName(this, versionName);
+//         设置Appkey
+//        StatService.setAppKey("b6ac64942a");
+//         启动sdk
+//        StatService.start(this);
     }
 
     @Override
